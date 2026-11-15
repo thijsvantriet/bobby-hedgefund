@@ -1,10 +1,10 @@
-# Biotech agents
+# Bobby Hedgefund
 
 A paper-money biotech fund run by a team of LLM agents, fed by open data (clinical trials, FDA, SEC filings, papers,
 earnings calls), run forward on the home server for about 6 months and compared with XBI, IBB, IWDA and real biotech funds (ARKG, 13F filers).
 
 ## Status
-2026-11-15: idea brainstormed with Claude (see docs/IDEA.md, incl. a prior-art check). Project folder created; no spec, no code yet.
+2026-11-15: project named Bobby Hedgefund (repo and folder `bobby-hedgefund`, renamed from biotech-agents). Idea brainstormed with Claude (see docs/IDEA.md, incl. a prior-art check). Project folder created; no spec, no code yet.
 
 ## Next step
 1. Interview + spec (docs/SPEC.md), in plan mode.

@@ -1,4 +1,4 @@
-# Biotech agents - briefing for Claude
+# Bobby Hedgefund - briefing for Claude
 
 Read README.md first: "Status" and "Next step" are this project's log and roadmap. The brainstorm that started it: docs/IDEA.md.
 Specs: docs/SPEC.md (once written); decisions: docs/decisions/ (ADR format, use the design-decision skill).
