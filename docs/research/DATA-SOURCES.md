@@ -233,11 +233,11 @@ currency and record the exchange-rate source.
 | Source | What | Access | History kept? | Value |
 |---|---|---|---|---|
 | **Nasdaq symbol directory** | All listed symbols with a financial-status flag (deficient, delinquent, bankrupt) | [Text file](https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt), no key **[tested]** | **Overwritten daily** | High, trivial |
-| **Nasdaq non-compliant list** | Companies failing listing rules, such as a share price under $1 | [Web page](https://listingcenter.nasdaqomx.com/NonCompliantCompanyList.aspx) | **Current state only** | High as a warning of reverse split or delisting |
+| **Nasdaq non-compliant list** | Companies failing listing rules, such as a share price under $1 | [Web page](https://listingcenter.nasdaq.com/NonCompliantCompanyList.aspx) | **Current state only** | High as a warning of reverse split or delisting |
 | SEC 8-K items 3.01, 5.03, 2.01 and Form 25 | Delisting notices, reverse splits, completed mergers | EDGAR | Permanent | High |
 | Nasdaq Daily List | Official corporate actions | About $3,500 a month ([filing](https://www.sec.gov/files/rules/sro/nasdaq/2026/34-106034.pdf)) | - | Avoid |
 | **SPDR XBI holdings** | About 140 small and mid-size biotechs: the core universe | [Daily file](https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xbi.xlsx) **[tested]**; terms on automated download **[unverified]** | **Overwritten daily** | High |
-| iShares IBB holdings | Larger biotechs | Returned a web page, not the file **[tested]**; terms ban bots on at least one page ([terms](https://www.ishares.com/us/compliance/factor-box-terms)) | Overwritten | Medium; download by hand monthly |
+| iShares IBB holdings | Larger biotechs | Returned a web page, not the file **[tested]**; an agent reported that iShares terms ban bots, but the page it cited did not load for me **[unverified]** | Overwritten | Medium; download by hand monthly |
 | SEC industry codes 2834, 2836 | Every pharma and biotech filer, including delisted ones | EDGAR | Permanent | High: a list without survivorship bias |
 
 Proposed universe: XBI holdings, Nasdaq Biotechnology Index members and SEC-coded filers, filtered on our own size and volume
@@ -251,7 +251,7 @@ share sales by up to a quarter.
 | Option prices via Yahoo | The "implied move" around a catalyst | yfinance, unofficial | Personal use; fragile | **None**: save daily | The only free route. Many small biotechs have thin or no options |
 | Paid options data | Proper implied-volatility history | Roughly $30-100 a month **[unverified]** | Closed | Yes | Owner decision |
 | **FINRA short interest** | Shares sold short, twice a month | [Files](https://www.finra.org/finra-data/browse-catalog/equity-short-interest), free | Personal non-commercial use, credit FINRA ([terms](https://developer.finra.org/sites/default/files/2022-12/Developer%20API%20-%20Specific%20Terms%20-%20Equity%20Data%20%2812-2022%29%5B10%5D.pdf)) | Yes | High for small biotech |
-| FINRA daily short volume | Off-exchange short volume | [Files](https://cdn.finra.org/equity/regsho/daily/) **[tested]** | As above | Yes | Low: routinely misread as short interest |
+| FINRA daily short volume | Off-exchange short volume | [Files](https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data) **[tested]** | As above | Yes | Low: routinely misread as short interest |
 | **Interactive Brokers borrow file** | Fee and shares available to borrow | Public FTP, no account ([IBKR](https://ibkb.interactivebrokers.com/article/2024)) | Reuse terms not found **[unverified]** | **Overwritten during the day** | Medium-high: borrow cost is the best free sign of a crowded short |
 | SEC fails-to-deliver | Settlement failures | Twice monthly | Public | Yes | Low: noise |
 
@@ -277,7 +277,7 @@ filings are much quicker than 13F.
 
 | Source | What | Access and cost | Terms | History kept? | Effort | Value |
 |---|---|---|---|---|---|---|
-| **Europe PMC** | Papers plus preprints in one API | [REST](https://europepmc.org/RestfulWebService), no key **[tested]** | Per-article copyright; no wholesale republication | Index dates per record | Low | High for the effort |
+| **Europe PMC** | Papers plus preprints in one API | [REST](https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=test&pageSize=1&format=json), no key **[tested]** | Per-article copyright; no wholesale republication | Index dates per record | Low | High for the effort |
 | **bioRxiv / medRxiv** | Preprints with licence per item | [API](https://api.biorxiv.org/), no key | Per-preprint licence; bulk full text may not be re-hosted ([terms](https://www.biorxiv.org/tdm)) | Numbered versions | Low | Medium-high |
 | PubMed | Abstracts | [E-utilities](https://www.ncbi.nlm.nih.gov/books/NBK25497/); 3 calls a second, 10 with a free key; **asks for an e-mail** (not tested) | Credit NLM; some abstracts are publisher copyright | Records get revised | Low | Medium |
 | **Crossref and Retraction Watch** | Retractions and corrections | [API](https://api.crossref.org/) no key; [daily data file](https://gitlab.com/crossref/retraction-watch-data) | Open | Dated | Low | Medium: rare but sharp |
@@ -311,7 +311,7 @@ route: a calendar of release times, then fetch only the abstracts of watched com
 
 | Macro and policy source | Access | Value |
 |---|---|---|
-| **US Treasury yields** | [Daily CSV](https://home.treasury.gov/resource-center/data-chart-center/interest-rates), no key **[tested]** | High, trivial |
+| **US Treasury yields** | [Daily CSV](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve), no key **[tested]** | High, trivial |
 | FRED | Free key required ([terms](https://fred.stlouisfed.org/docs/api/terms_of_use.html)) | Medium |
 | Federal Register, Congress.gov | No key / free key | Medium, sector level |
 | FDA and Fed calendars | Web pages | Medium |
@@ -380,7 +380,7 @@ No systematic study was found. Agents are well suited to it.
   partnered drug, **the partner's chart is the signal**
   ([Merck and Sutro](https://www.fiercebiotech.com/biotech/merck-abandons-sutro-partnered-il-2-drug-routine-pipeline-prioritization)).
 - How: save weekly copies of ~200 company pipeline pages and ~20 big-pharma pipeline documents; an agent says what changed.
-  The [Wayback Machine API](https://archive.org/developers/wayback-cdx-server.html) **[tested]** gives some history, but its
+  The [Wayback Machine API](https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server) **[tested]** gives some history, but its
   coverage of small companies is patchy. Check each site's terms.
 - Caveat: website redesigns create false alarms. No study of returns was found.
 
@@ -460,7 +460,7 @@ Mostly noise for this fund. The few with some merit:
 | Stooq | Blocks scripts; no published terms |
 | NewsAPI free tier | Development use only |
 | X, StockTwits, Reddit | Paid, closed or approval-gated |
-| iShares automated download | Terms ban bots; download by hand |
+| iShares automated download | File is not served to scripts; terms reportedly ban bots **[unverified]**; download by hand |
 | Closed catalyst calendars, automated | Terms restrict reuse; some dates are estimates |
 | Paid transcript services | Closed, redistribution forbidden |
 | CTO trial-outcome labels | Partly derived from share prices: circular |
