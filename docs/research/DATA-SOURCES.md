@@ -4,15 +4,17 @@ Research night of 2026-11-15 (brief: [BRIEF.md](BRIEF.md)). Plain-language one-p
 Everything here is input for the spec session. Nothing is decided.
 
 **How to read this**
-- **[tested]** = a tiny anonymous test call worked on 2026-11-15 (log in section 12). **[checked]** = I re-checked the claim
-  against the primary source. No tag = reported by a research agent with a link. **[unverified]** = no primary source found;
+- **[tested]** = a tiny anonymous test call worked on 2026-11-15 (log in section 12). **[link checked]** = the link opens;
+  the figure quoted from it was not re-read by me. No tag = reported by a research agent with a link. **[unverified]** = no primary source found;
   check before relying on it.
 - **Terms** answers two separate questions: may a script fetch it for personal use, and may we show it in a public repository.
 - **History kept?** answers: does the source itself keep dated versions of what was known when, or does it overwrite, so that
   we must save our own copies from day 1.
 - **Value** is for this fund: paper money, about 200 companies, at most one decision a day, six months.
 - Policy and regulatory events from 2026 are reported from the linked sources and were not independently confirmed.
-- Nothing here is legal advice.
+- **History depth and data quality** for the main sources are collected in section 2.4; for the rest see the agents' notes
+  ([notes/](notes/), files C, D and E), which give them per source.
+- Nothing here is legal advice or investment advice.
 
 ## 1. The short version
 
@@ -56,6 +58,26 @@ Every stream below is only useful once this linking table exists.
 | Quarterly and annual reports | bursts in reporting season | 30-60k tokens (quarterly), 100-150k (annual); send sections only |
 | Press releases | 15-30 | 1-3k tokens |
 | Trial record updates | 5-40 | about 17 KB of structured data; compare by script, interpret by agent |
+
+**2.4 History depth and data quality of the main sources** (from the agents' notes; blanks there are marked)
+
+| Source | How far back | Data quality and known traps |
+|---|---|---|
+| ClinicalTrials.gov | Since 2000 | Sponsor-entered: stale records, free-text sponsor names, estimated dates, late or missing results |
+| AACT | Maintained since 2012; older snapshots downloadable | Same data as the registry |
+| openFDA approvals | 1939 onward | Official; no cell and gene therapies; current state only |
+| FDA rejection letters | 458 letters, mostly 2020 onward | Redacted; publication irregular |
+| Federal Register | 1994 onward | Official and permanent |
+| EMA files | Current state; monthly "under evaluation" lists since 2012 | Official; drug names without company names in some lists |
+| SEC filings | Full-text search since 2001 | Authoritative. Financial data tags of small companies are inconsistent: read cash from the text and cross-check |
+| SEC 13F data sets | Since 2013 | As filed; amendments and duplicates included |
+| FINRA short interest | One rolling year online, older in archives | Reliable; published one to two weeks late |
+| Prices: Tiingo / Massive / Yahoo | Decades **[unverified]** / 2 years on the free tier **[unverified]** / long, but delisted companies vanish | Vendors rewrite adjusted history after splits; survivorship bias |
+| ARKG and XBI holdings files | None: today's file only | Reliable for the day |
+| Europe PMC / PubMed | Decades (PubMed from 1781) | Good; records are revised later |
+| bioRxiv / medRxiv | Since 2013 | Good; versions numbered |
+| Crossref retractions | 81,614 retraction notices on test day | Good; updated every working day |
+| Purple Book | Monthly files since 2020 | Official |
 
 ## 3. Clinical trial registries
 
@@ -181,7 +203,7 @@ as far as found. Worth watching: it would halve our best regular source.
 |---|---|---|
 | Insider purchases | Non-routine insider trades earn about 0.8% a month extra; routine ones nothing ([Cohen, Malloy, Pomorski 2012](https://www.nber.org/papers/w16454)) | Strong in general, thin for biotech. Exclude insiders merely taking part in a company financing |
 | First going-concern warning | -14% drift over the following year ([Kausar, Taffler, Tan 2009](https://econpapers.repec.org/RePEc:bla:joares:v:47:y:2009:i:1:p:213-239)) | Moderate. About a third of listed life-science companies carry one ([RSM](https://rsmus.com/insights/services/audit/biotech-financing-structures-and-accounting-implications.html)), so it discriminates poorly; the *change* matters |
-| Wording changes between reports | Companies that change their annual-report text underperform by about 1.9% a month, with no reaction on filing day ([Cohen, Malloy, Nguyen 2020](https://doi.org/10.1111/jofi.12885)) **[checked: link resolves]** | Strong in general; see section 9.2 |
+| Wording changes between reports | Across all US stocks, a portfolio that held companies with unchanged annual-report text and bet against those with changed text earned up to about 1.9% a month; no reaction on filing day ([Cohen, Malloy, Nguyen 2020](https://doi.org/10.1111/jofi.12885)) **[link checked]** | Strong in general; see section 9.2 |
 | At-the-market share sales | Descriptive study only ([Billett et al. 2019](https://ideas.repec.org/a/cup/jfinqa/v54y2019i03p1263-1283_00.html)) | Thin |
 | Specialist-fund ownership | Vendor back-tests only ([summary](https://larryswedroe.substack.com/p/cracking-the-code-a-quantitative)); no peer-reviewed study | Thin but consistent |
 
@@ -308,6 +330,7 @@ route: a calendar of release times, then fetch only the abstracts of watched com
 | Bluesky | Open stream, no key ([docs](https://docs.bsky.app/blog/jetstream)) | Open protocol | Low-medium |
 | Short-seller reports | Firms' own sites | Personal reading | Medium as a risk flag. Hindenburg closed in January 2025 |
 | Deals and licensing | 8-K item 1.01 and press releases | Open | High. Closed deal databases are expensive |
+| Licensing from China (a dominant deal theme in 2025-2026) | US company filings and press releases; Hong Kong exchange filings of the Chinese partner ([HKEXnews](https://www.hkexnews.hk/), access not verified); trade press | Open | Medium: have an agent tag deals with a Chinese licensor |
 
 | Macro and policy source | Access | Value |
 |---|---|---|
@@ -354,7 +377,8 @@ and it can be had from open sources. Ranked by value for effort.
 
 ### 9.2 Wording changes between consecutive filings (medium-high)
 - Cohen, Malloy and Nguyen ("Lazy Prices", [Journal of Finance 2020](https://doi.org/10.1111/jofi.12885)): companies that
-  change their report language underperform, the market does not react on the filing day, and changes in risk factors are
+  change their report language go on to do worse than those that do not (figure in section 5), the market does not react on
+  the filing day, and changes in risk factors are
   among the most informative.
 - For biotech: a new or removed going-concern paragraph; the runway sentence shifting ("into Q2 2027" becomes "into Q4 2026");
   a new risk factor naming a manufacturer; softer wording about an FDA meeting; a dropped guidance date.
@@ -370,7 +394,8 @@ What to extract from exhibits and footnotes:
   ([report](https://www.marketscreener.com/quote/stock/BETTER-THERAPEUTICS-INC-128898694/news/Better-Therapeutics-Inc-Receives-Notice-of-Default-from-Hercules-Capital-Inc-46320519), secondary);
 - warrants and their exercise prices, at-the-market usage, lock-up expiry dates, resale registrations after private placements;
 - the "baby shelf" limit: a company with under $75M of freely traded shares may sell at most a third of that per year
-  ([explanation](https://cooleypubco.com/?p=7132)). Mostly below our size floor, but fallen companies end up here.
+  ([explanation](https://cooleypubco.com/?p=7132)). Mostly below our size floor, but fallen companies end up here. A June 2026
+  proposal would remove the limit ([summary](https://securities-law-blog.com/2026/06/10/sec-proposes-transformative-rule-changes-to-the-registered-offering-process-part-2/), proposal only).
 No systematic study was found. Agents are well suited to it.
 
 ### 9.4 Programmes that disappear quietly (medium-high)
@@ -390,9 +415,9 @@ frameworks do not link companies by mechanism. Build a "class-mates" list per co
 searches) and route every such event to the agents of all class-mates.
 
 ### 9.6 Human-genetics support for the target (high as background, not as timing)
-Drugs whose target is supported by human genetic evidence succeed about twice as often
-([Nelson et al. 2015](https://doi.org/10.1038/ng.3314)); a 2024 update finds 2.6 times
-([Minikel et al. 2024](https://doi.org/10.1038/s41586-024-07316-0) **[checked: link resolves]**). Available per target from
+An earlier study estimated that choosing targets with human genetic support could double the success rate
+([Nelson et al. 2015](https://doi.org/10.1038/ng.3314)); a 2024 update measured 2.6 times higher success
+([Minikel et al. 2024](https://doi.org/10.1038/s41586-024-07316-0) **[link checked]**). Available per target from
 [Open Targets](https://platform.opentargets.org/). One extra input for the success estimate in every thesis.
 
 ### 9.7 Smaller items worth having
@@ -447,6 +472,8 @@ Mostly noise for this fund. The few with some merit:
 | Layoff notices (WARN) | State sites; [open scraper](https://warn-scraper.readthedocs.io/) | Low-medium; usually also in a filing |
 | Court dockets (CourtListener) | Free token now required **[tested]**; low free limits | Low-medium |
 | Wikipedia page views | Open; asks for a contact in the request | Low |
+| Activity of leading physicians ("KOLs"): payments from companies | CMS Open Payments, yearly public data **[unverified access details]** | Low: a year late; case library at most |
+| Activity of leading physicians: conference speakers, publications | Conference programmes; Europe PMC | Low-medium, manual |
 | Google Trends | Official API is invitation-only; scraping is unreliable | Skip |
 | Web traffic, prescriptions, import records, LinkedIn, Glassdoor | Closed or scraping forbidden | Skip |
 
@@ -572,6 +599,9 @@ This needs the owner's go-ahead, because it is the first code in the project and
 9. **Registry-edit signals and the other thin-evidence streams**: make them formal hypotheses in the spec, with the measure
    fixed in advance.
 10. **Social media**: accept that it is out of reach for free.
+11. **Old versions of trial records for the historical study**: the registry website shows them, the open API does not, and
+    the internal route used by some open tools refused scripts on test day. Use that route anyway, look records up by hand,
+    or sign up for AACT's dated snapshots.
 
 ## 16. Not verified
 - Terms of use of ClinicalTrials.gov, AACT, SSGA (XBI file), Interactive Brokers' borrow file, Bluesky, Europe PMC and the

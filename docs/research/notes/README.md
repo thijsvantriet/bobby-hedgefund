@@ -2,7 +2,7 @@
 
 Unedited working notes of the seven research agents (Opus) behind the reports one folder up. They hold more detail
 (per-source tables, full case timelines, lists of unverified points) than the reports. They were not re-checked line by line:
-where a note and a report disagree, the report is the checked version. References like "C §4" point to these files.
+where a note and a report disagree, the report is the later and reviewed text, but it was not re-verified at the source either unless it says so. References like "C §4" point to these files.
 
 | File | Topic |
 |---|---|

@@ -26,18 +26,19 @@ Everything below is a proposal for the spec interview. Nothing is decided and no
 7. **The hardest practical job is linking the data**: knowing that a trial sponsor name, a stock ticker, a drug code and a
    paper all belong to the same company. No open dataset does this.
 8. **Looking back at 14 past cases: the warning signs were mostly not missed.** They were public and moved the price the
-   day they appeared. Where investors went wrong was in believing the rescue afterwards (a failed trial "re-analysed" into a
-   success). A few patterns did come before failures and not before successes: a missed main goal dressed up with subgroup
-   analyses, integrity problems around the founding science, a troubled manufacturing site, and an effect that shrinks as
-   more patients are reported. Several famous warning signs (short-seller reports, cancelled FDA meetings, a partner
-   walking away) appeared just as often before good outcomes. Fourteen hand-picked cases prove nothing; they give the
-   proper historical study its hypotheses.
+   day they appeared. Where investors went wrong, if anywhere, was in believing the rescue afterwards (a failed trial
+   "re-analysed" into a success). A few patterns came before failures and not before successes: a missed main goal dressed
+   up with subgroup analyses, integrity problems around the founding science, a troubled manufacturing site, and an effect
+   that shrinks as more patients are reported. Several famous warning signs did not separate good from bad outcomes:
+   an extended FDA review and heavy short-selling also came before successes, and a cancelled FDA meeting was cheered by
+   the market two months before a rejection. Fourteen hand-picked cases prove nothing; they give the proper historical
+   study its hypotheses.
 9. **Much is closed.** No free price source is fully clean; X, Reddit and StockTwits need payment or approval; ready-made FDA
    calendars and call transcripts are paid products with restrictive terms.
 
 ## Recommended stack (proposal)
 
-| Part | Choice | Open? |
+| Part | Proposed | Open? |
 |---|---|---|
 | Language and environment | Python with uv, Docker Compose, systemd timers | Open |
 | Agent team | Our own small orchestrator on the Anthropic software kit; team structure copied from TradingAgents | Our code; Claude itself is closed and paid |
@@ -102,15 +103,29 @@ research papers and gave a data licence that belongs to the paper. Details in [O
 IDEA.md itself was left unchanged.
 
 ## How this was done, and assumptions made while you slept
-- Seven research agents (Opus), each on one narrow topic. Their raw notes are in [notes/](notes/). I re-checked the claims that carry a recommendation against the
-  original source and repeated the key test calls myself.
+- Seven research agents (Opus), each on one narrow topic; their raw notes are in [notes/](notes/). A reviewer agent (Opus)
+  then compared the reports with the notes, and its findings were fixed.
+- What I re-checked myself: the licences, activity and quoted code behaviour of the recommended repositories, and the key
+  test calls. What I did not: most figures from papers and all case dates, which rest on the agents' linked sources.
 - Beyond the brief, as you asked: a section on overlooked streams, a forensic look at past cases, the point-in-time question
   for every source, the linking problem, and a sceptical reading of the evidence.
 - Sources that require an e-mail address in the request (SEC, PubMed and others) were **not** tested. Only anonymous public
-  services got a tiny test call.
+  services got a tiny test call. One exception by mistake: an agent sent a single anonymous request to Wikipedia's
+  page-view service before learning that its policy asks for a contact.
 - No decision record was written: these reports feed decisions, they are not decisions.
 - Nothing was added to the Home TODO list. Proposed items: the four "needed before any code runs" questions above.
 - Events dated after mid-2026 (policy, FDA leadership) come from the linked sources only and are marked for confirmation.
+
+## Words used
+- **Token**: the unit in which Claude's usage is billed, roughly three-quarters of a word.
+- **Orchestrator**: the program that hands work to the agents in the right order and collects their answers.
+- **SQLite, DuckDB**: simple databases that live in one file.
+- **edgartools, empyrical-reloaded, QuantStats**: open-source Python libraries, for reading SEC filings and for performance statistics.
+- **Event report (8-K)**: the filing a US company must make when something important happens.
+- **Large-holder filing (13D/13G)**: required when an investor passes 5% of a company's shares.
+- **Short interest**: how many shares investors have sold short, betting on a fall. **Borrow fee**: what it costs to do so.
+- **Free tier**: the no-cost level of a commercial service, with limits.
+- **XBI, IBB, ARKG**: US biotech funds used as benchmarks. **IWDA**: the world index fund, the "do nothing" baseline.
 
 ## What is uncertain
 - Terms of use of several sources could not be read and are marked "unverified" in the reports.

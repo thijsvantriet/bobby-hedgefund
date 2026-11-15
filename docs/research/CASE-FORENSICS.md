@@ -16,7 +16,8 @@ planned in the README. Full case timelines with every dated signal: [notes/G-for
 ## 1. The answer in short
 
 1. **Most "missed" signals were not missed.** They were public, argued over, and moved the price on the day they appeared.
-   Where the market went wrong, it was at the *second* step: believing the rescue. Cassava's positive "re-analysis" of a failed
+   Where the market went wrong, if anywhere, it was at the *second* step: believing the rescue. (Pricing a long shot that
+   then fails is not by itself a mistake.) Cassava's positive "re-analysis" of a failed
    trial; Applied Therapeutics' corrected data that happened to turn significant; a 70% rally when FDA cancelled Applied's
    advisory meeting, two months before the rejection.
 2. **A few patterns came before bad outcomes and were absent before good ones:**
@@ -25,12 +26,14 @@ planned in the README. Full case timelines with every dated signal: [notes/G-for
    - integrity problems with the founder or the founding science;
    - a named manufacturing site with FDA findings shortly before a decision date;
    - a treatment effect that shrinks each time more patients are reported.
-3. **Several famous "tells" fail the false-alarm test:** short-seller reports, high short interest, a cancelled advisory
-   meeting, an extended review, a partner handing back rights, insider sales. Each appeared before good outcomes too.
+3. **Several famous "tells" did not separate bad from good outcomes in this set.** An extended review, the late
+   "deficiencies" notice, high short interest and a competitor's failure each also came before a good outcome. A cancelled
+   advisory meeting came before two rejections, but the market read it as good news. A partner handing back rights came
+   before a success. Short-seller reports were right twice, years early, and wrong at least once.
 4. **Published research supports background odds, not timing signals.** Phase and disease base rates, genetic support, a
    positive earlier trial and the sponsor's track record have real evidence. Almost every timing signal is practitioner lore.
-5. **The best single question to split a regulatory dispute:** did the pivotal trial meet its pre-set main goal? If yes
-   (Reata, Axsome), friction with FDA mostly meant delay. If no, or if the goal itself was doubted (Applied, Tricida), it
+5. **A candidate question to split a regulatory dispute:** did the pivotal trial meet its pre-set main goal? If yes
+   (Reata; Axsome too, though its trial history was written from memory and is unverified), friction with FDA mostly meant delay. If no, or if the goal itself was doubted (Applied, Tricida), it
    mostly meant failure.
 
 ## 2. What published research says
@@ -46,7 +49,7 @@ Strength: **R** replicated, **S** single peer-reviewed study, **P** practitioner
 | No phase 2 at all | 42% of failed cancer phase 3 trials had none ([Addeo et al., JAMA Netw Open 2019](https://jamanetwork.com/journals/jamanetworkopen/fullarticle/2733181)) | S, no controls | Medium |
 | Sponsor track record, enrolment speed | Among top predictors in a machine-learning study ([Lo, Siah, Wong 2019](https://cancerx.mit.edu/machine-learning-with-statistical-imputation-for-predicting-drug-approvals), figures via summary) | S | Medium |
 | "Small company, cancer phase 3, always fails" (Feuerstein-Ratain rule) | Authors' own tally; the journal source could not be found; no independent replication | L / P | Read as "the market already prices low odds" |
-| Spin in trial reports | Common: in 58% of reports with a non-significant main result ([Boutron et al., JAMA 2010](https://www.globalfamilydoctor.com/Resources/A-Ztopiclisting/JournalWatch/Howmuchspinistherewithnonsignificantresults63.aspx)) | R that spin is common; N that it predicts returns | Supports checking result quality |
+| Spin in trial reports | Common: in 58% of abstract conclusions of trials with a non-significant main result ([Boutron et al., JAMA 2010](https://www.globalfamilydoctor.com/Resources/A-Ztopiclisting/JournalWatch/Howmuchspinistherewithnonsignificantresults63.aspx)) | R that spin is common; N that it predicts returns | Supports checking result quality |
 | "Good news travels fast" (late results are bad) | **Not supported**: late readouts met their goal 53% of the time against 55-56% for on-time or early ([AppliedXL 2026](https://appliedxl.com/research/readout-gap), vendor, 681 trials) | P, against | Drop as a signal |
 | Results released outside market hours | Fail more often, 27% against 17% (same report) | P | None: no lead time |
 | FDA follows its advisory committee | About 80-90% of the time ([JAMA Health Forum](https://jamanetwork.com/journals/jama-health-forum/fullarticle/2807050)) | R | Fewer events now that meetings are rare |
@@ -57,15 +60,16 @@ Strength: **R** replicated, **S** single peer-reviewed study, **P** practitioner
 
 Selection rule, fixed before reading them: small and mid-size US-listed companies, 2018-2026; at least six failures of
 different kinds, three winners, and three **false alarms** where loud warnings were followed by a good outcome; mixed disease
-areas and drug types; dropped if key dates could not be sourced.
+areas and drug types; dropped if key dates could not be sourced. Dropped after checking: Summit (moves hard to tie to one
+event, and too large), bluebird bio (dates not verified), Sarepta, Corcept and Frequency Therapeutics (used only in passing).
 
 ### Failures
 
 | Company, drug | Price event | What was public beforehand | Lead time | Was it missed? |
 |---|---|---|---|---|
-| **Cassava**, simufilam (Alzheimer's) | 25 Nov 2024: phase 3 failed, shares -85% ([BioSpace](https://www.biospace.com/drug-development/cassavas-shares-plunge-as-alzheimers-drug-fails-phase-3)) | 2020: phase 2 first failed, then a positive re-analysis. Aug 2021: petition alleging manipulated data, -31% ([Fool](https://www.fool.com/investing/2021/08/27/why-cassava-sciences-is-plunging-again-today)). June 2024: key academic collaborator indicted ([STAT](https://www.statnews.com/2024/06/28/cassava-sciences-indictment-alzheimers-hoau-yan-wang/)). Sept 2024: regulator's settlement said the reported result left out about 40% of patients ([BioSpace](https://www.biospace.com/policy/cassava-agrees-to-pay-40m-fine-to-resolve-sec-probe-as-company-hit-with-new-lawsuit)) | 2 months to 4.5 years | No. One of the most public disputes in biotech; still valued around $1 billion days before |
+| **Cassava**, simufilam (Alzheimer's) | 25 Nov 2024: phase 3 failed, shares -85% ([BioSpace](https://www.biospace.com/drug-development/cassavas-shares-plunge-as-alzheimers-drug-fails-phase-3)) | 2020: phase 2 first failed, then a positive re-analysis. Aug 2021: petition alleging manipulated data, -31% ([Fool](https://www.fool.com/investing/2021/08/27/why-cassava-sciences-is-plunging-again-today)). June 2024: key academic collaborator indicted ([STAT](https://www.statnews.com/2024/06/28/cassava-sciences-indictment-alzheimers-hoau-yan-wang/)). Sept 2024: regulator's settlement said the reported result left out about 40% of patients ([BioSpace](https://www.biospace.com/policy/cassava-agrees-to-pay-40m-fine-to-resolve-sec-probe-as-company-hit-with-new-lawsuit)) | 2 months to 4.5 years | No. One of the most public disputes in biotech; still valued around $1 billion days before (share count unverified) |
 | **Athira**, fosgonimeton (Alzheimer's) | Sept 2024: phase 2/3 failed, -72% ([Clinical Trials Arena](https://www.clinicaltrialsarena.com/news/athiras-stock-topples-after-alzheimers-drug-flops-in-phase-ii-iii-trial/)) | June 2021: founder on leave over altered images in her research, -39% ([GeekWire](https://www.geekwire.com/2021/athira-pharma-ceo-placed-leave-shares-plummet/)). June 2022: phase 2 missed; company pointed to a subgroup ([BioSpace](https://www.biospace.com/athira-puts-positive-spin-on-mid-stage-alzheimer-s-trial-flop)) | 2 to 3 years | No; each step caused a large fall |
-| **Applied Therapeutics**, govorestat (rare metabolic disease) | 27 Nov 2024: FDA rejection, -76%; warning letter days later ([BioSpace](https://www.biospace.com/fda/applied-therapeutics-crashes-after-fda-rejection-of-rare-disease-drug)) | Apr 2023: pivotal trial missed its main goal. Mar 2024: review extended. Aug 2024: a recalculation made the result significant; the chief executive sold shares days later. Sept 2024: advisory meeting cancelled, **shares +70%** ([Fierce](https://www.fiercebiotech.com/biotech/fda-scraps-adcomm-applieds-rare-disease-drug-ahead-november-decision)). Timeline from a [court complaint](https://kaplanfox.com/wp-content/uploads/2024/12/Applied-Therapeutics-Kaplan-Fox-FIling.pdf) (allegations unproven) | 2 to 19 months | **Partly.** The public facts pointed down while the market rallied. The inspection findings were private |
+| **Applied Therapeutics**, govorestat (rare metabolic disease) | 27 Nov 2024: FDA rejection, -76%; warning letter days later ([BioSpace](https://www.biospace.com/fda/applied-therapeutics-crashes-after-fda-rejection-of-rare-disease-drug)) | Apr 2023: pivotal trial missed its main goal. Mar 2024: review extended. Aug 2024: a recalculation made the result significant; the chief executive sold shares days later (whether under a pre-set selling plan is unverified). Sept 2024: advisory meeting cancelled, **shares +70%** ([Fierce](https://www.fiercebiotech.com/biotech/fda-scraps-adcomm-applieds-rare-disease-drug-ahead-november-decision)). Timeline from a [court complaint](https://kaplanfox.com/wp-content/uploads/2024/12/Applied-Therapeutics-Kaplan-Fox-FIling.pdf) (allegations unproven) | 2 to 19 months | **Partly.** The public facts pointed down while the market rallied. The inspection findings were private |
 | **Scholar Rock**, apitegromab (spinal muscular atrophy) | 23 Sept 2025: rejection for manufacturing only, -13% ([pharmaphorum](https://pharmaphorum.com/news/manufacturing-issues-block-fda-nod-scholar-rock-sma-drug)) | Summer 2025: Regeneron blamed the same plant for its own rejection. 6 Aug 2025: Scholar Rock disclosed FDA findings at its manufacturers | About 7 weeks | No; partly priced in two steps |
 | **Tricida**, veverimer (kidney disease) | July-Aug 2020: FDA flags deficiencies, then rejects, -30 to -40% each ([Fierce](https://www.fiercebiotech.com/biotech/tricida-sinks-as-fda-rejection-raises-prospect-new-trial)); Oct 2022: outcome trial failed, -94% ([Fierce](https://www.fiercebiotech.com/biotech/tricidas-shares-plunge-phase-3-fail-seals-fate-fda-rejected-kidney-drug)) | Approval sought on one short trial with a new stand-in measure for benefit | Over a year | No; the rejection was widely expected |
 | **Nektar**, bempegaldesleukin (melanoma) | 14 Mar 2022: phase 3 failed, about -60% ([Fierce](https://www.fiercebiotech.com/biotech/bms-nektar-opdivo-combo-therapy-fails-phase-3-upset-once-largest-licensing-deal-biotech)) | June 2018: response rate fell from 64% to 50% as more patients were reported, -42% ([BioCentury](https://www.biocentury.com/article/295885/nektar-plummets-on-lower-than-expected-response-rates)). Oct 2018: short-seller report | 3.5 years | No; the shares had lost most of their value before |
@@ -76,47 +80,48 @@ areas and drug types; dropped if key dates could not be sourced.
 
 | Company, drug | Price event | What was public beforehand | Was it missed? |
 |---|---|---|---|
-| **Karuna**, KarXT (schizophrenia) | 18 Nov 2019: phase 2 success, shares up several-fold ([BioPharma Dive](https://www.biopharmadive.com/news/karuna-a-ha-moment-stock-swing-antipsychotic-drug/568094/)); Dec 2023: bought by BMS for about $14 billion ([BioPharma Dive](https://www.biopharmadive.com/news/bristol-myers-karuna-acquire-schizophrenia-kar-xt/703313/)) | A 2008 controlled pilot trial had shown the active ingredient worked in schizophrenia ([PubMed](https://pubmed.ncbi.nlm.nih.gov/18593778/)); it had been shelved for side effects, which Karuna's second ingredient was designed to block | **Plausibly yes**: about $400 million for a mechanism with prior human evidence and a specific fix |
+| **Karuna**, KarXT (schizophrenia) | 18 Nov 2019: phase 2 success, shares up several-fold ([BioPharma Dive](https://www.biopharmadive.com/news/karuna-a-ha-moment-stock-swing-antipsychotic-drug/568094/)); Dec 2023: bought by BMS for about $14 billion ([BioPharma Dive](https://www.biopharmadive.com/news/bristol-myers-karuna-acquire-schizophrenia-kar-xt/703313/)) | A 2008 controlled pilot trial had shown the active ingredient worked in schizophrenia ([PubMed](https://pubmed.ncbi.nlm.nih.gov/18593778/)); it had been shelved for side effects, which Karuna's second ingredient was designed to block | Perhaps: about $400 million for a mechanism with prior human evidence and a specific fix. But the pilot had 20 patients, and placebo response in psychiatry trials varies a lot |
 | **Madrigal**, resmetirom (fatty liver disease) | 19 Dec 2022: phase 3 success, +200% or more ([MarketBeat](https://www.marketbeat.com/originals/madrigal-pharmaceuticals-stock-is-up-200-in-one-day-heres-why)) | May 2018: positive controlled phase 2 on the same measure as the phase 3 ([BioPharma Dive](https://www.biopharmadive.com/news/madrigal-scores-in-mid-stage-nash-study/524704/)). Against it: a competitor's rejection in the same disease (2020) and over 25% of shares sold short | Debated and priced as a long shot |
-| **Cidara**, CD388 (flu prevention) | 23 June 2025: phase 2b success, +114% ([BioWorld](https://www.bioworld.com/articles/721465-cidara-navigates-toward-new-flu-option-with-phase-iib-data)); Nov 2025: bought by Merck for about $9.2 billion ([BioPharma Dive](https://www.biopharmadive.com/news/merck-cidara-acquire-flu-antiviral-drug/805513/)) | Sept 2023: partner J&J handed the drug back. Apr 2024: specialist funds led a $240 million financing to buy the rights ([BioSpace](https://www.biospace.com/cidara-therapeutics-reacquires-global-development-and-commercial-rights-to-cd388-and-announces-private-placement-financing-of-240-million)) | Plausibly yes for the first leg |
+| **Cidara**, CD388 (flu prevention) | 23 June 2025: phase 2b success, +114% ([BioWorld](https://www.bioworld.com/articles/721465-cidara-navigates-toward-new-flu-option-with-phase-iib-data)); Nov 2025: bought by Merck for about $9.2 billion ([BioPharma Dive](https://www.biopharmadive.com/news/merck-cidara-acquire-flu-antiviral-drug/805513/)) | Sept 2023: partner J&J handed the drug back. Apr 2024: specialist funds led a $240 million financing to buy the rights ([BioSpace](https://www.biospace.com/cidara-therapeutics-reacquires-global-development-and-commercial-rights-to-cd388-and-announces-private-placement-financing-of-240-million)) | Perhaps, for the first leg |
 
 ### False alarms
 
 | Company, drug | The loud warnings | What happened |
 |---|---|---|
-| **Axsome**, Auvelity (depression) | Aug 2021: the same "deficiencies" notice from FDA that Tricida got, -46% ([Fierce](https://www.fiercebiotech.com/biotech/fda-finds-fault-axsome-s-depression-filing-sinking-stock)). June 2024: short-seller report | Approved a year late, Aug 2022 ([BioCentury](https://www.biocentury.com/article/644864/aug-19-quick-takes-at-long-last-fda-approves-axsome-s-antidepressant)). Analysts dismissed the short report |
+| **Axsome**, Auvelity (depression) | Aug 2021: the same "deficiencies" notice from FDA that Tricida got, -46% ([Fierce](https://www.fiercebiotech.com/biotech/fda-finds-fault-axsome-s-depression-filing-sinking-stock)) | Approved a year late, Aug 2022 ([BioCentury](https://www.biocentury.com/article/644864/aug-19-quick-takes-at-long-last-fda-approves-axsome-s-antidepressant)). A short-seller report followed in June 2024, after approval; what happened to the shares later was not checked |
 | **Reata**, Skyclarys (Friedreich's ataxia) | Aug 2020: FDA said one trial would not be enough, -33% ([BioSpace](https://www.biospace.com/reata-shares-plummet-over-a-delay-in-seeking-regulatory-approval-for-friedreich-s-ataxia-treatment)). Supporting analyses rejected; review extended; no advisory meeting | Approved Feb 2023; bought by Biogen for about $7.3 billion in July 2023 ([BioSpace](https://www.biospace.com/biogen-boosts-neuro-pipeline-with-7-3b-reata-buy-on-the-heels-of-layoffs)) |
-| **Capricor**, deramiocel (Duchenne heart disease) | June 2025: advisory meeting cancelled. July 2025: rejection, -39% ([BioSpace](https://www.biospace.com/fda/capricor-plunges-on-fda-rejection-of-dmd-cell-therapy)). A well-known short seller declared a position | 3 Dec 2025: phase 3 success, about +300% ([Fierce](https://www.fiercebiotech.com/biotech/capricor-sets-2nd-approval-attempt-duchenne-cell-therapy-phase-3-win)). FDA's later decision not found |
+| **Capricor**, deramiocel (Duchenne heart disease) | June 2025: advisory meeting cancelled. July 2025: rejection, -39% ([BioSpace](https://www.biospace.com/fda/capricor-plunges-on-fda-rejection-of-dmd-cell-therapy)). A well-known short seller declared a position (date unverified) | 3 Dec 2025: phase 3 success, about +300% ([Fierce](https://www.fiercebiotech.com/biotech/capricor-sets-2nd-approval-attempt-duchenne-cell-therapy-phase-3-win)). FDA's later decision not found |
 
 **Two pairs worth remembering**
 - *Tricida and Axsome* got the identical FDA notice. Tricida had one trial on a stand-in measure; Axsome had controlled trials
-  on a clinical measure. One collapsed, one was approved.
+  on a clinical measure (from the research agent's memory, unverified). One collapsed, one was approved.
 - *Applied and Capricor* both had an advisory meeting cancelled before a rejection. For Applied the market cheered it. For
   Capricor the rejection concerned old evidence, and a new controlled trial then succeeded. Bad regulatory news and an
   upcoming trial result are separate bets.
 
 ## 4. Signals against outcomes
 
-This table makes the hindsight problem visible: a signal only counts if it is rare before good outcomes.
+This table makes the hindsight problem visible: a signal only counts if it is rare before good outcomes. **Caution:** the
+positive signals at the bottom were looked for in the winners only, not in the failures, so their ratings are the weakest here.
 
 | Signal | Before failures | Before successes or false alarms | Lead time | Specificity (judgement) |
 |---|---|---|---|---|
 | Earlier trial missed its main goal; hopes rest on subgroup, after-the-fact or corrected analysis | Cassava, Athira, Applied, Amylyx | None in this set | 1.5 to 4.5 years | **High**, small sample |
-| Data got *better* after a correction or re-analysis | Cassava, Applied | None | 3 months to 4.5 years | **High**, two cases |
+| Data got *better* after a correction or re-analysis | Cassava, Applied | None | 3.5 months to 4.5 years | **High**, two cases |
 | Integrity problem with founder or founding papers | Cassava, Athira | None | 1 to 3 years | Medium-high, rare |
 | Effect shrinks as more patients are reported | Nektar | None | 1 to 4 years | Medium-high |
 | Named manufacturing site with FDA findings before a decision | Scholar Rock, Regeneron | None | About 7 weeks | **High for delay**, low for permanent failure |
 | Approval sought on one trial, no control group, or a stand-in measure | Tricida, Replimune, Amylyx, Capricor | Reata approved; Amylyx approved at first | 1 to 3 years | Medium; depends on FDA's current stance |
 | FDA "deficiencies" notice late in review | Tricida | Axsome approved a year later | 5 to 6 weeks | High for "not on time", **low for "never"** |
 | Review extended | Applied | Reata | 3 to 8 months | **Low** |
-| Advisory meeting cancelled | Applied, Capricor | Market read it as good news | 1 to 2.5 months | **Low, and misread** |
-| Short-seller report or public short | Nektar, Cassava (years later) | Axsome, Capricor | Days to years | **Low** |
+| Advisory meeting cancelled | Applied, Capricor | No good outcome in this set; but the market read it as good news | 1 to 2.5 months | Unclear from two cases; **misread by the market** |
+| Short-seller report or public short | Nektar, Cassava (years later) | Capricor (date unverified). Axsome's came after approval and is not counted | Days to years | **Low** |
 | High short interest before a readout | - | Madrigal, then +200% | Days | **Low** |
 | Competitor fails in the same disease | - | Madrigal | 2.5 years | Low unless same mechanism |
 | Partner hands back rights | - | Cidara | 1.7 years | **Low** alone |
-| Insider sale before a decision | Applied | Not checked across cases | 3.5 months | Low: very common |
+| Insider sale before a decision | Applied | **Not checked** in the other cases | 3.5 months | Unknown here; such sales are very common |
 | Specialist funds lead a financing | - | Cidara | 14 months | Medium; no study |
-| Earlier controlled human evidence on the same measure | - | Karuna, Madrigal | 1.5 to 11 years | Medium-high, as a positive |
+| Earlier controlled human evidence on the same measure | **Not checked** in the failures | Karuna, Madrigal | 1.5 to 11 years | Promising, untested |
 
 ## 5. What looks useful, and what does not
 
@@ -132,10 +137,13 @@ This table makes the hindsight problem visible: a signal only counts if it is ra
 9. Who finances, and when: specialist-led financing around a strategic change, against a distressed raise right after a miss.
 10. Background odds: phase, disease, genetics, sponsor record.
 
-**Good stories that fail the false-alarm test:** cancelled advisory meeting; extended review; the late "deficiencies" notice
-as a final verdict; short-seller reports; high short interest; competitor failure with a different mechanism; partner
-handback; insider sales; executive departures; late results; release timing; price run-ups; company statements that "FDA
-raised no concerns" (said by Replimune after its rejection; a published letter later showed FDA had warned another company
+**Good stories that did not hold up here:**
+- *Also seen before good outcomes:* extended review; the late "deficiencies" notice as a final verdict; high short interest;
+  competitor failure with a different mechanism; partner handback; short-seller reports.
+- *Misread by the market:* a cancelled advisory meeting.
+- *No support in the research:* late results; release timing (no lead time); price run-ups (real on average, unusable).
+- *Not checked or no evidence either way:* insider sales; executive departures.
+- *Worthless:* company statements that "FDA raised no concerns" (said by Replimune after its rejection; a published letter later showed FDA had warned another company
 early, [BioSpace](https://www.biospace.com/fda/fda-warned-corcept-of-significant-review-issues-for-rejected-drug-in-early-meetings)).
 
 **The uncomfortable part.** Most of these signals were priced within a day of becoming public. If there is an edge, it is in
@@ -168,8 +176,14 @@ options data; release timing; completion-date slips in the registry (keep the da
 - Item 11 adds: watch other companies' disclosures about the same manufacturing site.
 - Item 8: downgrade insider sales; upgrade who led the last financing and at what moment.
 - Item 9: keep founder and integrity issues; log executive departures without scoring them.
+- Item 13: extend from retractions to critiques on PubPeer, university investigations, regulator or court actions, and
+  petitions from short sellers (a reason to read the data, not a verdict; note the conflict of interest).
+- Item 14 adds: state which signals are present and, once our own case library exists, how often that pattern failed.
 - New: keep separate theses for "will it be approved" and "will the confirmatory trial succeed" (Amylyx).
 - New: has this signal already moved the price?
+
+**No case names in the agents' template.** The checklist goes to the agents as questions only. Company names and examples
+from this report stay out of it, because the models know how those cases ended.
 
 ## 7. How the proper historical study should be set up
 
@@ -192,7 +206,7 @@ The README plans event studies and a case library. To avoid the hindsight built 
 10. **Use the results only as starting odds and checklist weights**, never to score the agents.
 
 This study needs SEC access (a contact e-mail) and the registry's version history, which the open API does not provide. Both
-are owner decisions listed in [DATA-SOURCES.md](DATA-SOURCES.md) section 15.
+are owner decisions listed in [DATA-SOURCES.md](DATA-SOURCES.md) section 15 (points 1 and 11).
 
 ## 8. Limits
 - Hand-picked cases, chosen with hindsight.

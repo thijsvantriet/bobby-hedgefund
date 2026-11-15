@@ -10,7 +10,9 @@ Everything here is input for the spec session. Nothing is decided.
   No tag = reported by a research agent with a link, not re-checked by me. **[unverified]** = no primary source found.
 - "Open source" means an OSI-approved licence. "Source-available" means you can read the code but the licence restricts use.
   "Closed" means proprietary.
-- No code was cloned or run. Nothing was installed.
+- **[checked]** covers repository facts (licence file, last commit, release, the quoted code behaviour). It does not mean I
+  re-read every paper.
+- No code was cloned or run. Nothing was installed. This is research for a paper-money experiment, not investment advice.
 
 ## 1. The short version
 
@@ -19,7 +21,7 @@ Everything here is input for the spec session. Nothing is decided.
    one rewrites its decision log, the other depends on a paid data service. No open biotech-specific agent fund was found.
 2. **The evidence that LLM agents can beat the market is weak.** No clean forward study shows it after trading costs.
    This is not a reason to stop (the project is an experiment), but it changes what we should measure: section 3.
-3. **Three corrections to our own notes in [IDEA.md](../IDEA.md)**: section 2.
+3. **Four corrections to our own notes in [IDEA.md](../IDEA.md)**: section 2.
 4. **None of the trading/backtesting engines is worth installing.** A small ledger of our own is simpler and more transparent.
 5. **The hard, unglamorous part is linking the data** (stock ticker ↔ SEC company number ↔ trial sponsor name ↔ drug code ↔
    trial number). No open dataset does this. It is the piece we really have to build.
@@ -46,14 +48,14 @@ falling markets.
 
 | Study | Setup | Result | Limits |
 |---|---|---|---|
-| FINSABER ([arXiv 2505.07078](https://arxiv.org/abs/2505.07078), KDD 2026) | 20-year backtests of two published agents on a survivorship-free S&P 500 | No significant outperformance; buy-and-hold beats one agent clearly. Agents too cautious in rising markets, too aggressive in falling ones | Backtest, so models may remember |
+| FINSABER ([arXiv 2505.07078](https://arxiv.org/abs/2505.07078), KDD 2026) | 20-year backtests of two published agents on a survivorship-free S&P 500 | No significant outperformance; buy-and-hold beats both tested agents significantly. Agents too cautious in rising markets, too aggressive in falling ones | Backtest, so models may remember |
 | Profit Mirage ([arXiv 2510.07920](https://arxiv.org/abs/2510.07920)) | Five published frameworks, same test before and after the model's cutoff | Returns fall 50-72% after the cutoff. Models recall "did the market rise on day X" with 85-93% accuracy | Preprint |
 | StockBench ([arXiv 2510.02209](https://arxiv.org/abs/2510.02209)) | 20 Dow stocks, 4 months after cutoff | -2.8% to +2.5% vs +0.4% buy-and-hold | 3 runs, no costs |
 | DeepFund ([arXiv 2505.11065](https://arxiv.org/abs/2505.11065), NeurIPS 2025) | Live, 5 stocks | Most models lost money | Tiny universe |
-| LiveTradeBench ([arXiv 2511.03628](https://arxiv.org/abs/2511.03628)) | Live, 21 models, 10 weeks | General model quality does not predict trading results (correlation ≈ 0) | No costs, no baseline |
+| LiveTradeBench ([arXiv 2511.03628](https://arxiv.org/abs/2511.03628)) | Live, 21 models, 10 weeks | General model quality does not predict trading results (correlation about 0.05 for stocks, -0.38 on prediction markets) | No costs, no baseline |
 | AI-Trader ([arXiv 2512.10971](https://arxiv.org/abs/2512.10971)) | Live, 6 models, ~5 weeks | Mixed; one model adopted a single news story's thesis without checking | No costs |
 | Nof1 Alpha Arena | Real money, crypto then US stocks | Wildly mixed | Closed; press coverage only **[unverified]** |
-| CT Open ([arXiv 2604.16742](https://arxiv.org/abs/2604.16742), COLM 2026) | Predicting trial outcomes, live windows | Claude Opus 4.5 scores 70.2 on a window it may have seen and 53.7 on a clean one. A plain statistical model stays near 66 on both | The only biotech-specific live benchmark |
+| CT Open ([arXiv 2604.16742](https://arxiv.org/abs/2604.16742), COLM 2026) | Predicting trial outcomes, live windows | Claude Opus 4.5 scores 70.2 (macro-F1, a 0-100 accuracy measure) on a window it may have seen and 53.7 on a clean one. A plain statistical model stays near 66 on both | The only biotech-specific live benchmark |
 
 **3.2 Failure modes that recur across independent studies**
 - Remembered outcomes. This is why our forward-only rule exists, and the evidence supports it strongly. It also applies to
@@ -66,8 +68,8 @@ falling markets.
 
 **3.3 Forecasting research adds two useful points.** In live forecasting tournaments the best systems now come close to expert
 human forecasters, though that claim is disputed ([FRI](https://forecastingresearch.substack.com/p/ai-models-have-likely-reached-parity),
-[Good Judgment's reply](https://goodjudgment.substack.com/p/not-so-fast)). The top entries average several runs, and gains stop
-beyond about 10 runs ([Metaculus results](https://www.lesswrong.com/posts/wZBbDqzfBjYG58CxK/futureeval-spring-results-pros-beat-bots-but-the-gap-is)).
+[Good Judgment's reply](https://goodjudgment.substack.com/p/not-so-fast)). The top entries average several runs, and combining several separate bots helped, with no further gain
+beyond about 10 bots ([Metaculus results](https://www.lesswrong.com/posts/wZBbDqzfBjYG58CxK/futureeval-spring-results-pros-beat-bots-but-the-gap-is)).
 And models still lag market prices close to an event ([Prophet Arena](https://arxiv.org/abs/2510.17638)). So the market price is
 a strong starting estimate, and claims that "we know better" should be rare and well argued.
 
@@ -93,6 +95,23 @@ distinguishable from luck, a setup would need to beat XBI by roughly 30-40 perce
 9. Token budget enforced in code with a hard stop; report results per dollar of tokens.
 10. Fix the comparison metrics and the rule for "setup X is better" in the spec before going live.
 
+**3.6 How each benchmark guards against look-ahead, and whether we could join or reuse it**
+
+| Benchmark | Guard against look-ahead | Open? | Join or reuse? |
+|---|---|---|---|
+| StockBench | Test window lies after the models' cutoffs | Code [Apache-2.0](https://github.com/ChenYXxxx/stockbench), dormant | Reuse its metrics; not live |
+| FINSABER | Point-in-time data, no survivorship bias; admits models may still remember | [Apache-2.0](https://github.com/waylonli/FINSABER), active | For the lesson on market regimes; never to score agents |
+| Look-Ahead-Bench, Profit Mirage | Compare the same agent before and after its cutoff | Code without licence / preprint | Evidence only |
+| DeepFund | Live data after the cutoff | [MIT](https://github.com/HKUSTDial/DeepFund) | Design reference |
+| LiveTradeBench, AI-Trader | Live; tools filtered by time | PolyForm Noncommercial / no licence file | No |
+| [Agent Market Arena](https://arxiv.org/abs/2510.11695) | Live; finds the framework matters more than the model | [MIT](https://github.com/The-FinAI/Agent_Market_Arena) | Possibly; whether submissions are open was not checked |
+| [InvestorBench](https://aclanthology.org/2025.acl-long.126/) | None: historical backtests | MIT, dormant | No |
+| [ForecastBench](https://www.forecastbench.org/) | Only questions still unresolved at forecast time | [MIT](https://github.com/forecastingresearch/forecastbench), open tournament | Possibly, as a side test of probability quality |
+| Metaculus AI benchmark | Live questions | Open tournament | Possible, off-topic |
+| [FutureX](https://arxiv.org/abs/2508.11987), Prophet Arena | Live daily questions / live events | Papers | No. FutureX: experts beat agents on most tiers **[unverified detail]** |
+| **CT Open** | Scores only trials whose results first became public inside the test window | Open submissions; data licence **[unverified]** | **Yes, as an optional side test** for the clinical analyst |
+| TOP / HINT | None: historical trials the models have seen (agent's inference) | Non-commercial agreement | Only for non-AI baselines |
+
 ## 4. Multi-agent LLM trading frameworks
 
 | Project | Licence | Stars | Last commit | Claude support | Runs forward? | Decision log | Verdict |
@@ -109,7 +128,7 @@ distinguishable from luck, a setup would need to beat XBI by roughly 30-40 perce
 | [Vibe-Trading](https://github.com/HKUDS/Vibe-Trading) | MIT | 38.3k | 2026-11-15 | Not verified | Yes | Audit log | Ignore as dependency: 3,653 commits in 6 months, China-market focus |
 | [QuantDinger](https://github.com/OpenByteInc/QuantDinger) | Apache-2.0 | 13.8k | 2026-11-15 | Not checked | Yes | Own stack | Ignore: a full trading platform |
 | [TradingAgents-CN](https://github.com/hsliuping/TradingAgents-CN) | **Part Apache-2.0, part proprietary** | 33.0k | 2026-09 | Inherited | Inherited | Inherited | Ignore: partly closed |
-| [AgenticTrading](https://github.com/Open-Finance-Lab/AgenticTrading) | OpenMDW-1.0 | 0.9k | 2026-11-05 | Not verified | Nightly leaderboard | Database | Reference for a forward leaderboard |
+| [AgenticTrading](https://github.com/Open-Finance-Lab/AgenticTrading) | OpenMDW-1.0 (not OSI-approved) | 0.9k | 2026-11-05 | Not verified | Nightly leaderboard | Database | Reference for a forward leaderboard |
 | [StockAgent](https://github.com/MingyuJ666/Stockagent), [nof0](https://github.com/wquguru/nof0), [crewAI-examples](https://github.com/crewAIInc/crewAI-examples) | No licence / archived | - | - | - | - | - | Ignore |
 
 ### TradingAgents: the role model for the team, not for the plumbing
@@ -246,6 +265,36 @@ Drug code names are extracted from annual reports by an agent and linked through
 edgartools ships its own. They are handy for interactive research. **For logged decisions, our own code should fetch the data,
 store a snapshot and hand that snapshot to the agent.** An agent that browses live cannot be audited afterwards for what it saw.
 
+### Activity and maturity of the tools named in sections 5 to 7
+GitHub figures on 2026-11-15, from the research agent ([notes/B-tools.md](notes/B-tools.md) has the full tables).
+"6-month commits" counts the default branch since mid-May 2026; 100+ means the count was capped.
+
+| Project | Stars | Last release | 6-month commits | Maturity |
+|---|---|---|---|---|
+| OpenBB | 75.4k | v5, 2026-09 | 42 | Maintained; stewardship just changed |
+| Qlib | 50.3k | v0.9.8, 2026-10 | 5 | Slowing |
+| FinRL | 17.1k | v0.3.8, 2026-03 | 46 | Academic |
+| yfinance | 25.9k | 1.8.0, 2026-11 | 100+ | Very active; breaks when Yahoo changes |
+| pandas-datareader | 3.3k | v0.11.1, 2026-06 | 41 | Revived in 2026 |
+| ArcticDB | 2.6k | v6.28.3, 2026-11 | 100+ | Mature, company-backed |
+| LEAN | 22.5k | ships via Docker | 100+ | Mature, heavy |
+| NautilusTrader | 31.6k | v1.231.0, 2026-08 | 100+ | Mature, heavy |
+| zipline-reloaded | 2.0k | 3.2.1, 2026-10 | 100+ | Maintained |
+| vectorbt | 9.9k | v1.2.1, 2026-11 | 100+ | Maintained |
+| PyBroker | 3.7k | v2.0.2, 2026-10 | 100+ | Maintained |
+| backtrader | 23.7k | none | 0 (last commit 2023-04) | Dead |
+| backtesting.py | 9.2k | 0.6.6, 2026-07 | 27 | Maintained |
+| QuantStats | 7.9k | v0.0.86, 2026-09 | 10 | Maintained, slow |
+| empyrical-reloaded | 0.1k | 0.7.2, 2026-11 | 100+ | Maintained, small community |
+| edgartools | 2.9k | v6.2.0, 2026-11-15 | 100+ | Very active, one main author |
+| sec-edgar-downloader | 0.7k | 5.1.0, 2026-02 | 0 | Stable, quiet |
+| Biopython | 5.3k | 1.88, 2026-08 | 93 | Mature |
+| pyalex | 0.4k | v0.21, 2026-02 | 0 | Quiet |
+| pytrials | 61 | v1.0.0, 2024-05 | 0 | Stale |
+| TOP / HINT | 173 | none | 0 (last commit 2025-06) | Research artefact |
+| CTO | 18 | none | 0 (last commit 2026-02) | Research artefact |
+| cyanheads ClinicalTrials.gov / PubMed servers | 101 / 168 | v2.11 / v2.12, 2026-11 | 100+ | Very active, young |
+
 ## 8. Licence traps
 
 | Looks open | Actually |
@@ -296,6 +345,7 @@ overwrite their history; the catalyst calendar; the company-drug-trial linking t
 - **Claude API** (Anthropic): closed and paid. It is the engine of the project.
 - **A price source**: every option is a closed service with personal-use terms.
 - **Yahoo via yfinance**: closed data, personal use only; cross-check at most.
+- **OpenFIGI**: the identifiers are public domain, but the lookup service is run by Bloomberg.
 - Everything else in the proposed stack is open source or official open data.
 
 **Deliberately not used:** LangChain/LangGraph, OpenBB, any backtesting engine, paid transcript or catalyst-calendar services,
