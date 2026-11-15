@@ -25,7 +25,14 @@ Everything below is a proposal for the spec interview. Nothing is decided and no
    the factory that makes a drug awaiting approval. Reading and comparing long documents is where agents are strong.
 7. **The hardest practical job is linking the data**: knowing that a trial sponsor name, a stock ticker, a drug code and a
    paper all belong to the same company. No open dataset does this.
-8. **Much is closed.** No free price source is fully clean; X, Reddit and StockTwits need payment or approval; ready-made FDA
+8. **Looking back at 14 past cases: the warning signs were mostly not missed.** They were public and moved the price the
+   day they appeared. Where investors went wrong was in believing the rescue afterwards (a failed trial "re-analysed" into a
+   success). A few patterns did come before failures and not before successes: a missed main goal dressed up with subgroup
+   analyses, integrity problems around the founding science, a troubled manufacturing site, and an effect that shrinks as
+   more patients are reported. Several famous warning signs (short-seller reports, cancelled FDA meetings, a partner
+   walking away) appeared just as often before good outcomes. Fourteen hand-picked cases prove nothing; they give the
+   proper historical study its hypotheses.
+9. **Much is closed.** No free price source is fully clean; X, Reddit and StockTwits need payment or approval; ready-made FDA
    calendars and call transcripts are paid products with restrictive terms.
 
 ## Recommended stack (proposal)
@@ -56,6 +63,9 @@ Everything below is a proposal for the spec interview. Nothing is decided and no
 9. Short interest, borrow fees and interest rates.
 10. Papers and preprints, plus a calendar of conference abstract releases.
 
+On top of streams 1 and 6, the case study argues for one cheap addition: an agent that reads every results announcement for
+*quality* (main goal met or missed, planned or after-the-fact analysis, corrections).
+
 Before any of these: the linking table, with a one-time check by you of about 200 company matches.
 
 **Worth starting before the spec is finished:** a small script that only saves the files that are overwritten daily.
@@ -73,16 +83,18 @@ Before any of these: the linking table, with a one-time check by you of about 20
    The research points to the last two.
 6. Which baselines: XBI, IBB, IWDA, the rule-based fund, and a random-pick fund run many times?
 7. How many times should a decision be run to measure its consistency, given the token budget?
-8. Which thin-evidence signals become formal hypotheses, with the measure fixed in advance (registry edits, pipeline-page
+8. Do we run the proper historical study (step 2 in the README) the careful way: rules written down first, a complete list
+   of past readouts instead of famous cases, matched comparisons? It needs SEC access.
+9. Which thin-evidence signals become formal hypotheses, with the measure fixed in advance (registry edits, pipeline-page
    changes, specialist-fund moves)?
-9. What trading cost do we charge for small companies?
-10. How do we estimate "what is already priced in" without paying for options data?
+10. What trading cost do we charge for small companies?
+11. How do we estimate "what is already priced in" without paying for options data?
 
 **Scope**
-11. Company calls: transcribe public webcasts ourselves, or leave them out of version 1?
-12. Newswires: company feeds and SEC only, or also the newswire feeds whose terms are unclear?
-13. Should the clinical analyst also enter CT Open, the public trial-prediction challenge, as a side test?
-14. Is a small paid data plan (about $20-30 a month) acceptable later, for example for delisted companies or options?
+12. Company calls: transcribe public webcasts ourselves, or leave them out of version 1?
+13. Newswires: company feeds and SEC only, or also the newswire feeds whose terms are unclear?
+14. Should the clinical analyst also enter CT Open, the public trial-prediction challenge, as a side test?
+15. Is a small paid data plan (about $20-30 a month) acceptable later, for example for delisted companies or options?
 
 ## Corrections to our earlier notes
 [IDEA.md](../IDEA.md) said the two main frameworks only work on historical data; both now run forward. It also overstated two
@@ -90,7 +102,7 @@ research papers and gave a data licence that belongs to the paper. Details in [O
 IDEA.md itself was left unchanged.
 
 ## How this was done, and assumptions made while you slept
-- Seven research agents (Opus), each on one narrow topic. I re-checked the claims that carry a recommendation against the
+- Seven research agents (Opus), each on one narrow topic. Their raw notes are in [notes/](notes/). I re-checked the claims that carry a recommendation against the
   original source and repeated the key test calls myself.
 - Beyond the brief, as you asked: a section on overlooked streams, a forensic look at past cases, the point-in-time question
   for every source, the linking problem, and a sceptical reading of the evidence.

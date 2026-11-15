@@ -434,8 +434,8 @@ Drugs whose target is supported by human genetic evidence succeed about twice as
 13. Any retraction or expression of concern on the key papers?
 14. Written down beforehand: what counts as success, the expected price reaction, and what would change the thesis.
 
-A historical check of which of these signals actually preceded past events, including false alarms, is in
-[CASE-FORENSICS.md](CASE-FORENSICS.md).
+This list was drawn up before the case study. [CASE-FORENSICS.md](CASE-FORENSICS.md) section 6 revises it: it sharpens
+items 2, 3, 8, 9 and 11, adds five items, and shows which signals also appeared before good outcomes.
 
 ## 10. Alternative data
 
@@ -518,6 +518,11 @@ permission system blocked it and nothing was sent.
 | 9 | **Short interest and borrow fees**; Treasury yields | Free context on positioning and rates | Low |
 | 10 | **Europe PMC and bioRxiv**, plus a conference abstract calendar | One keyless API for the science; abstract dates are known catalysts | Low, calendar medium |
 
+**Added after the case study** ([CASE-FORENSICS.md](CASE-FORENSICS.md)): on top of streams 1 and 6, have an agent read
+every results announcement for quality (main goal met or missed, pre-planned or after-the-fact, subgroup emphasis,
+corrections), and keep a table of effect size and patient numbers per data release. The case study also suggests treating
+short interest and short-seller reports as context only, not as a bearish signal, and it revises the checklist in 9.9.
+
 Next tier, once the above runs: manufacturer inspection tracking for companies with a pending decision; partner and company
 pipeline-page copies; class-mates lists; trade-press headlines; specialist-fund filings; genetics and base-rate table.
 
@@ -576,3 +581,5 @@ This needs the owner's go-ahead, because it is the first code in the project and
 - All 2026 policy and FDA-leadership items (secondary sources only).
 - All volume and token estimates.
 - The 2026 preprint on registry edits was read in summary only.
+- Link check on 2026-11-15: 166 links in this report and OPEN-SOURCE.md were fetched. Thirteen refused an automated check
+  (news sites, law firms, a journal page) and are not confirmed as live. SEC links were not fetched.

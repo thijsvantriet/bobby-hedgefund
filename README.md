@@ -6,6 +6,8 @@ earnings calls), run forward on the home server for about 6 months and compared 
 ## Status
 2026-11-15: project named Bobby Hedgefund (repo and folder `bobby-hedgefund`, renamed from biotech-agents). Idea brainstormed with Claude (see docs/IDEA.md, incl. a prior-art check). Project folder created; no spec, no code yet.
 
+2026-11-16: overnight research done (branch `research-overnight`, PR open, not merged): what to reuse, which data to collect, and a first look at past cases. Start with docs/research/SUMMARY.md; it ends with the open questions for the spec interview. No code, nothing installed.
+
 ## Next step
 1. Interview + spec (docs/SPEC.md), in plan mode.
 2. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
