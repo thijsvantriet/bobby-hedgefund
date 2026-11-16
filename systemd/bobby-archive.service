@@ -1,0 +1,22 @@
+[Unit]
+Description=Bobby Hedgefund: daily archive of public files that are overwritten (~/projects/bobby-hedgefund)
+OnFailure=bobby-archive-alert.service
+
+[Service]
+Type=oneshot
+# After a power cut the catch-up run (Persistent=) can start before the network is up: wait up to ~5 min.
+ExecStartPre=/usr/bin/curl -fsS -o /dev/null --max-time 5 --retry 30 --retry-delay 10 --retry-all-errors https://www.google.com/generate_204
+# Runs the copy of the program that systemd/install.sh installed (a snapshot, not the project folder), so work in
+# progress in ~/projects/bobby-hedgefund can never run against the real archive. After a change: run install.sh again.
+ExecStart=%h/.local/bin/bobby-archive run
+# The archive is private: new files and folders are readable by the owner only.
+UMask=0077
+# Background job: give way to Home Assistant and everything else.
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=1G
+MemoryMax=2G
+# A normal run takes about 25 minutes (five-minute pauses between EMA files). Worst case: 2 hours waiting for another
+# archive command plus about 3.5 hours when EMA refuses every file and asks for long waits. Never hang forever:
+# a hung run would hold the lock and block the next days.
+TimeoutStartSec=7h

@@ -1,4 +1,14 @@
 .venv/
 __pycache__/
+*.py[oc]
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info
+
+# Downloaded data never goes in git: the archive lives in ~/bobby-hedgefund-data (docs/decisions/0001).
 data/
+
+# Local settings and secrets (contact e-mail for SEC requests, API keys)
 .env
