@@ -140,6 +140,27 @@ run now refuses to write in that case and the alert fires. Its smaller findings 
 files are flagged instead of stopping a group; new folders are synced to disk; the job's time limit is now 7 hours).
 Left as is: `systemd/install.sh` installs whatever committed branch is checked out, so run it from `main`.
 
+## Update 2026-11-16: terms that were marked "unverified" above
+- **ClinicalTrials.gov** ([terms](https://clinicaltrials.gov/about-site/terms-conditions)): the data are free for all
+  requesters. Conditions: credit ClinicalTrials.gov as the source, clearly show the date the data were processed, and
+  (in the versions we could read) keep the data current and state any changes made to them. Some records may contain
+  material under someone else's copyright. The terms hold for as long as we keep the data. NLM asks for the phrase
+  "Source: National Library of Medicine" ([NLM web policies](https://www.nlm.nih.gov/web_policies.html)).
+  **How it was read:** the live page only loads in a browser; this comes from a search engine's copy of that page
+  (several years old) and older archived versions. The owner confirms the current wording once in a browser.
+  Nothing was found on request speed beyond `robots.txt`.
+- **Nasdaq Trader** ([copyright and disclaimer](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain), read
+  in full): content may not be copied, stored or distributed without Nasdaq's written consent, except fair use and
+  "one unaltered permanent copy to be used by the viewer for personal and non-commercial use only"; "Nasdaq stock
+  symbols are proprietary to Nasdaq, Inc." Nothing is said about scripts. The site has no `robots.txt`.
+  **Consequence: a grey zone, the same as the XBI file.** We keep a dated copy per day for personal, non-commercial
+  use and never publish or pass on the files. The owner may switch this source off.
+- **AACT** (not yet downloaded): its site shows no terms page. Its publisher asks to be credited as "Clinical Trials
+  Transformation Initiative" with a link ([citation policy](https://ctti-clinicaltrials.org/?p=7671)), and the data
+  come from ClinicalTrials.gov, whose terms then apply too. Ask AACT before building an automated download.
+- Published results name the source and the date of the data wherever a source is used (README, "Data sources and
+  credit").
+
 ## Sources
 - BagIt, the file-archive format with checksum lists: [RFC 8493](https://www.rfc-editor.org/rfc/rfc8493)
 - WARC 1.1, the web-archive format: [IIPC specification](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
