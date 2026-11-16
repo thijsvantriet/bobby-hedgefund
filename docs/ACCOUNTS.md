@@ -3,11 +3,10 @@
 Decided 2026-11-16: all free sign-ups are acceptable; the owner creates them. Each service gives a **key** (a long
 password for programs). Keys never go into git or into a chat with Claude.
 
-**Where the keys go:** the file `~/projects/bobby-hedgefund/.env` (git ignores it; the nightly backup covers it). Open
+**Where the keys go:** the file `~/projects/bobby-hedgefund/.env` (git ignores it). Open
 it in the text editor, paste each key after its `=` sign, save. The names are already in the file.
 
-**Which address:** any address you like; a second "alias" address in Outlook keeps this mail apart from your normal
-inbox. Use a password manager for the passwords.
+**Which address:** any address you like; a second "alias" address keeps this mail apart from your normal inbox.
 
 | # | Service | What it is for | Sign up | Name in `.env` | When |
 |---|---|---|---|---|---|

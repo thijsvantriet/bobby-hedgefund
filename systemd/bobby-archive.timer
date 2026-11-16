@@ -3,7 +3,7 @@ Description=Bobby Hedgefund: daily archive run at 23:30
 
 [Timer]
 # 23:30 local time: after the US market close, after the trial registry's daily refresh and after EMA's 18:00
-# update, and before the nightly home backup (04:15), which copies the new files to Google Drive.
+# update, and before the machine's nightly backup, which then includes the new files.
 OnCalendar=*-*-* 23:30:00
 RandomizedDelaySec=10min
 # Laptop off or asleep at 23:30: run as soon as it is back.

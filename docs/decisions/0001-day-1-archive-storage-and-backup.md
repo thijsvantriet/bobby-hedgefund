@@ -22,7 +22,7 @@ Requirements:
   repository.
 - Never send the owner's name, e-mail address or the project name with a request.
 - Small and boring: standard library only, one daily job, an alert when it fails.
-- Google Drive has about 20 GB free (checked 2026-11-16), shared with everything else the owner keeps there.
+- Backup space is limited and shared with everything else the owner backs up.
 
 ## Options considered
 
@@ -45,8 +45,8 @@ Requirements:
 
 | Option | For | Against |
 |---|---|---|
-| **The existing nightly home backup** (restic to Google Drive, 04:15; personal-data ADR 0009) | Already running, encrypted, monitored, with a phone alert on failure. Keeps older versions, so even a bug that damages the archive can be undone. Needs no change at all: the folder is inside the home directory. | The copy on Drive is encrypted, so it cannot be browsed there; restoring needs restic. |
-| A separate `rclone` copy to a plain Drive folder | Files visible in Drive. | A second backup system to build and watch. No older versions. Plain files on Drive are not encrypted. |
+| **The machine's existing nightly encrypted backup** (restic, to cloud storage) | Already running, encrypted, monitored, with a phone alert on failure. Keeps older versions, so even a bug that damages the archive can be undone. Needs no change at all: the folder is inside the home directory. | The copy is encrypted, so it cannot be browsed in the cloud storage; restoring needs restic. |
+| A separate `rclone` copy to a plain cloud folder | Files visible there. | A second backup system to build and watch. No older versions. Plain files in the cloud are not encrypted. |
 
 ## Decision
 **Form: option A.** Plain files plus a checksum list, with three additions:
@@ -68,7 +68,7 @@ Layout:
 
 **Place:** `~/bobby-hedgefund-data/`, outside the repository, readable by the owner only.
 
-**Backup:** the existing nightly home backup. Nothing was changed in `~/server`.
+**Backup:** the machine's existing nightly encrypted backup. Nothing was changed in `~/server`.
 
 **Schedule:** a systemd user timer at 23:30 (unit files in `systemd/`), with a phone alert when a source fails.
 
@@ -123,7 +123,7 @@ uncommitted code or code whose tests fail.
   file was saved; that needs the newest fingerprint to be published somewhere public every day (see below).
 
 ## Revisit
-Revisit: by 2027-05, or when the archive passes 5 GB, Google Drive has less than 10 GB free, or a source changes its
+Revisit: by 2027-05, or when the archive passes 5 GB, the backup space runs short, or a source changes its
 address or its terms of use.
 
 Not part of the must-check, ideas for the spec: publish the daily chain fingerprint in the public repository (a public
@@ -144,7 +144,7 @@ Left as is: `systemd/install.sh` installs whatever committed branch is checked o
 - BagIt, the file-archive format with checksum lists: [RFC 8493](https://www.rfc-editor.org/rfc/rfc8493)
 - WARC 1.1, the web-archive format: [IIPC specification](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
 - "Raw data is immutable": [Cookiecutter Data Science, opinions](https://cookiecutter-data-science.drivendata.org/opinions/)
-- restic backups: [documentation](https://restic.readthedocs.io/en/stable/040_backup.html); this machine's setup: `~/server/backup/README.md` and personal-data ADR 0009
+- restic backups: [documentation](https://restic.readthedocs.io/en/stable/040_backup.html); this machine's own backup setup is documented outside this repository
 - What `robots.txt` means: [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309)
 - ClinicalTrials.gov: [data service documentation](https://clinicaltrials.gov/data-api/api), [robots.txt](https://clinicaltrials.gov/robots.txt)
 - EMA: [data files](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format), [legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)

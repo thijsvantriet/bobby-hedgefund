@@ -5,6 +5,9 @@ earnings calls), run forward on the home server for about 6 months and compared 
 
 **This is an experiment with paper money. Nothing here is investment advice, and no real money is traded.**
 
+**How far it is (2026-11):** only the research reports and the nightly data archive exist. There are no agents, no
+portfolio and no results yet. The log below shows each step.
+
 ## Status
 2026-11-15: project named Bobby Hedgefund (repo and folder `bobby-hedgefund`, renamed from biotech-agents). Idea brainstormed with Claude (see docs/IDEA.md, incl. a prior-art check). Project folder created; no spec, no code yet.
 
@@ -16,11 +19,15 @@ earnings calls), run forward on the home server for about 6 months and compared 
 
 2026-11-16: research and archive merged into `main` after a second review of the archive code (one serious finding, fixed: a run now refuses to write when the list of stored files has lost its newest lines). The nightly job runs the version installed from `main`; 76 tests pass.
 
-2026-11-16: preparing to make the repository public. The owner's university e-mail address was removed from the history, and the GitHub repository was created anew from the clean history (so the first three pull requests no longer exist). Licences chosen: MIT for code, CC BY 4.0 for reports and results (docs/decisions/0002). Still private; left to do before opening: the owner reads the files once for details about the home setup.
+2026-11-16: preparing to make the repository public. A private e-mail address was removed from the history, and the GitHub repository was created anew from the clean history (so the first three pull requests no longer exist). Licences chosen: MIT for code, CC BY 4.0 for reports and results (docs/decisions/0002). Still private; left to do before opening: the owner reads the files once for details about the home setup.
+
+2026-11-16: read-through done (all files, the whole history, the research reports). A few details about the home setup and a few statements about named people were reworded; no key, address or source data was found. Added: "Data sources and credit" below.
 
 ## Next step
 1. Owner, when EPO approves the account: put its Consumer Key and Secret in `.env` (only needed if patents make it into the spec).
 2. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
+   Before any result built on a source is published: read the terms that are still unread (ClinicalTrials.gov, Nasdaq's
+   copyright page, AACT) and note the outcome in a decision record.
 3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
 4. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
@@ -33,7 +40,7 @@ overwrite them. It does no analysis. What, where and why: docs/decisions/0001-da
 
 - **Saved:** trial records with a company involved (ClinicalTrials.gov), five European Medicines Agency files, the
   Nasdaq symbol lists, and the daily holdings of the XBI fund.
-- **Where:** `~/bobby-hedgefund-data/archive/` (never in git). The nightly home backup copies it to Google Drive.
+- **Where:** `~/bobby-hedgefund-data/archive/` (never in git). The machine's nightly encrypted backup covers it.
 - **If something fails:** a phone message "Bobby archive". Then:
 
 ```
@@ -51,6 +58,21 @@ cd ~/projects/bobby-hedgefund
 uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest
 systemd/install.sh                 # installs the snapshot and the timer; refuses uncommitted or failing code
 ```
+
+## Data sources and credit
+The project follows each source's terms of use. No file from any source is in this repository, and none will be:
+published results show only our own analysis, with the source named. This project is not affiliated with or endorsed
+by any of them. Downloaded so far (details and terms per source: docs/decisions/0001):
+
+| Source | What we save | Condition we follow |
+|---|---|---|
+| [ClinicalTrials.gov](https://clinicaltrials.gov/) (U.S. National Library of Medicine) | Trial records with a company involved | Public data service; at most one request per two seconds. Terms page still to be read |
+| [European Medicines Agency](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format) | Five data files on medicines | Reuse allowed with the source credited ([legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)) |
+| [Nasdaq Trader symbol directory](https://www.nasdaqtrader.com/Trader.aspx?id=SymbolDirDefs) | Lists of US-listed symbols | Copyright page still to be read |
+| [State Street, SPDR S&P Biotech ETF (XBI)](https://www.ssga.com/) | The fund's daily holdings file | Personal use only; the file is never passed on or published ([terms](https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions)) |
+
+Sources that were only read for the research are linked where they are used in `docs/research/`. Candidates for later
+streams, with their terms: docs/research/DATA-SOURCES.md.
 
 ## Licence
 Code: MIT (`LICENSE`). Reports, decision records and results (`docs/`, this README): Creative Commons Attribution 4.0
