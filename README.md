@@ -11,7 +11,7 @@ earnings calls), run forward on the home server for about 6 months and compared 
 2026-11-16: owner's answers to the four start questions recorded in docs/research/SUMMARY.md (SEC contact address, public-repository rule, free sign-ups, start the archive now). **Day-1 archive built** (branch `day1-archive`): a nightly job that only saves public files their publishers overwrite. See "Day-1 archive" below and docs/decisions/0001.
 
 ## Next step
-1. Owner: create the free accounts (a price service first; see docs/research/DATA-SOURCES.md section 15, point 3).
+1. Owner: create the free accounts and put the keys in `.env` (checklist: docs/ACCOUNTS.md; Tiingo first).
 2. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
 3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
