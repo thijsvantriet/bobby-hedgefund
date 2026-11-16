@@ -82,7 +82,10 @@ Before any of these: the linking table, with a one-time check by you of about 20
    on its own, so every public decision record says in plain words what the agent saw (source, date, link, short
    summary), even where the raw data stays local.
 3. Which free sign-ups are acceptable (a price service; optionally several official services)?
+   **Owner, 2026-11-16:** all free sign-ups are acceptable. The owner creates the accounts.
 4. Start the day-1 archive now, and where should it be stored and backed up?
+   **Owner, 2026-11-16:** yes, start now. Built on branch `day1-archive`; storage and backup are decided in
+   `docs/decisions/0001` on that branch.
 
 **Shaping the experiment**
 5. What exactly is the experiment's main result: returns, differences between setups, or the quality of the probabilities?
