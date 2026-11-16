@@ -10,8 +10,10 @@ earnings calls), run forward on the home server for about 6 months and compared 
 
 2026-11-16: owner's answers to the four start questions recorded in docs/research/SUMMARY.md (SEC contact address, public-repository rule, free sign-ups, start the archive now). **Day-1 archive built** (branch `day1-archive`): a nightly job that only saves public files their publishers overwrite. See "Day-1 archive" below and docs/decisions/0001. First runs done the same day: the one-time full copy of 170,083 company-linked trial records (444 MB) is stored and the whole archive passes its check. Known issue: the EMA site refuses one of its five files now and then, so an occasional "Bobby archive" phone message about EMA is expected.
 
+2026-11-16: owner created the free accounts; keys are in the local `.env` (never in git). Eight of nine tested and working (Tiingo, Massive, openFDA, FRED, NCBI, FDA Data Dashboard, OpenAlex, AACT); EPO waits for approval. AACT's key turned out to give dated full copies of the registry, monthly back to 2017: the base for the historical study (details in docs/ACCOUNTS.md).
+
 ## Next step
-1. Owner: create the free accounts and put the keys in `.env` (checklist: docs/ACCOUNTS.md; Tiingo first).
+1. Owner, when EPO approves the account: put its Consumer Key and Secret in `.env` (only needed if patents make it into the spec).
 2. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
 3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
