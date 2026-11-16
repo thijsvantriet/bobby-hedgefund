@@ -14,6 +14,9 @@ Specs: docs/SPEC.md (once written); decisions: docs/decisions/ (ADR format, use 
   and manifest lines are never changed or deleted. Requests to outside services carry a generic client name: never the
   owner's name, e-mail address or the project name (the SEC contact e-mail, once used, comes from a local file that git ignores).
 - Before adding a download: read the source's terms of use and robots.txt, and note the outcome in an ADR.
+- Follow every source's rules (owner, 2026-11-16): never publish a source's data when its terms forbid it, and credit
+  every source in use in the README ("Data sources and credit"). The repository is meant to be public: no keys, addresses or
+  details of the home setup in tracked files or commit messages.
 - Long-running services: compose file in ~/server/<name>/compose.yaml (read ~/server/CLAUDE.md first); scheduled jobs as systemd user timers in this repo.
 - Python with uv. Work on a branch, open a PR; bigger changes get a `reviewer` subagent review before they count as done.
 - Master to-do list: Home Assistant `todo.home_todo`; keep only detail here in the README.

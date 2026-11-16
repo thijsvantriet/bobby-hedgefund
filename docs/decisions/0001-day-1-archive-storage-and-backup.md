@@ -22,7 +22,7 @@ Requirements:
   repository.
 - Never send the owner's name, e-mail address or the project name with a request.
 - Small and boring: standard library only, one daily job, an alert when it fails.
-- Google Drive has about 20 GB free (checked 2026-11-16), shared with everything else the owner keeps there.
+- Backup space is limited and shared with everything else the owner backs up.
 
 ## Options considered
 
@@ -45,8 +45,8 @@ Requirements:
 
 | Option | For | Against |
 |---|---|---|
-| **The existing nightly home backup** (restic to Google Drive, 04:15; personal-data ADR 0009) | Already running, encrypted, monitored, with a phone alert on failure. Keeps older versions, so even a bug that damages the archive can be undone. Needs no change at all: the folder is inside the home directory. | The copy on Drive is encrypted, so it cannot be browsed there; restoring needs restic. |
-| A separate `rclone` copy to a plain Drive folder | Files visible in Drive. | A second backup system to build and watch. No older versions. Plain files on Drive are not encrypted. |
+| **The machine's existing nightly encrypted backup** (restic, to cloud storage) | Already running, encrypted, monitored, with a phone alert on failure. Keeps older versions, so even a bug that damages the archive can be undone. Needs no change at all: the folder is inside the home directory. | The copy is encrypted, so it cannot be browsed in the cloud storage; restoring needs restic. |
+| A separate `rclone` copy to a plain cloud folder | Files visible there. | A second backup system to build and watch. No older versions. Plain files in the cloud are not encrypted. |
 
 ## Decision
 **Form: option A.** Plain files plus a checksum list, with three additions:
@@ -68,7 +68,7 @@ Layout:
 
 **Place:** `~/bobby-hedgefund-data/`, outside the repository, readable by the owner only.
 
-**Backup:** the existing nightly home backup. Nothing was changed in `~/server`.
+**Backup:** the machine's existing nightly encrypted backup. Nothing was changed in `~/server`.
 
 **Schedule:** a systemd user timer at 23:30 (unit files in `systemd/`), with a phone alert when a source fails.
 
@@ -123,7 +123,7 @@ uncommitted code or code whose tests fail.
   file was saved; that needs the newest fingerprint to be published somewhere public every day (see below).
 
 ## Revisit
-Revisit: by 2027-05, or when the archive passes 5 GB, Google Drive has less than 10 GB free, or a source changes its
+Revisit: by 2027-05, or when the archive passes 5 GB, the backup space runs short, or a source changes its
 address or its terms of use.
 
 Not part of the must-check, ideas for the spec: publish the daily chain fingerprint in the public repository (a public
@@ -140,11 +140,32 @@ run now refuses to write in that case and the alert fires. Its smaller findings 
 files are flagged instead of stopping a group; new folders are synced to disk; the job's time limit is now 7 hours).
 Left as is: `systemd/install.sh` installs whatever committed branch is checked out, so run it from `main`.
 
+## Update 2026-11-16: terms that were marked "unverified" above
+- **ClinicalTrials.gov** ([terms](https://clinicaltrials.gov/about-site/terms-conditions)): the data are free for all
+  requesters. Conditions: credit ClinicalTrials.gov as the source, clearly show the date the data were processed, and
+  (in the versions we could read) keep the data current and state any changes made to them. Some records may contain
+  material under someone else's copyright. The terms hold for as long as we keep the data. NLM asks for the phrase
+  "Source: National Library of Medicine" ([NLM web policies](https://www.nlm.nih.gov/web_policies.html)).
+  **How it was read:** the live page only loads in a browser; this comes from a search engine's copy of that page
+  (several years old) and older archived versions. The owner confirms the current wording once in a browser.
+  Nothing was found on request speed beyond `robots.txt`.
+- **Nasdaq Trader** ([copyright and disclaimer](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain), read
+  in full): content may not be copied, stored or distributed without Nasdaq's written consent, except fair use and
+  "one unaltered permanent copy to be used by the viewer for personal and non-commercial use only"; "Nasdaq stock
+  symbols are proprietary to Nasdaq, Inc." Nothing is said about scripts. The site has no `robots.txt`.
+  **Consequence: a grey zone, the same as the XBI file.** We keep a dated copy per day for personal, non-commercial
+  use and never publish or pass on the files. The owner may switch this source off.
+- **AACT** (not yet downloaded): its site shows no terms page. Its publisher asks to be credited as "Clinical Trials
+  Transformation Initiative" with a link ([citation policy](https://ctti-clinicaltrials.org/?p=7671)), and the data
+  come from ClinicalTrials.gov, whose terms then apply too. Ask AACT before building an automated download.
+- Published results name the source and the date of the data wherever a source is used (README, "Data sources and
+  credit").
+
 ## Sources
 - BagIt, the file-archive format with checksum lists: [RFC 8493](https://www.rfc-editor.org/rfc/rfc8493)
 - WARC 1.1, the web-archive format: [IIPC specification](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
 - "Raw data is immutable": [Cookiecutter Data Science, opinions](https://cookiecutter-data-science.drivendata.org/opinions/)
-- restic backups: [documentation](https://restic.readthedocs.io/en/stable/040_backup.html); this machine's setup: `~/server/backup/README.md` and personal-data ADR 0009
+- restic backups: [documentation](https://restic.readthedocs.io/en/stable/040_backup.html); this machine's own backup setup is documented outside this repository
 - What `robots.txt` means: [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309)
 - ClinicalTrials.gov: [data service documentation](https://clinicaltrials.gov/data-api/api), [robots.txt](https://clinicaltrials.gov/robots.txt)
 - EMA: [data files](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format), [legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)

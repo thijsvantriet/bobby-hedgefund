@@ -100,7 +100,7 @@ Lead time = days from the signal becoming public to the main price event. Market
 | Sept 2020 | Positive re-analysis of the same trial | press release | ~1,530 d |
 | 25 Aug 2021 | Citizen petition alleging Western-blot and biomarker manipulation | FDA docket (F §9), news | 1,188 d |
 | Feb 2022 (approx.) | FDA denied the petition on procedural grounds (not on merits) | wiki-style source, **unverified** ([cavac](https://cavac.at/cavacopedia/Cassava%20Sciences)) | ~1,000 d |
-| 27 Jun 2024 | Key academic collaborator (Hoau-Yan Wang) indicted for grant fraud related to early simufilam work ([STAT](https://www.statnews.com/2024/06/28/cassava-sciences-indictment-alzheimers-hoau-yan-wang/)) | news / DoJ | 151 d |
+| 27 Jun 2024 | A key academic collaborator was indicted for grant fraud related to early simufilam work (an accusation, not a conviction; later outcome not checked) ([STAT](https://www.statnews.com/2024/06/28/cassava-sciences-indictment-alzheimers-hoau-yan-wang/)) | news / DoJ | 151 d |
 | 26 Sept 2024 | SEC settlement, $40M penalty; SEC alleged the 2020 phase 2b cognition results excluded ~40% of subjects; stock −11% after hours ([BioSpace](https://www.biospace.com/policy/cassava-agrees-to-pay-40m-fine-to-resolve-sec-probe-as-company-hit-with-new-lawsuit), [SEC](https://sec.gov/newsroom/press-releases/2024-151), [BNN Bloomberg](https://bnnbloomberg.ca/business/company-news/2024/09/26/cassava-to-pay-40-million-to-sec-over-alzheimers-drug-claims)) | SEC release, 8-K | 60 d |
 | undated | PubPeer threads on founding papers | PubPeer (F §11) | undated |
 
@@ -130,7 +130,7 @@ Timeline below uses the complaint (a court document with dated, sourced quotes) 
 | 28 Feb 2024 | NDA accepted (PDUFA 28 Aug); equity raise the same day | press release, 424B5 (not read) | 273 d |
 | 28 Mar 2024 | PDUFA extended 3 months (major amendment / "supplemental analyses") | 8-K, press release | 244 d |
 | 7 Aug 2024 | Q2 release: a vendor had used an adult formula for ~1/3 of cognition scores; "corrected" data turned cognition **significant (p=0.032)**. RBC noted "data integrity and presentation had been a concern for some" | 10-Q/press release, analyst note quoted in complaint | 112 d |
-| 12-14 Aug 2024 | CEO sold 777,014 shares (~$4.7M) | Form 4 (D §1.2) | ~105 d |
+| 12-14 Aug 2024 | CEO sold 777,014 shares (~$4.7M), as stated in the complaint (not checked against the Form 4 filing; whether under a pre-set selling plan is unverified) | Form 4 (D §1.2) | ~105 d |
 | 18 Sept 2024 | Adcomm cancelled (read by market as positive) | press release | 70 d |
 **Missed?** Partly. The primary-endpoint miss and the "correction that improved the data" were public and noted by at least one analyst; the market nonetheless rallied ~70% on the adcomm cancellation. The inspection findings were private.
 **Hindsight check.** "Data got *better* after an error correction" — **high specificity in spirit, but n=1 here** (Cassava's re-analysis is a cousin). Insider sale before PDUFA: **low** (common, often 10b5-1; plan status **unverified**). Adcomm cancellation: **low**, and it pointed the wrong way.

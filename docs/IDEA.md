@@ -4,7 +4,7 @@ Started from a WallStreetBets post about Singapore export data (NODX) as a leadi
 Not yet decided: everything here is input for the spec interview.
 
 ## Direction so far (owner)
-- Paper portfolio, returns compared with indices: XBI (equal-weight biotech), IBB / Nasdaq Biotech, IWDA (the owner's real
+- Paper portfolio, returns compared with indices: XBI (equal-weight biotech), IBB / Nasdaq Biotech, IWDA (a world index
   fund, the "do nothing" baseline), ARKG (publishes holdings daily), biotech specialist hedge funds via 13F (quarterly, 45-day lag).
 - Focus: biotech/pharma, including listed AI-biotechs (Recursion, Schrödinger, Absci, AbCellera, Relay; Insilico status to check).
 - **Fully agentic, like a normal biotech fund** (owner correction): agents are NOT a trial-outcome prediction model. A statistical
@@ -30,7 +30,7 @@ company and can read every filing and trial update of those. Geopolitics left ou
 
 ## Data sources (candidates)
 ClinicalTrials.gov API, openFDA + FDA decision (PDUFA) dates, SEC EDGAR (10-Q/10-K, 8-K, Form 4 insider trades), PubMed /
-Europe PMC / bioRxiv, conference abstracts, daily prices (financial-dashboard already fetches prices), earnings-call webcasts
+Europe PMC / bioRxiv, conference abstracts, daily prices (an existing price script can be reused), earnings-call webcasts
 (transcripts usually licensed; local transcription with Whisper possible, terms to check).
 
 ## Sample size and costs
@@ -52,7 +52,7 @@ Europe PMC / bioRxiv, conference abstracts, daily prices (financial-dashboard al
 
 ## Background discussed
 - Why biotech feels like gambling: outcomes unknowable until human trials (~90% fail); "paradox of skill" (Mauboussin): skilled
-  players cancel out, leaving luck; binary single-asset companies. Links to the owner's AI & biology essay (verification cost).
+  players cancel out, leaving luck; binary single-asset companies.
 - Martin Shkreli as cautionary tale (small-biotech shorting, fraud conviction 2017). Small-cap traps: dilution, reverse splits,
   pump-and-dump, short-seller reports.
 - Historical analysis: event studies (plain statistics) and a case library of missed warning signs; not to test the agents.

@@ -17,7 +17,7 @@ pricing and terms details come from vendor pages via search snippets; check the 
 | US Treasury daily par yield curve CSV (`home.treasury.gov/.../daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve...`) | **Works**, key-less. Latest row 11/13/2026 (10-yr 5.15%). |
 | Nasdaq Trader `nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt` (+ FTP HEAD) | **Works**, key-less; FTP file last modified 2026-11-14. |
 | GDELT DOC 2.0 API (artlist, 2 records) | **Throttled**: returned only the "limit requests to one every 5 seconds" message, even on a first call and a retry after 6 s (probably shared-IP throttling). Works in principle, but not reliably from this machine today. |
-| ARK `assets.ark-funds.com/.../ARK_GENOMIC_REVOLUTION_ETF_ARKG_HOLDINGS.csv` | **Works**; CSV dated 11/13/2026 (top holding TEM). |
+| ARK `assets.ark-funds.com/.../ARK_GENOMIC_REVOLUTION_ETF_ARKG_HOLDINGS.csv` | **Works**; CSV dated 11/13/2026. |
 | SPDR XBI daily holdings xlsx (old URL) | 301 redirect to `https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xbi.xlsx` (not followed further). |
 | iShares IBB holdings CSV (`...1467271812596.ajax?fileType=csv...`) | HEAD says `text/csv`, but GET returned an **HTML page**, not the CSV (needs cookies/browser, or bot-blocking). |
 | FINRA Reg SHO daily short-sale volume `cdn.finra.org/equity/regsho/daily/CNMSshvol20261113.txt` | **Works**, key-less, pipe-delimited. |
@@ -159,7 +159,6 @@ Biotech specialist 13F filers (names from domain knowledge; **CIKs must be verif
 - **BIOSECURE Act: law.** Signed 2025-12-18 as Sec. 851 of the FY2026 NDAA; OMB list of biotech companies of concern due by Dec 2026; guidance ~June 2027; 5-year safe harbor for existing contracts ([Akin](https://www.akingump.com/en/insights/alerts/biosecure-act-becomes-law), [Arnold & Porter](https://www.arnoldporter.com/en/perspectives/advisories/2025/12/the-biosecure-act-becomes-law-in-the-united-states)). **The OMB list due ~Dec 2026 is a live-window event** (WuXi-dependent small biotechs).
 - **Section 232 pharma tariffs:** proclamation 2026-04-02: 100% on patented drugs; 20% with onshoring plans; 10% UK, 15% EU/Japan/Korea/Switzerland; generics, biosimilars and **orphan drugs excluded**; effective for all importers 2026-09-29; 0% for companies with MFN deals through 2029-01-20 ([Ropes & Gray](https://www.ropesgray.com/en/insights/alerts/2026/04/100-on-brand-us-imposes-new-tariffs-and-key-exemptions-on-patented-pharmaceuticals), [Thompson Hine](https://www.thompsonhinesmartrade.com/2026/04/president-trump-announces-section-232-tariffs-on-pharmaceuticals-and-active-pharmaceutical-ingredients/)).
 - **MFN drug pricing:** EO 14297 (2025-05-12); White House claims 26 large drugmakers signed deals, extended to all Medicaid programs (Sept 2026) ([White House](https://www.whitehouse.gov/releases/2026/09/president-trump-extends-most-favored-nation-pricing-to-every-medicaid-program-in-america/); administration claim). Small biotechs mostly not direct parties.
-- **FDA leadership:** Makary commissioner Apr 2025-May 2026; Heidi Overton nominated, Kyle Diamantas acting; Michael Davis permanent CDER director, Karim Mikhail CBER (Sept 2026) ([DCAT](https://www.dcatvci.org/top-industry-news/president-trump-nominates-new-fda-commissioner/), [pharmaphorum](https://pharmaphorum.com/news/fda-makes-acting-cder-cber-chiefs-permanent)). Confirmation status in Nov 2026 unverified.
 - **NIH:** FY2026 = $48.7B (Congress raised it); FY2027 request = −$5B and 5 institutes eliminated; final FY2027 appropriation not found ([Applied Clinical Trials](https://www.appliedclinicaltrialsonline.com/view/white-house-5-billion-nih-cut-fy2027-budget), [Axios](https://www.axios.com/2026/04/02/research-advocates-nih-budget-fight?stream=top)).
 - IRA changes: not researched in this session (unverified).
 
@@ -268,7 +267,7 @@ Runners-up: SEC 13F data sets (benchmark only, quarterly), Federal Register API 
 5. **Social media:** accept that biotech fintwit (X) is out of reach for free; optionally follow a Bluesky list. Reddit only if owner wants to apply for access.
 6. **Options implied move:** accept yfinance's grey "personal use" status for a daily straddle snapshot, or drop "priced-in" IV and use historical event-move statistics instead.
 7. **User-Agent for SEC/Wikimedia:** these require contact info; decide on a project contact (GitHub repo URL / a dedicated project e-mail) rather than the owner's personal address.
-8. **Archive storage and retention** for daily snapshots (size small: <50 MB/month estimated, unverified) — where (home server + Drive backup?).
+8. **Archive storage and retention** for daily snapshots (size small: <50 MB/month estimated, unverified) — where to keep them.
 
 ## 15. Uncertain / not verified in this session
 
