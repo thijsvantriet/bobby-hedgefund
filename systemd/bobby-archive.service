@@ -1,0 +1,19 @@
+[Unit]
+Description=Bobby Hedgefund: daily archive of public files that are overwritten (~/projects/bobby-hedgefund)
+OnFailure=bobby-archive-alert.service
+
+[Service]
+Type=oneshot
+# After a power cut the catch-up run (Persistent=) can start before the network is up: wait up to ~5 min.
+ExecStartPre=/usr/bin/curl -fsS -o /dev/null --max-time 5 --retry 30 --retry-delay 10 --retry-connrefused https://www.google.com/generate_204
+# --no-sync: the environment is prepared once by systemd/install.sh and not changed at run time.
+ExecStart=%h/.local/bin/uv run --project %h/projects/bobby-hedgefund --no-sync --quiet bobby-archive run
+# The archive is private: new files and folders are readable by the owner only.
+UMask=0077
+# Background job: give way to Home Assistant and everything else.
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=1G
+MemoryMax=2G
+# A normal run takes a few minutes. Never hang forever: a hung run would hold the lock and block the next days.
+TimeoutStartSec=3h

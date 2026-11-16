@@ -8,10 +8,32 @@ earnings calls), run forward on the home server for about 6 months and compared 
 
 2026-11-15: overnight research done (branch `research-overnight`, PR open, not merged): what to reuse, which data to collect, and a first look at past cases. Start with docs/research/SUMMARY.md; it ends with the open questions for the spec interview. No code, nothing installed.
 
+2026-11-16: owner's answers to the four start questions recorded in docs/research/SUMMARY.md (SEC contact address, public-repository rule, free sign-ups, start the archive now). **Day-1 archive built** (branch `day1-archive`): a nightly job that only saves public files their publishers overwrite. See "Day-1 archive" below and docs/decisions/0001.
+
 ## Next step
-1. Interview + spec (docs/SPEC.md), in plan mode.
-2. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
+1. Owner: create the free accounts (a price service first; see docs/research/DATA-SOURCES.md section 15, point 3).
+2. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
+3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
-3. Build those data streams; start archiving ARKG daily holdings from day 1.
-4. One-week pilot with one fund setup to measure real token cost.
-5. Parallel setups live for ~6 months.
+4. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
+5. One-week pilot with one fund setup to measure real token cost.
+6. Parallel setups live for ~6 months.
+
+## Day-1 archive
+A job that runs every night at 23:30 and saves a few public files exactly as published, because their publishers
+overwrite them. It does no analysis. What, where and why: docs/decisions/0001-day-1-archive-storage-and-backup.md.
+
+- **Saved:** trial records with a company involved (ClinicalTrials.gov), five European Medicines Agency files, the
+  Nasdaq symbol lists, and the daily holdings of the XBI fund.
+- **Where:** `~/bobby-hedgefund-data/archive/` (never in git). The nightly home backup copies it to Google Drive.
+- **If something fails:** a phone message "Bobby archive". Then:
+
+```
+cd ~/projects/bobby-hedgefund
+uv run bobby-archive status        # last run per source, stored size
+uv run bobby-archive verify        # re-reads every file and checks it against its fingerprint; changes nothing
+uv run bobby-archive run           # run the daily download by hand
+uv run bobby-archive baseline      # one-time full copy of the trial records (done 2026-11-16; --resume if interrupted)
+systemd/install.sh                 # install or update the timer
+uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest
+```

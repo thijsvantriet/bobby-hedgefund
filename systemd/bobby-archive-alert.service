@@ -1,0 +1,6 @@
+[Unit]
+Description=Bobby Hedgefund: archive failure alert
+
+[Service]
+Type=oneshot
+ExecStart=%h/server/tools/send_ha_message.sh "Bobby archive" "The daily archive run had a failure: at least one source was not saved today. See: cd ~/projects/bobby-hedgefund && uv run bobby-archive status"
