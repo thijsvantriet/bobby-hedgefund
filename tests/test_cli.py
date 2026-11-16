@@ -73,10 +73,10 @@ def test_verify_and_status(setup: Path, capsys) -> None:
     assert "PROBLEM" in capsys.readouterr().out
 
 
-def test_run_while_another_is_busy_does_nothing(setup: Path, capsys) -> None:
+def test_run_while_another_is_busy_fails_loudly(setup: Path, capsys) -> None:
     with Archive(setup):
-        assert cli.main(["run"]) == 0
-    assert "another archive run is in progress" in capsys.readouterr().out
+        assert cli.main(["run", "--wait", "0"]) == 1  # today's files were not saved: the alert must fire
+    assert "NOT DONE" in capsys.readouterr().out
     assert not (setup / "manifest.jsonl").exists()
 
 

@@ -35,8 +35,8 @@ def _attempt(archive: Archive, source: str, run: str, job: Callable[[], dict[str
         archive.record_run(source, run, "failed", error=str(exc))
         print(f"FAILED  {source}: {exc}")
         return False
-    except ArchiveError:
-        raise  # the archive itself is in trouble: stop, do not write further
+    except (ArchiveError, OSError):
+        raise  # the archive itself is in trouble (damaged, disk full, not writable): stop, write nothing more
     except Exception as exc:
         archive.record_run(source, run, "failed", error=f"{type(exc).__name__}: {exc}")
         print(f"FAILED  {source}: unexpected {type(exc).__name__}: {exc}")
@@ -63,7 +63,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
     fetcher = make_fetcher()
     run = new_run_id()
-    with Archive(archive_root()) as archive:
+    with Archive(archive_root(), wait=args.wait) as archive:
         results = [_attempt(archive, name, run, lambda n=name: jobs[n](archive, fetcher, run)) for name in wanted]
     return 0 if all(results) else 1
 
@@ -82,11 +82,13 @@ def cmd_baseline(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    with Archive(archive_root()) as archive:
+    with Archive(archive_root(), readonly=True) as archive:
         report = archive.verify(quick=args.quick)
     how = "sizes only" if args.quick else "every file re-read and re-hashed"
     print(f"manifest lines: {report.lines}; files: {report.files} ({how}); unchanged notes: {report.unchanged}")
     print(f"stored: {report.stored_bytes / 1e6:.1f} MB")
+    for note in report.notes:
+        print(f"note: {note}")
     for orphan in report.orphans:
         print(f"note: file without a manifest line (left by an interrupted run): {orphan}")
     for problem in report.problems:
@@ -129,11 +131,18 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     p_run = sub.add_parser("run", help="the daily download (started by the systemd timer)")
     p_run.add_argument("--only", nargs="+", metavar="SOURCE", help="run only these sources")
+    p_run.add_argument(
+        "--wait",
+        type=float,
+        default=7200.0,
+        metavar="SECONDS",
+        help="how long to wait when another archive command is running (default: 2 hours)",
+    )
     p_run.set_defaults(func=cmd_run)
     p_base = sub.add_parser("baseline", help="one-time full copy of company-linked trial records (large)")
     p_base.add_argument("--resume", action="store_true", help="continue an interrupted baseline")
     p_base.set_defaults(func=cmd_baseline)
-    p_verify = sub.add_parser("verify", help="check every stored file against the manifest; changes nothing")
+    p_verify = sub.add_parser("verify", help="check every stored file against the manifest; writes nothing")
     p_verify.add_argument("--quick", action="store_true", help="check the manifest and file sizes only")
     p_verify.set_defaults(func=cmd_verify)
     sub.add_parser("status", help="last run per source and stored size").set_defaults(func=cmd_status)
@@ -141,10 +150,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.func(args))
     except Busy:
-        print("another archive run is in progress; nothing done")
-        return 0
+        # Not a success: for the nightly run this means today's files were not saved, and the alert must fire.
+        print("NOT DONE: another archive command is still running")
+        return 1
     except ArchiveError as exc:
         print(f"ARCHIVE ERROR: {exc}")
+        return 1
+    except OSError as exc:
+        print(f"ARCHIVE ERROR: could not read or write the archive: {exc}")
         return 1
 
 

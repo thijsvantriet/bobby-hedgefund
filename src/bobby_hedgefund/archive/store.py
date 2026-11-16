@@ -16,14 +16,17 @@ import lzma
 import os
 import re
 import secrets
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 GENESIS = "0" * 64
+LOCK_POLL_SECONDS = 30.0
 MANIFEST = "manifest.jsonl"
+HEAD = "manifest.head"
 RAW = "raw"
 _SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,99}$")
 
@@ -98,6 +101,7 @@ class VerifyReport:
     stored_bytes: int = 0
     problems: list[str] = field(default_factory=list)
     orphans: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -105,13 +109,29 @@ class VerifyReport:
 
 
 class Archive:
-    """Use as a context manager: `with Archive(root) as archive: ...` (takes an exclusive lock)."""
+    """Use as a context manager: `with Archive(root) as archive: ...` (takes an exclusive lock).
 
-    def __init__(self, root: Path):
+    `wait`: how many seconds to wait for another run to finish before giving up with Busy.
+    `readonly`: for checking only; nothing is repaired or added (apart from the empty lock file).
+    """
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        wait: float = 0.0,
+        readonly: bool = False,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
         self.root = root
         self.manifest_path = root / MANIFEST
+        self.wait = wait
+        self.readonly = readonly
+        self._sleep = sleep
         self._lock_fd: int | None = None
         self._head = GENESIS
+        self._lines = 0
+        self._appended = False
         self._last_file: dict[tuple[str, str], dict[str, Any]] = {}
         self._last_ok_run: dict[str, dict[str, Any]] = {}
         self.records: list[dict[str, Any]] = []
@@ -119,16 +139,25 @@ class Archive:
     # -- opening and locking -------------------------------------------------------------------------------------
 
     def __enter__(self) -> Archive:
+        if self.readonly and not self.root.is_dir():
+            raise ArchiveError(f"no archive at {self.root}")
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         fd = os.open(self.root / ".lock", os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            os.close(fd)
-            raise Busy("another archive run is in progress") from None
+        waited = 0.0
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if waited >= self.wait:
+                    os.close(fd)
+                    raise Busy("another archive run is in progress") from None
+                step = min(LOCK_POLL_SECONDS, self.wait - waited)
+                self._sleep(step)
+                waited += step
         self._lock_fd = fd
         try:
-            torn = self._quarantine_torn_tail()
+            torn = None if self.readonly else self._quarantine_torn_tail()
             self._load()
             if torn:
                 self.append({"kind": "repair", "ts": iso(utcnow()), **torn})
@@ -138,7 +167,32 @@ class Archive:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        self._unlock()
+        try:
+            if self._appended:
+                self._write_head()
+        finally:
+            self._unlock()
+
+    def _write_head(self) -> None:
+        """Note the newest chain fingerprint and the line count in a small side file.
+
+        The chain only links each line to the one before it, so on its own it cannot show that the *last* lines
+        were cut off (for example by restoring an older manifest). `verify` compares the manifest with this note.
+        This is a pointer, not archived data, so it is replaced on every run.
+        """
+        note = json.dumps({"lines": self._lines, "sha256": self._head, "ts": iso(utcnow())}).encode() + b"\n"
+        tmp = self.root / f".head-{secrets.token_hex(8)}"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            try:
+                _write_all(fd, note)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            tmp.replace(self.root / HEAD)
+        finally:
+            tmp.unlink(missing_ok=True)
+        _fsync_dir(self.root)
 
     def _unlock(self) -> None:
         if self._lock_fd is not None:
@@ -148,6 +202,11 @@ class Archive:
     def _require_open(self) -> None:
         if self._lock_fd is None:
             raise ArchiveError("archive is not open; use it as a context manager")
+
+    def _require_writable(self) -> None:
+        self._require_open()
+        if self.readonly:
+            raise ArchiveError("archive was opened for checking only")
 
     # -- manifest ------------------------------------------------------------------------------------------------
 
@@ -189,11 +248,13 @@ class Archive:
 
     def _load(self) -> None:
         self._head = GENESIS
+        self._lines = 0
         self._last_file.clear()
         self._last_ok_run.clear()
         self.records = []
         for line in self._iter_lines():
             self._head = sha256_hex(line)
+            self._lines += 1
             try:
                 rec = json.loads(line)
             except ValueError:
@@ -211,7 +272,7 @@ class Archive:
 
     def append(self, rec: dict[str, Any]) -> dict[str, Any]:
         """Add one record to the manifest. Existing lines are never rewritten."""
-        self._require_open()
+        self._require_writable()
         full = {"v": 1, **rec, "prev": self._head}
         line = json.dumps(full, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if b"\n" in line:  # json.dumps escapes newlines; this guards the one-record-per-line rule anyway
@@ -219,13 +280,27 @@ class Archive:
         created = not self.manifest_path.exists()
         fd = os.open(self.manifest_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
-            _write_all(fd, line + b"\n")
-            os.fsync(fd)
+            size_before = os.fstat(fd).st_size
+            try:
+                _write_all(fd, line + b"\n")
+                os.fsync(fd)
+            except OSError as exc:
+                # Disk full or a write error: half a line may be on disk. Take it back, so that the next record
+                # does not get glued to it, and stop: nothing more may be written in this state.
+                rolled_back = "the half-written line was removed"
+                try:
+                    os.ftruncate(fd, size_before)
+                    os.fsync(fd)
+                except OSError:
+                    rolled_back = "the half-written line could NOT be removed; the next run sets it aside"
+                raise ArchiveError(f"could not write to the manifest ({exc}); {rolled_back}") from exc
         finally:
             os.close(fd)
         if created:
             _fsync_dir(self.root)
         self._head = sha256_hex(line)
+        self._lines += 1
+        self._appended = True
         self._remember(full)
         return full
 
@@ -273,7 +348,7 @@ class Archive:
         With `dedup`, a body identical to the last one saved under the same source and name is not saved again;
         the manifest gets an "unchanged" line that points to the existing file.
         """
-        self._require_open()
+        self._require_writable()
         _check_name("source", source)
         _check_name("file", name)
         when = (when or utcnow()).astimezone(UTC)
@@ -282,9 +357,9 @@ class Archive:
         extra = dict(info or {})
 
         last = self._last_file.get((source, name))
-        if dedup and last and last.get("sha256") == digest and (self.root / str(last.get("path"))).is_file():
+        if dedup and last and last.get("sha256") == digest and self._is_intact(last, body):
             rec = {"kind": "unchanged", **base, "path": last["path"], "sha256": digest, "bytes": len(body)}
-            return self.append({**rec, **extra})
+            return self.append({**extra, **rec})
 
         rel_dir = Path(RAW) / source / f"{when:%Y}" / f"{when:%m}" / f"{when:%d}"
         abs_dir = self.root / rel_dir
@@ -315,7 +390,15 @@ class Archive:
             "stored_bytes": len(data),
             "compress": "xz" if compress else None,
         }
-        return self.append({**rec, **extra})
+        return self.append({**extra, **rec})  # our own fields win over anything passed in `info`
+
+    def _is_intact(self, rec: dict[str, Any], body: bytes) -> bool:
+        """True when the file `rec` points to still holds exactly `body`. A damaged or missing file is not reused:
+        the new download is then stored as a fresh file."""
+        try:
+            return self.read(rec) == body
+        except (OSError, lzma.LZMAError, ArchiveError, KeyError):
+            return False
 
     def _link_without_overwrite(self, tmp: Path, rel_dir: Path, stamp: str, filename: str) -> Path:
         # os.link refuses to replace an existing file, unlike a rename. Same-second name clashes get a counter.
@@ -334,14 +417,16 @@ class Archive:
         if rel.is_absolute() or ".." in rel.parts or rel.parts[:1] != (RAW,):
             raise ArchiveError(f"manifest path points outside the archive: {rec['path']!r}")
         data = (self.root / rel).read_bytes()
-        return lzma.decompress(data) if rel.suffix == ".xz" else data
+        compressed = rec["compress"] == "xz" if "compress" in rec else rel.suffix == ".xz"
+        return lzma.decompress(data) if compressed else data
 
     # -- checking ------------------------------------------------------------------------------------------------
 
     def verify(self, *, quick: bool = False) -> VerifyReport:
-        """Check the manifest chain and (unless `quick`) re-hash every stored file. Changes nothing."""
+        """Check the manifest chain and (unless `quick`) re-hash every stored file. Writes nothing itself."""
         report = VerifyReport()
         prev = GENESIS
+        head_note = self._read_head_note(report)
         known: dict[str, str] = {}  # path -> sha256
         for number, line in enumerate(self._iter_lines(), start=1):
             report.lines += 1
@@ -353,10 +438,14 @@ class Archive:
             except ValueError:
                 report.problems.append(f"line {number}: not valid JSON")
                 prev = line_hash
+                if head_note and head_note.get("lines") == number and head_note.get("sha256") != line_hash:
+                    report.problems.append(f"line {number}: differs from the fingerprint noted after the last run")
                 continue
             if rec.get("prev") != prev:
                 report.problems.append(f"line {number}: chain broken (a line was changed, removed or added before it)")
             prev = line_hash
+            if head_note and head_note.get("lines") == number and head_note.get("sha256") != line_hash:
+                report.problems.append(f"line {number}: differs from the fingerprint noted after the last run")
             kind = rec.get("kind")
             if kind == "file":
                 report.files += 1
@@ -368,12 +457,36 @@ class Archive:
                     report.problems.append(f"line {number}: 'unchanged' points to {path}, which has no matching file")
         if self.manifest_path.exists() and not self.manifest_path.read_bytes().endswith(b"\n") and report.lines:
             report.problems.append("manifest ends with an incomplete line")
+        if head_note and isinstance(head_note.get("lines"), int) and report.lines < head_note["lines"]:
+            report.problems.append(
+                f"manifest has {report.lines} lines, but {head_note['lines']} were noted after the last run: "
+                "the newest lines are gone (an older copy restored?)"
+            )
+        for torn in sorted(self.root.glob("manifest.torn-*")):
+            report.notes.append(f"half-written manifest line set aside earlier: {torn.name}")
         raw_dir = self.root / RAW
         if raw_dir.is_dir():
             for path in sorted(raw_dir.rglob("*")):
                 if path.is_file() and path.relative_to(self.root).as_posix() not in known:
                     report.orphans.append(path.relative_to(self.root).as_posix())
         return report
+
+    def _read_head_note(self, report: VerifyReport) -> dict[str, Any] | None:
+        path = self.root / HEAD
+        if not path.exists():
+            if self.manifest_path.exists():
+                report.notes.append(
+                    "no fingerprint note from the last run (manifest.head); the end of the list is unchecked"
+                )
+            return None
+        try:
+            note = json.loads(path.read_bytes())
+            if not isinstance(note, dict):
+                raise ValueError("not an object")
+        except (OSError, ValueError):
+            report.problems.append("manifest.head cannot be read")
+            return None
+        return note
 
     def _verify_file(
         self, rec: dict[str, Any], number: int, known: dict[str, str], report: VerifyReport, *, quick: bool

@@ -5,13 +5,16 @@ Adding a source: check its terms of use and robots.txt first (project rule), the
 
 from __future__ import annotations
 
+import io
 import json
+import math
+import zipfile
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-from .fetch import Fetcher
+from .fetch import Fetcher, FetchError
 from .store import Archive, utcnow
 
 
@@ -29,6 +32,7 @@ class FileSource:
     starts_with: tuple[bytes, ...]  # the real file begins with one of these; an error page does not
     min_bytes: int
     compress: bool = True
+    last_line: bytes = b""  # the complete file ends with a line that starts like this (guards against cut-off files)
 
 
 @dataclass(frozen=True)
@@ -51,12 +55,14 @@ FILE_GROUPS: tuple[FileGroup, ...] = (
                 "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
                 (b"Symbol|",),
                 50_000,
+                last_line=b"File Creation Time:",
             ),
             FileSource(
                 "otherlisted.txt",
                 "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt",
                 (b"ACT Symbol|",),
                 50_000,
+                last_line=b"File Creation Time:",
             ),
         ),
         pause=2.0,
@@ -108,13 +114,21 @@ FILE_GROUPS: tuple[FileGroup, ...] = (
 
 
 def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: str) -> dict[str, Any]:
-    """Download and store every file of a group. Raises SourceError when any of them looked wrong."""
+    """Download and store every file of a group.
+
+    Each file is tried on its own: one that fails or looks wrong never stops the others. At the end a SourceError
+    is raised when any file failed or looked wrong, so the run is reported.
+    """
     wrong: list[str] = []
     stored = unchanged = 0
     for index, item in enumerate(group.files):
         if index:
             fetcher.sleep(group.pause)
-        resp = fetcher.get(item.url)
+        try:
+            resp = fetcher.get(item.url)
+        except FetchError as exc:
+            wrong.append(f"{item.name}: not downloaded ({exc})")
+            continue
         suspect = _looks_wrong(resp.body, item)
         info: dict[str, Any] = {"url": item.url, "status": resp.status, "headers": resp.headers}
         if resp.final_url != item.url:
@@ -134,10 +148,28 @@ def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: st
 
 
 def _looks_wrong(body: bytes, item: FileSource) -> str | None:
+    """Cheap checks that the body is the whole, real file: not an error page and not cut off halfway."""
     if len(body) < item.min_bytes:
         return f"only {len(body)} bytes, expected at least {item.min_bytes}"
     if not body.lstrip()[:20].startswith(item.starts_with):
         return "does not start like the expected file (an error page?)"
+    if item.name.endswith(".json"):
+        try:
+            json.loads(body)
+        except ValueError:
+            return "is not complete, valid JSON (cut off?)"
+    if item.name.endswith(".xlsx"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as book:
+                damaged = book.testzip()
+        except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
+            return "is not a complete spreadsheet file (cut off?)"
+        if damaged:
+            return f"spreadsheet file is damaged inside ({damaged})"
+    if item.last_line:
+        lines = body.rstrip().rsplit(b"\n", 1)
+        if not lines[-1].startswith(item.last_line):
+            return "does not end like the complete file (cut off?)"
     return None
 
 
@@ -154,6 +186,8 @@ CTGOV_PAGE_SIZE = 1000  # the largest page the API gives
 CTGOV_PAUSE = 2.0  # robots.txt of the site asks for at least 1 second between requests
 CTGOV_LOOKBACK_DAYS = 1
 CTGOV_FIRST_RUN_DAYS = 7
+# The registry refreshes on working days. This many days without a refresh is not a long weekend any more.
+CTGOV_STALE_DAYS = 5
 
 
 def ctgov_data_timestamp(archive: Archive, fetcher: Fetcher, api: str, run: str) -> str:
@@ -203,6 +237,7 @@ def ctgov_pages(
     token = start_token
     n_studies = studies_before
     total = total_before
+    seen_tokens = {token} if token else set()
     while True:
         params = {"filter.advanced": expr, "pageSize": str(page_size)}
         if page == 1:
@@ -224,6 +259,7 @@ def ctgov_pages(
         if page == 1:
             total = doc.get("totalCount")
         n_studies += len(studies)
+        info_url = {"final_url": resp.final_url} if resp.final_url != url else {}
         archive.store(
             source,
             f"p{page:04d}.json",
@@ -233,6 +269,7 @@ def ctgov_pages(
             dedup=False,
             info={
                 "url": url,
+                **info_url,
                 "status": resp.status,
                 "headers": resp.headers,
                 "meta": {
@@ -249,6 +286,14 @@ def ctgov_pages(
             break
         if not studies:
             raise SourceError(f"page {page} is empty but more pages are announced")
+        # Guards against a registry that never stops handing out pages.
+        if token in seen_tokens:
+            raise SourceError(f"page {page} points back to a page we already had")
+        seen_tokens.add(token)
+        if not isinstance(total, int):
+            raise SourceError("the registry did not announce how many records to expect")
+        if n_studies >= total or page > math.ceil(total / page_size):
+            raise SourceError(f"more pages announced after {n_studies} records, but only {total} were expected")
         page += 1
     if not isinstance(total, int) or total != n_studies:
         raise SourceError(f"received {n_studies} trial records, but the registry announced {total}")
@@ -262,6 +307,7 @@ def run_ctgov_updates(
     *,
     api: str = CTGOV_API,
     today: date | None = None,
+    now: datetime | None = None,
     page_size: int = CTGOV_PAGE_SIZE,
 ) -> dict[str, Any]:
     """Save every company-linked trial record whose latest update was posted since the previous successful run.
@@ -273,6 +319,12 @@ def run_ctgov_updates(
     previous = archive.last_ok_run(CTGOV_UPDATES)
     last_stamp = (previous or {}).get("meta", {}).get("data_timestamp")
     if last_stamp == stamp:
+        age = _days_since(str((previous or {}).get("ts")), now or utcnow())
+        if age is None or age > CTGOV_STALE_DAYS:
+            # Skipping is right over a weekend, but not for ever: then nothing is saved and nobody would notice.
+            raise SourceError(
+                f"the registry reports no data refresh since {stamp}, for more than {CTGOV_STALE_DAYS} days"
+            )
         return {"skipped": "registry data not refreshed since the last run", "data_timestamp": stamp}
     if last_stamp:
         since = _stamp_date(last_stamp) - timedelta(days=CTGOV_LOOKBACK_DAYS)
@@ -343,6 +395,16 @@ def run_ctgov_baseline(
     )
     _require_same_stamp(archive, fetcher, api, run, stamp)
     return {**summary, "data_timestamp": stamp, "expr": CTGOV_INDUSTRY, "batch": batch}
+
+
+def _days_since(ts: str, now: datetime) -> float | None:
+    try:
+        then = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    return (now - then).total_seconds() / 86400
 
 
 def _batch_of(rec: dict[str, Any]) -> str | None:

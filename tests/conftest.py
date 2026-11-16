@@ -29,6 +29,7 @@ class FakeSite:
         self.stamp_after_pages: str | None = None  # the registry "refreshes" once the pages have been served
         self.lie_about_total: int | None = None
         self.exprs: list[str] = []
+        self.endless = False
 
     def add(self, path: str, *answers: dict) -> None:
         self.routes[path] = list(answers)
@@ -58,7 +59,9 @@ def _handler(site: FakeSite) -> type[BaseHTTPRequestHandler]:
             size = int(query["pageSize"][0])
             start = int(query.get("pageToken", ["0"])[0])
             doc: dict = {"studies": site.studies[start : start + size]}
-            if start + size < len(site.studies):
+            if site.endless:
+                doc["nextPageToken"] = "2"  # a broken registry that never stops
+            elif start + size < len(site.studies):
                 doc["nextPageToken"] = str(start + size)
             elif site.stamp_after_pages:
                 site.data_timestamp = site.stamp_after_pages

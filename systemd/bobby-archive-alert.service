@@ -3,4 +3,5 @@ Description=Bobby Hedgefund: archive failure alert
 
 [Service]
 Type=oneshot
-ExecStart=%h/server/tools/send_ha_message.sh "Bobby archive" "The daily archive run had a failure: at least one source was not saved today. See: cd ~/projects/bobby-hedgefund && uv run bobby-archive status"
+# Home Assistant may still be starting (a catch-up run right after boot): try for up to ~10 minutes
+ExecStart=/bin/bash -c 'for i in $(seq 1 20); do "$HOME/server/tools/send_ha_message.sh" "Bobby archive" "The daily archive run had a failure: at least one source was not saved today. See: bobby-archive status" && exit 0; sleep 30; done; exit 1'

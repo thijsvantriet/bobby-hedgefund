@@ -38,7 +38,7 @@ Requirements:
 
 | Option | For | Against |
 |---|---|---|
-| **`~/bobby-hedgefund-data/`, outside the repository** | Same pattern as the other projects on this machine (`~/voice-journal-data`, `~/ice-cream-data`). Cannot be committed by accident. Survives deleting or re-cloning the repository. | One more folder in the home directory. |
+| **`~/bobby-hedgefund-data/`, outside the repository** | Same pattern as the other projects on this machine. Cannot be committed by accident. Survives deleting or re-cloning the repository. | One more folder in the home directory. |
 | `data/` inside the repository (ignored by git) | Everything in one place. | A routine clean-up command (`git clean`) or deleting the folder would erase irreplaceable data. |
 
 **Backup**
@@ -50,8 +50,10 @@ Requirements:
 
 ## Decision
 **Form: option A.** Plain files plus a checksum list, with three additions:
-1. **Each line of the list contains the fingerprint of the line before it.** Changing or removing an old line breaks the
-   chain, and `bobby-archive verify` reports it. This is the same idea the project plans for the agents' decision log.
+1. **Each line of the list contains the fingerprint of the line before it.** Changing or removing an older line breaks
+   the chain, and `bobby-archive verify` reports it. This is the same idea the project plans for the agents' decision
+   log. A chain cannot show by itself that its *newest* lines were cut off, so after every run the newest fingerprint
+   and the line count are noted in a small side file (`manifest.head`) that `verify` compares with the list.
 2. **A download identical to the previous one is not stored twice.** The list gets an "unchanged" line that points to the
    existing file.
 3. **Large text files are compressed** (xz, lossless; the fingerprint is that of the original bytes). Trial-registry pages
@@ -69,6 +71,11 @@ Layout:
 **Backup:** the existing nightly home backup. Nothing was changed in `~/server`.
 
 **Schedule:** a systemd user timer at 23:30 (unit files in `systemd/`), with a phone alert when a source fails.
+
+**Which code runs at night:** an installed snapshot of the program (`uv tool install`, made by `systemd/install.sh`),
+not the project folder. Work in progress in the project folder, or another branch being checked out, can therefore
+never run against the real archive. After a change is merged, `systemd/install.sh` is run again; it refuses to install
+uncommitted code or code whose tests fail.
 
 **Sources in the first version** (terms checked 2026-11-16):
 
@@ -99,8 +106,12 @@ Layout:
   storing it twice. Later code that compares records must expect duplicates.
 - Comparing versions, linking trials to companies and everything else that reads the archive is future work; the
   archive only saves.
-- The archive runs from the project folder on this laptop. If the folder is on a branch without the archive code, the
-  nightly run fails and the phone alert fires.
+- A change to the archive code only takes effect after `systemd/install.sh` is run again. Forgetting that means the old
+  version keeps running, which is the safe side.
+- A file is checked before it counts as saved: the right start, a minimum size, and a complete ending (valid JSON, a
+  spreadsheet that opens, the closing line of the Nasdaq lists). A file that fails is still kept, flagged "suspect",
+  and the alert fires.
+- If another archive command is busy at 23:30, the nightly run waits up to two hours and then fails with an alert.
 - There is no "the run did not start at all" alarm yet (only "a run failed"). `bobby-archive status` shows the last good
   run per source.
 - If the laptop is off for more than a day, the overwritten files of those days are lost (the trial registry catches up
@@ -116,7 +127,9 @@ Not part of the must-check, ideas for the spec: publish the daily chain fingerpr
 timestamp); a Home Assistant "no archive run in 36 hours" alarm; store only changed trial records to remove the overlap.
 
 ## Verify
-Checked on 2026-11-16: see the pull request that added this file (tests, a live trial run, an independent review).
+Checked on 2026-11-16: 70 automated tests, a live trial run, and an independent review by a second agent that found 11
+problems (among them: one failing file stopped the rest of its group; a full disk could damage the list; the newest
+lines of the list were not protected). All were fixed and each has a test. Details in the pull request that added this file.
 
 ## Sources
 - BagIt, the file-archive format with checksum lists: [RFC 8493](https://www.rfc-editor.org/rfc/rfc8493)

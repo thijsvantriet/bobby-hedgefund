@@ -29,11 +29,17 @@ overwrite them. It does no analysis. What, where and why: docs/decisions/0001-da
 - **If something fails:** a phone message "Bobby archive". Then:
 
 ```
+bobby-archive status               # last run per source, stored size
+bobby-archive verify               # re-reads every file and checks it against its fingerprint; writes nothing
+bobby-archive run                  # run the daily download by hand
+bobby-archive baseline             # one-time full copy of the trial records (--resume if interrupted)
+```
+
+The nightly job runs an installed snapshot of the program, not this folder. After changing the archive code (merged
+and tested), install the new version:
+
+```
 cd ~/projects/bobby-hedgefund
-uv run bobby-archive status        # last run per source, stored size
-uv run bobby-archive verify        # re-reads every file and checks it against its fingerprint; changes nothing
-uv run bobby-archive run           # run the daily download by hand
-uv run bobby-archive baseline      # one-time full copy of the trial records (done 2026-11-16; --resume if interrupted)
-systemd/install.sh                 # install or update the timer
 uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest
+systemd/install.sh                 # installs the snapshot and the timer; refuses uncommitted or failing code
 ```

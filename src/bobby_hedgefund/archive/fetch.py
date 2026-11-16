@@ -32,16 +32,37 @@ class Response:
 
 
 def _gunzip_bounded(raw: bytes, limit: int) -> bytes:
-    decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
-    try:
-        out = decoder.decompress(raw, limit + 1)
-    except zlib.error as exc:
-        raise FetchError(f"broken gzip data: {exc}") from exc
-    if len(out) > limit or decoder.unconsumed_tail:
-        raise FetchError(f"response larger than the limit of {limit} bytes")
-    if not decoder.eof:
-        raise FetchError("gzip data ended early (incomplete download)")
-    return out
+    """Unpack gzip data, refusing output above `limit` and data that stops early.
+
+    A gzip stream may consist of several parts ("members") in a row; all of them belong to the body.
+    """
+    out = bytearray()
+    rest = raw
+    while rest:
+        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            out += decoder.decompress(rest, limit + 1 - len(out))
+        except zlib.error as exc:
+            raise FetchError(f"broken gzip data: {exc}") from exc
+        if len(out) > limit or decoder.unconsumed_tail:
+            raise FetchError(f"response larger than the limit of {limit} bytes")
+        if not decoder.eof:
+            raise FetchError("gzip data ended early (incomplete download)")
+        rest = decoder.unused_data
+    return bytes(out)
+
+
+class _SafeRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow redirects only to web addresses, and never from an encrypted address to an unencrypted one."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        old, new = urlsplit(req.full_url).scheme, urlsplit(newurl).scheme
+        if new not in ("http", "https") or (old == "https" and new != "https"):
+            raise urllib.error.HTTPError(newurl, code, f"refused redirect from {old} to {new}", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_SafeRedirects)
 
 
 @dataclass
@@ -73,7 +94,7 @@ class Fetcher:
             url, headers={"User-Agent": self.user_agent, "Accept": "*/*", "Accept-Encoding": "gzip"}
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as resp:
+            with _OPENER.open(request, timeout=self.timeout) as resp:
                 status = resp.status
                 headers = {k.lower(): v for k, v in resp.headers.items()}
                 final_url = resp.geturl()
