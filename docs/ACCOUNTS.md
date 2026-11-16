@@ -24,5 +24,11 @@ inbox. Use a password manager for the passwords.
 Also in `.env`, no account needed: `SEC_CONTACT_EMAIL`, the address sent with every request to the SEC (decided
 2026-11-16: the owner's normal address is fine).
 
+Status 2026-11-16 (each key tested with one small request, and a made-up key was refused): Tiingo, Massive, openFDA,
+FRED, NCBI, FDA Data Dashboard and OpenAlex work. AACT: key saved but untested, database login still refused (the
+database username and server address must come from AACT's connection page). EPO: account waiting for approval.
+The FDA portal gives one key per service: `FDA_ENFORCEMENT_KEY` is for its Enforcement Reports (recalls) service, untested.
+OpenAlex's free key has a daily budget of 1 US dollar of usage (about 10,000 simple requests), no payment details asked.
+
 Not checked: the exact free limits of Tiingo and Massive, and whether each sign-up page still looks as described.
 Read each service's terms when you sign up; all were listed as free for personal use in docs/research/DATA-SOURCES.md.
