@@ -33,6 +33,8 @@ portfolio and no results yet. The log below shows each step.
    hard spending limit) or scheduled Claude Code sessions on the owner's subscription (no API account). To research
    first: what the subscription's terms and usage limits allow for scheduled, unattended runs, and whether every
    decision can be logged just as completely. The owner has no API account yet (2026-11-16).
+   A third candidate (owner's idea): the owner opens a session by hand on most days and it does that day's round.
+   Then decide beforehand what a skipped day means, so that skipping can never be a choice made with hindsight.
 3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
 4. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
