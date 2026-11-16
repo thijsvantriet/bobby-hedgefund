@@ -75,7 +75,12 @@ Before any of these: the linking table, with a one-time check by you of about 20
 
 **Needed before any code runs**
 1. Which contact e-mail goes into requests to the SEC? It is mandatory. A separate project address is suggested.
+   **Owner, 2026-11-16:** the owner's normal personal address is fine. It is kept in a local settings file that git
+   ignores, never in the code or the repository.
 2. May the public repository show only our own results, short quotes and official data, never raw commercial data?
+   **Owner, 2026-11-16:** yes, respect the sources' terms. Condition: the public repository must still be understandable
+   on its own, so every public decision record says in plain words what the agent saw (source, date, link, short
+   summary), even where the raw data stays local.
 3. Which free sign-ups are acceptable (a price service; optionally several official services)?
 4. Start the day-1 archive now, and where should it be stored and backed up?
 
