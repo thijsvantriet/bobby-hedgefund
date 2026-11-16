@@ -117,19 +117,20 @@ FILE_GROUPS: tuple[FileGroup, ...] = (
 def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: str) -> dict[str, Any]:
     """Download and store every file of a group.
 
-    Each file is tried on its own: one that fails or looks wrong never stops the others. At the end a SourceError
-    is raised when any file failed or looked wrong, so the run is reported.
+    Each file is tried on its own: one that fails or looks wrong never stops the others. Files that could not be
+    downloaded get one second round at the end, after another pause (some sites refuse a file for a few minutes
+    and then serve it again). At the end a SourceError is raised when any file is still missing or looked wrong,
+    so the run is reported.
     """
     wrong: list[str] = []
-    stored = unchanged = 0
-    for index, item in enumerate(group.files):
-        if index:
-            fetcher.sleep(group.pause)
+    counts = {"stored": 0, "unchanged": 0}
+
+    def attempt(item: FileSource) -> str | None:
+        """Fetch and store one file. Returns the reason when it could not be downloaded at all."""
         try:
             resp = fetcher.get(item.url)
         except FetchError as exc:
-            wrong.append(f"{item.name}: not downloaded ({exc})")
-            continue
+            return str(exc)
         suspect = _looks_wrong(resp.body, item)
         info: dict[str, Any] = {"url": item.url, "status": resp.status, "headers": resp.headers}
         if resp.final_url != item.url:
@@ -139,13 +140,25 @@ def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: st
             info["suspect"] = suspect
             wrong.append(f"{item.name}: {suspect}")
         rec = archive.store(group.source, item.name, resp.body, run=run, compress=item.compress, info=info)
-        if rec["kind"] == "file":
-            stored += 1
-        else:
-            unchanged += 1
+        counts["stored" if rec["kind"] == "file" else "unchanged"] += 1
+        return None
+
+    missed: list[FileSource] = []
+    for index, item in enumerate(group.files):
+        if index:
+            fetcher.sleep(group.pause)
+        if attempt(item) is not None:
+            missed.append(item)
+    for item in missed:  # the second round
+        fetcher.sleep(group.pause)
+        reason = attempt(item)
+        if reason is not None:
+            wrong.append(f"{item.name}: not downloaded ({reason})")
     if wrong:
         raise SourceError("; ".join(wrong))
-    return {"stored": stored, "unchanged": unchanged}
+    if missed:
+        counts["second_try"] = len(missed)
+    return counts
 
 
 def _looks_wrong(body: bytes, item: FileSource) -> str | None:

@@ -82,7 +82,7 @@ uncommitted code or code whose tests fail.
 | Source | What | Why it is allowed |
 |---|---|---|
 | ClinicalTrials.gov data service | Each working day: every trial record with a company as sponsor or collaborator whose update was posted since the last good run. Once: a full copy of those records (about 170,000) as the "before". | A public service built for programs, documented by the registry. Its `robots.txt` asks for one second between requests; we wait two. Its terms page could not be read by our tools: **unverified**. |
-| European Medicines Agency files | Five files: medicines, post-authorisation procedures, orphan designations, referrals, paediatric plans. | EMA states the files "specifically target use via automated systems". Reuse with credit is allowed. EMA's site is strict about request speed (it refused the fourth file at 20 seconds apart), so we wait five minutes between files. |
+| European Medicines Agency files | Five files: medicines, post-authorisation procedures, orphan designations, referrals, paediatric plans. | EMA states the files "specifically target use via automated systems". Reuse with credit is allowed. EMA's site is strict about request speed (it refused the fourth file at 20 seconds apart), so we wait five minutes between files, and a refused file gets one more try at the end of the run. Even so, one of the five files was refused on each of the first two runs (a different one each time): **expect occasional EMA alerts** until the pattern is understood. |
 | Nasdaq symbol directory | Two lists of all US-listed symbols, including the flag for companies failing listing rules. | Nasdaq documents these files for download. No conditions are stated on that page; its copyright page was not read: **unverified**. |
 | SPDR XBI holdings | The fund's daily holdings file. | **Grey zone, owner may switch it off.** State Street's terms allow copies "for your own personal use" and forbid passing the data on. Nothing in the terms or in `robots.txt` forbids fetching this file by script. We fetch it once a day and never publish it. |
 
@@ -100,8 +100,8 @@ uncommitted code or code whose tests fail.
 
 ## Consequences
 - From 2026-11-16 the project has its own dated history of these sources.
-- Expected size: about 0.5 GB once for the full registry copy, then roughly 1.5 GB a year (estimate from the first
-  runs; the nightly backup uploads each file once).
+- Size: the full registry copy took 444 MB (170,083 records, done 2026-11-16). After that roughly 1.5 GB a year
+  (estimate from one day; the nightly backup uploads each file once).
 - The raw pages of the trial registry overlap by a day or two between runs, on purpose: missing a record is worse than
   storing it twice. Later code that compares records must expect duplicates.
 - Comparing versions, linking trials to companies and everything else that reads the archive is future work; the
@@ -127,7 +127,8 @@ Not part of the must-check, ideas for the spec: publish the daily chain fingerpr
 timestamp); a Home Assistant "no archive run in 36 hours" alarm; store only changed trial records to remove the overlap.
 
 ## Verify
-Checked on 2026-11-16: 70 automated tests, a live trial run, and an independent review by a second agent that found 11
+Checked on 2026-11-16: 72 automated tests, live runs (after which `bobby-archive verify` re-read all 182 stored files
+and found no problem), and an independent review by a second agent that found 11
 problems (among them: one failing file stopped the rest of its group; a full disk could damage the list; the newest
 lines of the list were not protected). All were fixed and each has a test. Details in the pull request that added this file.
 

@@ -8,7 +8,7 @@ earnings calls), run forward on the home server for about 6 months and compared 
 
 2026-11-15: overnight research done (branch `research-overnight`, PR open, not merged): what to reuse, which data to collect, and a first look at past cases. Start with docs/research/SUMMARY.md; it ends with the open questions for the spec interview. No code, nothing installed.
 
-2026-11-16: owner's answers to the four start questions recorded in docs/research/SUMMARY.md (SEC contact address, public-repository rule, free sign-ups, start the archive now). **Day-1 archive built** (branch `day1-archive`): a nightly job that only saves public files their publishers overwrite. See "Day-1 archive" below and docs/decisions/0001.
+2026-11-16: owner's answers to the four start questions recorded in docs/research/SUMMARY.md (SEC contact address, public-repository rule, free sign-ups, start the archive now). **Day-1 archive built** (branch `day1-archive`): a nightly job that only saves public files their publishers overwrite. See "Day-1 archive" below and docs/decisions/0001. First runs done the same day: the one-time full copy of 170,083 company-linked trial records (444 MB) is stored and the whole archive passes its check. Known issue: the EMA site refuses one of its five files now and then, so an occasional "Bobby archive" phone message about EMA is expected.
 
 ## Next step
 1. Owner: create the free accounts and put the keys in `.env` (checklist: docs/ACCOUNTS.md; Tiingo first).

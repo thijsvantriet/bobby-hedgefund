@@ -283,3 +283,26 @@ def test_skipping_for_too_long_becomes_a_failure(site, fetcher: Fetcher, tmp_pat
         assert "skipped" in sources.run_ctgov_updates(archive, fetcher, "r2", api=api, now=now + timedelta(days=4))
         with pytest.raises(SourceError, match="no data refresh"):
             sources.run_ctgov_updates(archive, fetcher, "r3", api=api, now=now + timedelta(days=6))
+
+
+def test_refused_file_gets_a_second_round_after_the_others(site, fetcher: Fetcher, waits, tmp_path: Path) -> None:
+    busy = {"status": 429, "body": b"slow down"}
+    site.add("/a", busy, busy, busy, {"body": b"Symbol|file a, served again later"})  # 3 tries fail, then fine
+    site.add("/b", {"body": b"Symbol|file b is always fine"})
+    files = tuple(FileSource(n, site.base + "/" + n[0], (b"Symbol|",), 10) for n in ("a.txt", "b.txt"))
+    with Archive(tmp_path) as archive:
+        result = sources.run_file_group(archive, fetcher, FileGroup("demo", files, 7.0), "r1")
+        assert archive.verify().ok
+    assert result == {"stored": 2, "unchanged": 0, "second_try": 1}
+    assert site.hits == ["/a", "/a", "/a", "/b", "/a"]
+    assert waits == [1.0, 2.0, 7.0, 7.0]  # two retries, the pause before b, the pause before the second round
+
+
+def test_file_still_refused_in_the_second_round_is_reported_once(site, fetcher: Fetcher, tmp_path: Path) -> None:
+    site.add("/a", {"status": 429, "body": b"slow down"})
+    site.add("/b", {"body": b"Symbol|file b is always fine"})
+    files = tuple(FileSource(n, site.base + "/" + n[0], (b"Symbol|",), 10) for n in ("a.txt", "b.txt"))
+    with Archive(tmp_path) as archive, pytest.raises(SourceError) as err:
+        sources.run_file_group(archive, fetcher, FileGroup("demo", files, 7.0), "r1")
+    assert str(err.value).count("a.txt: not downloaded") == 1 and "b.txt" not in str(err.value)
+    assert site.hits.count("/a") == 6 and site.hits.count("/b") == 1
