@@ -23,6 +23,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-16: read-through done (all files, the whole history, the research reports). A few details about the home setup and a few statements about named people were reworded; no key, address or source data was found. Added: "Track record" and "Data sources and credit" below. The terms of ClinicalTrials.gov and Nasdaq were read (docs/decisions/0001, "Update"). Merged into `main` (PR #2), nightly job reinstalled from it. **Repository still private: it is made public only after the owner says yes in so many words**; then check from outside that it is public, the licence shows, and no old pull request or private address can be reached.
 
+2026-11-16: **the repository is public** (owner's explicit yes). Checked from outside without a login: it is visible, GitHub shows the MIT licence, description and topics, only the four pull requests of the new repository exist, the commits of the old repository are not found, and every commit carries GitHub's no-reply address.
+
 ## Next step
 1. Owner, when EPO approves the account: put its Consumer Key and Secret in `.env` (only needed if patents make it into the spec).
 2. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
@@ -35,6 +37,14 @@ portfolio and no results yet. The log below shows each step.
    decision can be logged just as completely. The owner has no API account yet (2026-11-16).
    A third candidate (owner's idea): the owner opens a session by hand on most days and it does that day's round.
    Then decide beforehand what a skipped day means, so that skipping can never be a choice made with hindsight.
+   Checked in the official documentation on 2026-11-16 (details and links: docs/research/notes/H-how-agents-run.md):
+   cloud scheduled tasks exist for subscriptions but cannot read files on this machine; scheduling inside a session
+   expires after seven days; a timer that starts Claude Code without a person is documented, but the terms do not
+   say clearly that this is allowed on a subscription; with an API key it clearly is. Opening a session by hand is
+   ordinary use. **Owner's direction (2026-11-16): sessions opened by hand, not scheduled ones**; the spec works
+   this out (rule for skipped days, fixed moment at which decisions count) and records it as a decision.
+   Owner's preference for models (2026-11-16): most agents Opus on high effort, the most important
+   role on the strongest model; to weigh against a cheap model for the daily screening. Measure usage in the pilot.
 3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
 4. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
