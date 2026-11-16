@@ -13,3 +13,4 @@ where a note and a report disagree, the report is the later and reviewed text, b
 | E-market-news-alt.md | Prices, short interest, ETFs, news, macro, alternative data |
 | F-overlooked.md | Important but overlooked streams |
 | G-forensics.md | Past cases: literature and 14 case timelines |
+| H-how-agents-run.md | How the agents could run: API or subscription sessions (added 2026-11-16) |

@@ -35,6 +35,14 @@ portfolio and no results yet. The log below shows each step.
    decision can be logged just as completely. The owner has no API account yet (2026-11-16).
    A third candidate (owner's idea): the owner opens a session by hand on most days and it does that day's round.
    Then decide beforehand what a skipped day means, so that skipping can never be a choice made with hindsight.
+   Checked in the official documentation on 2026-11-16 (details and links: docs/research/notes/H-how-agents-run.md):
+   cloud scheduled tasks exist for subscriptions but cannot read files on this machine; scheduling inside a session
+   expires after seven days; a timer that starts Claude Code without a person is documented, but the terms do not
+   say clearly that this is allowed on a subscription; with an API key it clearly is. Opening a session by hand is
+   ordinary use. **Owner's direction (2026-11-16): sessions opened by hand, not scheduled ones**; the spec works
+   this out (rule for skipped days, fixed moment at which decisions count) and records it as a decision.
+   Owner's preference for models (2026-11-16): most agents Opus on high effort, the most important
+   role on the strongest model; to weigh against a cheap model for the daily screening. Measure usage in the pilot.
 3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
 4. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
