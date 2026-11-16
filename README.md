@@ -29,6 +29,10 @@ portfolio and no results yet. The log below shows each step.
    Terms: read on 2026-11-16 (docs/decisions/0001, "Update"). Open: the owner opens the ClinicalTrials.gov terms page
    once in a browser to confirm the wording; AACT shows no terms page, so ask AACT before building that download.
    Also for the spec: where and in what form the track record is published (see "Track record").
+   Also for the spec: how the agents run. Two candidates to compare: the Claude API (separate account, pay per use,
+   hard spending limit) or scheduled Claude Code sessions on the owner's subscription (no API account). To research
+   first: what the subscription's terms and usage limits allow for scheduled, unattended runs, and whether every
+   decision can be logged just as completely. The owner has no API account yet (2026-11-16).
 3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
 4. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
