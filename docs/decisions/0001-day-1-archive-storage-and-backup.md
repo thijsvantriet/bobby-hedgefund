@@ -133,7 +133,7 @@ timestamp); a Home Assistant "no archive run in 36 hours" alarm; store only chan
 Checked on 2026-11-16: 76 automated tests, live runs (after which `bobby-archive verify` re-read all 182 stored files
 and found no problem), and an independent review by a second agent that found 11
 problems (among them: one failing file stopped the rest of its group; a full disk could damage the list; the newest
-lines of the list were not protected). All were fixed and each has a test. Details in the pull request that added this file.
+lines of the list were not protected). All were fixed and each has a test.
 A second review, of those fixes, found one more serious problem: a run did not compare the list with the side note
 before writing, so a list that had lost its newest lines would have been continued and the note replaced. Fixed: a
 run now refuses to write in that case and the alert fires. Its smaller findings were fixed too (more kinds of damaged
