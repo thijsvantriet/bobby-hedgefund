@@ -16,6 +16,7 @@ Nice=10
 IOSchedulingClass=idle
 MemoryHigh=1G
 MemoryMax=2G
-# A normal run takes a few minutes; it waits up to 2 hours when another archive command is busy. Never hang forever:
+# A normal run takes about 25 minutes (five-minute pauses between EMA files). Worst case: 2 hours waiting for another
+# archive command plus about 3.5 hours when EMA refuses every file and asks for long waits. Never hang forever:
 # a hung run would hold the lock and block the next days.
-TimeoutStartSec=4h
+TimeoutStartSec=7h

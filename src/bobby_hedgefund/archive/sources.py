@@ -9,6 +9,7 @@ import io
 import json
 import math
 import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -170,13 +171,20 @@ def _looks_wrong(body: bytes, item: FileSource) -> str | None:
     if item.name.endswith(".json"):
         try:
             json.loads(body)
-        except ValueError:
+        except (ValueError, RecursionError):
             return "is not complete, valid JSON (cut off?)"
     if item.name.endswith(".xlsx"):
         try:
             with zipfile.ZipFile(io.BytesIO(body)) as book:
                 damaged = book.testzip()
-        except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
+        except (
+            zipfile.BadZipFile,
+            zlib.error,
+            EOFError,
+            OSError,
+            ValueError,
+            RuntimeError,
+        ):  # incl. NotImplementedError
             return "is not a complete spreadsheet file (cut off?)"
         if damaged:
             return f"spreadsheet file is damaged inside ({damaged})"

@@ -306,3 +306,53 @@ def test_file_still_refused_in_the_second_round_is_reported_once(site, fetcher: 
         sources.run_file_group(archive, fetcher, FileGroup("demo", files, 7.0), "r1")
     assert str(err.value).count("a.txt: not downloaded") == 1 and "b.txt" not in str(err.value)
     assert site.hits.count("/a") == 6 and site.hits.count("/b") == 1
+
+
+def _three_lines(root: Path) -> tuple[Path, Path]:
+    with Archive(root) as archive:
+        for i in range(3):
+            archive.store("src", f"f{i}.txt", f"body{i}".encode(), run="r1")
+    return root / "manifest.jsonl", root / "manifest.head"
+
+
+def test_run_refuses_to_write_when_the_newest_manifest_lines_are_gone(tmp_path: Path) -> None:
+    manifest, head = _three_lines(tmp_path)
+    note = head.read_bytes()
+    shorter = b"".join(manifest.read_bytes().splitlines(keepends=True)[:2])  # an older copy was put back
+    manifest.write_bytes(shorter)
+    with pytest.raises(ArchiveError, match="newest lines are gone"), Archive(tmp_path):
+        pass
+    assert manifest.read_bytes() == shorter and head.read_bytes() == note  # nothing written, the evidence stays
+    with Archive(tmp_path, readonly=True) as archive:  # looking is still possible, and it reports the loss
+        assert any("newest lines are gone" in p for p in archive.verify().problems)
+
+
+def test_run_refuses_to_write_when_the_noted_line_was_replaced(tmp_path: Path) -> None:
+    manifest, _head = _three_lines(tmp_path)
+    rows = manifest.read_bytes().splitlines(keepends=True)
+    manifest.write_bytes(b"".join([*rows[:2], rows[2].replace(b'"r1"', b'"rX"')]))
+    with pytest.raises(ArchiveError, match="differs from the fingerprint"), Archive(tmp_path):
+        pass
+
+
+def test_manifest_longer_than_the_note_is_accepted(tmp_path: Path) -> None:
+    _, head = _three_lines(tmp_path)
+    note = head.read_bytes()
+    with Archive(tmp_path) as archive:
+        archive.store("src", "later.txt", b"later", run="r2")
+    head.write_bytes(note)  # as if that run was killed before it could update the note
+    with Archive(tmp_path) as archive:
+        archive.store("src", "more.txt", b"more", run="r3")
+        assert archive.verify().ok
+    assert json.loads(head.read_bytes())["lines"] == 5
+
+
+def test_damaged_spreadsheet_or_deep_json_is_flagged_not_a_crash() -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as book:
+        book.writestr("sheet.xml", b"<x>" + b"abcdefgh" * 4000 + b"</x>")
+    whole = bytearray(buf.getvalue())
+    whole[60:120] = b"\xff" * 60  # damage inside the packed data; the file still opens as a zip
+    assert _looks_wrong(bytes(whole), FileSource("a.xlsx", "u", (b"PK",), 10, False))
+    deep = b"[" * 200_000 + b"]" * 200_000
+    assert _looks_wrong(deep, FileSource("a.json", "u", (b"[",), 10))

@@ -111,6 +111,9 @@ uncommitted code or code whose tests fail.
 - A file is checked before it counts as saved: the right start, a minimum size, and a complete ending (valid JSON, a
   spreadsheet that opens, the closing line of the Nasdaq lists). A file that fails is still kept, flagged "suspect",
   and the alert fires.
+- If the list is shorter than the side note says, or its noted line has changed, every writing command stops with
+  an error until someone has looked (`bobby-archive verify` still works). Restoring an older copy of the list from
+  the backup therefore needs a deliberate step: also restore or remove `manifest.head`.
 - If another archive command is busy at 23:30, the nightly run waits up to two hours and then fails with an alert.
 - There is no "the run did not start at all" alarm yet (only "a run failed"). `bobby-archive status` shows the last good
   run per source.
@@ -127,10 +130,15 @@ Not part of the must-check, ideas for the spec: publish the daily chain fingerpr
 timestamp); a Home Assistant "no archive run in 36 hours" alarm; store only changed trial records to remove the overlap.
 
 ## Verify
-Checked on 2026-11-16: 72 automated tests, live runs (after which `bobby-archive verify` re-read all 182 stored files
+Checked on 2026-11-16: 76 automated tests, live runs (after which `bobby-archive verify` re-read all 182 stored files
 and found no problem), and an independent review by a second agent that found 11
 problems (among them: one failing file stopped the rest of its group; a full disk could damage the list; the newest
 lines of the list were not protected). All were fixed and each has a test. Details in the pull request that added this file.
+A second review, of those fixes, found one more serious problem: a run did not compare the list with the side note
+before writing, so a list that had lost its newest lines would have been continued and the note replaced. Fixed: a
+run now refuses to write in that case and the alert fires. Its smaller findings were fixed too (more kinds of damaged
+files are flagged instead of stopping a group; new folders are synced to disk; the job's time limit is now 7 hours).
+Left as is: `systemd/install.sh` installs whatever committed branch is checked out, so run it from `main`.
 
 ## Sources
 - BagIt, the file-archive format with checksum lists: [RFC 8493](https://www.rfc-editor.org/rfc/rfc8493)

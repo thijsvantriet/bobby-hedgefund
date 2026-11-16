@@ -135,6 +135,7 @@ class Archive:
         self._last_file: dict[tuple[str, str], dict[str, Any]] = {}
         self._last_ok_run: dict[str, dict[str, Any]] = {}
         self.records: list[dict[str, Any]] = []
+        self._hash_at: dict[int, str] = {}
 
     # -- opening and locking -------------------------------------------------------------------------------------
 
@@ -159,6 +160,8 @@ class Archive:
         try:
             torn = None if self.readonly else self._quarantine_torn_tail()
             self._load()
+            if not self.readonly:
+                self._check_head_note()
             if torn:
                 self.append({"kind": "repair", "ts": iso(utcnow()), **torn})
         except BaseException:
@@ -193,6 +196,34 @@ class Archive:
         finally:
             tmp.unlink(missing_ok=True)
         _fsync_dir(self.root)
+
+    def _check_head_note(self) -> None:
+        """Refuse to write when the manifest no longer matches the note of the last run.
+
+        Without this check a run would chain new lines onto a manifest that lost its newest lines (an older copy
+        restored, a file cut short) and then replace the note: the only trace of the loss would be gone.
+        A manifest that is *longer* than the note is fine: a run that was killed has added lines but no note.
+        """
+        try:
+            note = json.loads((self.root / HEAD).read_bytes())
+            lines, noted = note["lines"], note["sha256"]
+        except (OSError, ValueError, TypeError, KeyError):
+            return  # no note, or an unreadable one: `verify` mentions it; nothing to compare with
+        if not isinstance(lines, int) or lines <= 0:
+            return
+        hint = (
+            f"Nothing was written. Look into it with 'bobby-archive verify'; "
+            f"restore {MANIFEST} from the backup if needed."
+        )
+        if self._lines < lines:
+            raise ArchiveError(
+                f"{MANIFEST} has {self._lines} lines, but {lines} were noted after the last run: "
+                f"the newest lines are gone. {hint}"
+            )
+        if self._hash_at.get(lines) != noted:
+            raise ArchiveError(
+                f"line {lines} of {MANIFEST} differs from the fingerprint noted after the last run. {hint}"
+            )
 
     def _unlock(self) -> None:
         if self._lock_fd is not None:
@@ -252,15 +283,26 @@ class Archive:
         self._last_file.clear()
         self._last_ok_run.clear()
         self.records = []
+        self._hash_at = {}
+        noted_line = self._noted_line_number()
         for line in self._iter_lines():
             self._head = sha256_hex(line)
             self._lines += 1
+            if noted_line is not None and self._lines == noted_line:
+                self._hash_at[noted_line] = self._head
             try:
                 rec = json.loads(line)
             except ValueError:
                 continue  # `verify` reports it; a damaged line must not stop new downloads from being saved
             if isinstance(rec, dict):
                 self._remember(rec)
+
+    def _noted_line_number(self) -> int | None:
+        try:
+            lines = json.loads((self.root / HEAD).read_bytes())["lines"]
+        except (OSError, ValueError, TypeError, KeyError):
+            return None
+        return lines if isinstance(lines, int) else None
 
     def _remember(self, rec: dict[str, Any]) -> None:
         self.records.append(rec)
@@ -363,7 +405,10 @@ class Archive:
 
         rel_dir = Path(RAW) / source / f"{when:%Y}" / f"{when:%m}" / f"{when:%d}"
         abs_dir = self.root / rel_dir
+        missing = [d for d in (abs_dir, *abs_dir.parents) if d.is_relative_to(self.root) and not d.exists()]
         abs_dir.mkdir(parents=True, exist_ok=True)
+        for made in missing:  # make the new folders themselves survive a power cut
+            _fsync_dir(made.parent)
         data = lzma.compress(body, preset=6) if compress else body
         suffix = ".xz" if compress else ""
 

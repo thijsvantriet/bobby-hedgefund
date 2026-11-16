@@ -134,7 +134,7 @@ def test_verify_detects_edited_and_removed_manifest_lines(tmp_path: Path) -> Non
         assert any("chain broken" in p for p in archive.verify().problems)
 
     manifest.write_text("\n".join([rows[0], *rows[2:]]) + "\n")  # a line removed
-    with Archive(tmp_path) as archive:
+    with Archive(tmp_path, readonly=True) as archive:  # a writing run refuses a list that became shorter
         assert any("chain broken" in p for p in archive.verify().problems)
 
     manifest.write_text(original)
