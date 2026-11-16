@@ -82,8 +82,9 @@ FILE_GROUPS: tuple[FileGroup, ...] = (
         ),
         pause=2.0,
     ),
-    # European Medicines Agency data files, made by EMA for automated use. EMA answered "too many requests" at one
-    # request per second, hence the long pause.
+    # European Medicines Agency data files, made by EMA for automated use. EMA's site is strict about request speed:
+    # it answered "too many requests" after three to four files, both at 1 second and at 20 seconds apart
+    # (2026-11-16), and stayed closed for minutes. Hence five minutes between files; this group runs last.
     FileGroup(
         "ema",
         (
@@ -108,7 +109,7 @@ FILE_GROUPS: tuple[FileGroup, ...] = (
                 10_000,
             ),
         ),
-        pause=20.0,
+        pause=300.0,
     ),
 )
 

@@ -53,9 +53,14 @@ def _attempt(archive: Archive, source: str, run: str, job: Callable[[], dict[str
 
 def cmd_run(args: argparse.Namespace) -> int:
     jobs: dict[str, Callable[[Archive, Fetcher, str], dict[str, Any]]] = {}
-    for group in sources.FILE_GROUPS:
+    # Quick sources first; a publisher that needs minutes between requests goes last and holds nobody up.
+    quick = [g for g in sources.FILE_GROUPS if g.pause < 60]
+    slow = [g for g in sources.FILE_GROUPS if g.pause >= 60]
+    for group in quick:
         jobs[group.source] = lambda a, f, r, g=group: sources.run_file_group(a, f, g, r)
     jobs[sources.CTGOV_UPDATES] = lambda a, f, r: sources.run_ctgov_updates(a, f, r, api=sources.CTGOV_API)
+    for group in slow:
+        jobs[group.source] = lambda a, f, r, g=group: sources.run_file_group(a, f, g, r)
     wanted = args.only or list(jobs)
     unknown = [name for name in wanted if name not in jobs]
     if unknown:
