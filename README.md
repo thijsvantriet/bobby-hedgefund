@@ -1,7 +1,7 @@
 # Bobby Hedgefund
 
 A paper-money biotech fund run by a team of LLM agents, fed by open data (clinical trials, FDA, SEC filings, papers,
-earnings calls), run forward on the home server for about 6 months and compared with XBI, IBB, IWDA and real biotech funds (ARKG, 13F filers).
+company news), run forward for 26 weeks and compared with XBI, IBB, IWDA and two funds without AI (docs/SPEC.md).
 
 **This is an experiment with paper money. Nothing here is investment advice, and no real money is traded.**
 
@@ -29,30 +29,23 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-17: EMA refused one of its five files on every run so far. Changed: a refused file is left alone and tried again after 10, 20, 40 and 60 minutes, instead of three quick retries (docs/decisions/0001, "Update 2026-11-17"). To check after a week of nightly runs.
 
+2026-11-17: **spec drafted** (docs/SPEC.md, status "proposed" until the owner merges it). Claude drafted it from the research with one recommendation per choice; the owner decided eight points (session length, days a week, share of the usage limits, free data only, where the app lives, the letter, the alerts, when it ends). No code and no decision records yet. Later the same day the owner simplified the daily routine: their only action is typing `/bobbyhedgefund-day`, each day's round starts in a fresh session, and the leak check, usage count and weekly/monthly extras run by themselves.
+
+2026-11-17: **spec approved**: the owner merged PR #8. Next: Claude writes decision records 0003-0008.
+
 ## Next step
-1. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
-   Terms: read on 2026-11-16, ClinicalTrials.gov confirmed by the owner in a browser on 2026-11-17
-   (docs/decisions/0001, "Update"). Open: AACT shows no terms page, so ask AACT before building that download.
-   Also for the spec: where and in what form the track record is published (see "Track record").
-   Also for the spec: how the agents run. Two candidates to compare: the Claude API (separate account, pay per use,
-   hard spending limit) or scheduled Claude Code sessions on the owner's subscription (no API account). To research
-   first: what the subscription's terms and usage limits allow for scheduled, unattended runs, and whether every
-   decision can be logged just as completely. The owner has no API account yet (2026-11-16).
-   A third candidate (owner's idea): the owner opens a session by hand on most days and it does that day's round.
-   Then decide beforehand what a skipped day means, so that skipping can never be a choice made with hindsight.
-   Checked in the official documentation on 2026-11-16 (details and links: docs/research/notes/H-how-agents-run.md):
-   cloud scheduled tasks exist for subscriptions but cannot read files on this machine; scheduling inside a session
-   expires after seven days; a timer that starts Claude Code without a person is documented, but the terms do not
-   say clearly that this is allowed on a subscription; with an API key it clearly is. Opening a session by hand is
-   ordinary use. **Owner's direction (2026-11-16): sessions opened by hand, not scheduled ones**; the spec works
-   this out (rule for skipped days, fixed moment at which decisions count) and records it as a decision.
-   Owner's preference for models (2026-11-16): most agents Opus on high effort, the most important
-   role on the strongest model; to weigh against a cheap model for the daily screening. Measure usage in the pilot.
-2. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
-   "missed" situations; this decides which data sources to build first.
-3. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
-4. One-week pilot with one fund setup to measure real token cost.
-5. Parallel setups live for ~6 months.
+The plan is docs/SPEC.md ("Order of work"). In short:
+1. ~~Owner reads and merges the spec~~ (done 2026-11-17). Claude writes the decision records it lists (section 10), starting with
+   0003-0008: how the agents run, the decision log, the paper funds, the universe and linking table, prices, SEC access.
+2. Build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
+   matches), daily prices, SEC filings, trial-record changes. Each starts with reading the source's terms.
+   Alongside: the historical study, limited to two weeks of work. Open before it: AACT shows no terms page, so ask
+   AACT before building that download.
+3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
+   usage limits a session takes.
+4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. Aim: pilot in January 2027, start
+   in February 2027.
+5. In the first live weeks: the app, the alerts and the first monthly letter. A review with the owner every month.
 
 ## Day-1 archive
 A job that runs every night at 23:30 and saves a few public files exactly as published, because their publishers
@@ -83,9 +76,11 @@ systemd/install.sh                 # installs the snapshot and the timer; refuse
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with
 its reasoning and time, the value of each paper portfolio next to its benchmarks, and a regular plain-language report.
-Published decisions are never edited afterwards, and the commit dates show that nothing was added with hindsight.
+Published decisions are never edited afterwards. That nothing is added with hindsight follows from fixed rules
+(docs/SPEC.md, section 2): a decision is public before the price it gets exists, and published history cannot be rewritten.
 The record will be built from real market and trial data; the data files themselves are not published (see below),
-only our own numbers and conclusions, with the sources named. The exact form is decided in the spec.
+only our own numbers and conclusions, with the sources named. The form is set in docs/SPEC.md, section 5: a folder
+`track-record/` with the decision log, a readable page per day, the values per fund, and a monthly letter.
 
 ## Data sources and credit
 The project follows each source's terms of use. No file from any source is in this repository, and none will be:
