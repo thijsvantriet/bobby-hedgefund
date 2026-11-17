@@ -36,7 +36,7 @@ publishing; the owner may walk away.
 | 4 | Deep analysis of at most **4 companies**: the analysts write or update one shared report per company, and record which catalysts have resolved | Analyst agents | 25 |
 | 5 | Decisions: each AI fund's portfolio manager reads the reports and decides: buy, add, reduce, sell or do nothing, with a thesis | Portfolio managers | 38 |
 | 6 | Risk limits checked; an order that breaks a limit is cut down or refused, and that is logged too. The two funds without AI make their moves. **The day's records are written and committed on the laptop: from here they are final** | Script | 40 |
-| 7 | The readable day page is made; a script checks the day's files for keys, addresses and long quotes | Script | 41 |
+| 7 | The readable day page is made; the day's files are checked for keys, addresses and long quotes | Script | 41 |
 | 8 | The script publishes | Script | 42 |
 | 9 | One-screen summary for when the owner looks again: what was decided, why, and how much usage the session took | Session | 43 |
 
@@ -57,7 +57,8 @@ companies the screening flagged; (3) companies with a catalyst on our calendar w
 companies). *Why:* holdings first, because a missed sell signal costs most.
 
 **The owner's role in a session is to start it.** The owner does not change, add or block decisions. The leak
-check before publishing is a script (step 7), together with the repository's existing check on every push. If it
+check before publishing (step 7) is not built twice: keys and addresses are caught by the check this repository
+already runs on every commit and push, and only the check for long quotes is added. If it
 finds something that may not be public (a key, an address, a long quote), that text is replaced by "[removed]" and a
 correction record says so; the decisions themselves are published as they were committed in step 6. The owner sees
 it in the summary and in the monthly review.
@@ -266,7 +267,7 @@ track-record/
 Only our own words and numbers. No files, tables or long quotes from any source; a quote is at most a sentence or
 two, with its link. A trial fact names ClinicalTrials.gov and the date of the record, and says the wording is our
 summary. No statements about named people that rest on allegations. Every page carries the line "paper money, not
-investment advice". A script checks each day's files for keys, addresses and oversized quotes before publishing.
+investment advice". Each day's files are checked for keys, addresses and oversized quotes before publishing (section 1).
 
 **Prices and lists from sources.** Our own results (fund values, returns in percent, scores) are published. Whether
 single prices from the price service (fill prices, index values) may be shown is decided in record 0007 from the
