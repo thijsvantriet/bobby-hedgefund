@@ -132,6 +132,12 @@ URTH. The spec already provides for this.
    computed from prices on the home network only (the public track record then shows decisions, theses and forecast
    scores, which is result 2 of the spec in full), and a paid plan. Until then nothing computed from prices is
    published.
+   **Update 2026-11-17: the owner sent the question to Massive's support address.** It asks less than the text
+   above: each fund's return in percent, rounded to one decimal, at most once a week; each fund's place among the
+   random funds; and, as a part that may be refused separately, one sentence a month comparing a fund with an index
+   fund. It states that AI models read the data on the owner's behalf with training switched off, and offers a
+   credit line. If the answer is yes, those limits (weekly, rounded) are what is published; daily values stay in
+   the app at home. Waiting for the answer.
 2. **The Claude account must not use conversations for training.** Massive's terms forbid that a tool uses the
    data for its own purposes. The owner checks once that the setting that lets conversations be used to improve the
    models is off, and again at each monthly review.
