@@ -40,6 +40,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-17: the owner asked Massive whether our own fund results may be public (weekly, rounded returns and the place among the random funds; no prices). **Answer the same day: no**, public display of anything derived from its data needs a business licence. So nothing computed from prices is published; fund results are kept privately and shown in the app at home, and the public track record shows decisions, reasoning, fill days and forecast scores (docs/decisions/0007, open point 1).
 
+2026-11-17: **AACT download settled** (docs/decisions/0014). AACT shows no terms of use and its robots file forbids nothing; the owner decided that this counts as permission, so no question is sent. The record sets the download rules: only the monthly copies the study needs, each once, never published, CTTI credited. Nothing downloaded yet.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -47,8 +49,8 @@ The plan is docs/SPEC.md ("Order of work"). In short:
 2. **Now:** build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
    matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
    (0007, 0008); still to read before the first request: the robots file of the SEC's data service.
-   Alongside: the historical study, limited to two weeks of work. Open before it: AACT shows no terms page, so ask
-   AACT before building that download.
+   Alongside: the historical study, limited to two weeks of work. Its AACT download is settled (0014): go ahead
+   under the download rules written there; choose which monthly copies to fetch first (all of them do not fit on the disk).
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
    usage limits a session takes.
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Estimate: pilot around January 2027.

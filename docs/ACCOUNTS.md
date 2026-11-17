@@ -46,5 +46,5 @@ AACT publishes no public description of its key, so this was worked out with the
   For live queries on today's data (611,764 studies on 2026-11-16).
 - **What this means:** the monthly copies back to 2017 are the base for the historical study. Daily copies disappear
   after 30 days and are too large to keep (about 2.6 GB each), so our own day-1 archive stays the daily record.
-- **Unverified:** AACT's terms of use for automated downloads were not read; do that (and note it in an ADR) before
-  building the download.
+- **Terms:** AACT shows no terms of use and its robots file forbids nothing. The owner decided on 2026-11-17 that the
+  download may be built, under the rules of `docs/decisions/0014-aact-download-terms.md`.

@@ -168,6 +168,7 @@ Left as is: `systemd/install.sh` installs whatever committed branch is checked o
 - **AACT** (not yet downloaded): its site shows no terms page. Its publisher asks to be credited as "Clinical Trials
   Transformation Initiative" with a link ([citation policy](https://ctti-clinicaltrials.org/?p=7671)), and the data
   come from ClinicalTrials.gov, whose terms then apply too. Ask AACT before building an automated download.
+  (Settled on 2026-11-17 without asking: see record 0014.)
 - Published results name the source and the date of the data wherever a source is used (README, "Data sources and
   credit").
 
