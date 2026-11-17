@@ -28,6 +28,9 @@ only action is typing one command; a decision is public before the price it gets
 | C. Scheduled task in the cloud, or in the desktop app | Yes | Yes, documented | Cloud: starts from a copy of the repository, so it cannot read the data folder, and the data may not be in a public repository. Desktop app: runs only while the app is open, is in beta on Linux, and runs a missed task once afterwards, which breaks the "nothing is caught up" rule |
 | **E. The owner opens a session and types one command** | No | Yes: ordinary use | **Chosen** |
 
+The letters are those of the research note. Its option D (a schedule inside a session that stays open) is left out:
+such schedules end after seven days.
+
 **The price a decision gets**
 
 | Option | For | Against |
@@ -54,25 +57,44 @@ only action is typing one command; a decision is public before the price it gets
 - **The first thing the command does is run a script, before any model has read anything.** That script does the
   checks of step 1 of the spec and writes down the start time and the data cut-off. If it refuses, nothing else
   happens.
+- **The data cut-off is that start time.** The script then fills a folder for this session with copies of the files
+  the agents may read, and takes only files that the saved-files lists show as saved before the cut-off.
+- **Which code runs.** The session runs the code of the main branch as it is on GitHub: the script refuses when
+  another branch is checked out, when files have been changed and not committed, or when the local main branch is
+  not the published one. Work in progress can therefore never write the real log (the same idea as the installed
+  copy that the nightly archive runs, `docs/decisions/0001`).
+- Step 1 checks the morning price download (record 0007) as well as the nightly jobs.
 
 ### 2. A fresh session, and one round a day
 The script refuses to start a round unless all of these hold:
 - the session was just opened, or just emptied with `/clear`. Claude Code tells a small helper (a "hook") how each
   session began. A session that was resumed, shortened or copied from an earlier one still carries old reading, and
   is refused;
-- this session has not done a round before;
-- no round was committed yet for this calendar day (Amsterdam time), except the single restart the spec allows after
-  a crash before step 6;
+- this session has not started a round before, finished or not;
+- no round was committed yet for this calendar day (Amsterdam time);
 - no `STOP` file is present in the data folder.
 
-Refusals and restarts are written to the log.
+**The one restart after a crash** (spec, section 2, point 5) happens in a new fresh session, because the crashed
+one counts as used. It keeps the **first** start time and data cut-off of that day, so the fill day cannot move and
+no newer data comes in; it re-uses the reports already saved and reads the same session folder. A second crash makes
+the day a skipped day.
+
+Refusals and restarts are written to the log, and so are the creation and the removal of the `STOP` file.
 
 ### 3. What the agents can touch
-The spec says the agents get no web search and no web access. This record makes that precise, because a
-command line can fetch web pages too: **every agent file lists exactly the tools it may use, and the list holds only
-tools that read files inside the folder prepared for this session.** No command line, no web tools, no connectors to
-outside services. An agent file without such a list would get every tool, so a test checks every agent file for it.
-Everything that computes, downloads, writes the log or publishes is done by scripts.
+The spec says the agents get no web search and no web access. This record makes that precise, in two layers:
+- **Every agent file lists exactly the tools it may use: only tools that read files.** No command line (a command
+  line can fetch web pages too), no web tools, no connectors to outside services. An agent file without such a list
+  would get every tool, so a test checks every agent file for it.
+- **A file-reading tool can read any file on the machine, so the tool list alone is not enough.** A small check
+  that Claude Code runs before every use of a tool (a "hook") allows an agent to read only inside the folder
+  prepared for this session, and refuses everything else: the settings file with the keys, the rest of the data
+  folder, other funds' private files, the repository's history, and any file that a download job writes while the
+  session runs. A refused read is logged.
+
+A test tries to read a file outside the session folder and a file saved after the cut-off, and must be refused both
+times; the pilot repeats that test in a real session. Everything that computes, downloads, writes the log or
+publishes is done by scripts.
 
 ### 4. Skipped days and the fill day
 As in the spec, section 2, unchanged:
@@ -82,7 +104,12 @@ As in the spec, section 2, unchanged:
   other case gives the opening price of the next US trading day;
 - a decision is final when it is committed, and public when GitHub has received it (record 0004);
 - if publishing fails, the same commit is sent again; the agents never run twice for one day;
-- skipped days are counted and shown.
+- skipped days are counted and shown;
+- a weekend session is allowed only to make up for a working day skipped in that same week, counts as that working
+  day, and is filled at the next trading day's opening price; US market holidays are not skipped days.
+
+Because the fill day depends on when GitHub receives the publication, **a decision record states the rule, not the
+day**. The day itself is stated in the fill record, written by the next session (records 0004 and 0005).
 
 ### 5. The trading calendar
 - A **hand-made list** of the days the New York Stock Exchange is closed, for the whole period of the experiment,
@@ -94,14 +121,16 @@ As in the spec, section 2, unchanged:
   log says so. This covers unplanned closures.
 
 ## Differs from the spec
-Two small corrections; the rules themselves stay as they are.
-1. **A second period with a different opening time.** The spec names the two weeks in March 2027 (14 to 27 March)
-   in which the US market opens at 14:30 Amsterdam time. The same happens from 31 October to 6 November 2027. It only
-   matters if the experiment runs on after its 26 weeks.
+Nothing in the rules changes. Three additions make them more exact.
+1. **A second period with a different opening time.** The spec mentions the weeks in March 2027 in which the US
+   market opens at 14:30 Amsterdam time; these are 14 to 27 March. The same happens from 31 October to 6 November
+   2027. That only matters if the experiment runs on after its 26 weeks.
 2. **What the rule means in those weeks.** Published "at least 30 minutes before the open" then means published by
    14:00. A session takes 20 to 45 minutes, so in those weeks only a session started before about 13:15 gets the
    same day's opening price; a later one gets the next day's. The rule already gives the right answer; the owner
    should just know it.
+3. **Reading is limited by a check before every tool use**, not only by the agent files (point 3 above). The spec
+   speaks of the agent files only.
 
 ## Consequences
 - The use of the subscription is ordinary use by its owner: one person, one session, started by hand.
@@ -113,8 +142,10 @@ Two small corrections; the rules themselves stay as they are.
   up during a session.
 - Agents without a command line cannot run a calculation themselves; every number must be prepared by a script.
   That is rule 7 of the research anyway.
-- The fresh-session check rests on features of Claude Code that can change with a new version. If the check cannot
-  tell how the session began, it refuses; it never guesses.
+- The fresh-session check and the reading check rest on features of Claude Code that can change with a new
+  version. If a check cannot tell how the session began or where a file is, it refuses; it never guesses.
+- The owner must have the main branch checked out and clean when starting the day's session; otherwise the command
+  refuses and says why.
 - To check in the pilot, besides the spec's own list: that `/clear` is reported as a fresh start; that the effort
   level set in an agent file is really used.
 - Found on the way, for record 0009: Claude Code removes its own session records after 30 days by default and writes

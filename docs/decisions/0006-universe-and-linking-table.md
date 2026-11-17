@@ -1,6 +1,6 @@
 # 0006. Universe and linking table: sources, filter, and how matches are stored and checked
 Date: 2026-11-17
-Status: proposed
+Status: proposed. **Holds one open point for the owner** (see "Differs from the spec", point 2).
 
 ## Context
 Two lists carry everything else (`docs/SPEC.md`, section 4 "Universe" and section 6, stream 0):
@@ -47,6 +47,8 @@ Every row is keyed on the **SEC company number (CIK)**. The SEC states that thes
 change and get reused, so a ticker is a property with a date, never a key.
 
 ### 2. Where each field comes from
+
+"Shell company" below means a listed company without a real business, often waiting to merge with one.
 
 | Field | Source | Known limit |
 |---|---|---|
@@ -105,16 +107,36 @@ The first version is made before the pilot; the owner's check happens then. The 
 each month, after publishing (spec, section 1). It uses only files that the nightly jobs saved.
 
 ### 6. What is published
-The universe is published in `track-record/` as **our own list**: company name, SEC company number and ticker, with
-the date of the version. No column says how a company got in, and the XBI holdings are never published. The public
-page credits the SEC, and ClinicalTrials.gov with the date its records were processed, as their terms ask
-(`docs/decisions/0001`). The review file and the linking files stay in the data folder.
+The universe is meant to be published in `track-record/` as **our own list**: company name, SEC company number
+and ticker, with the date of the version. The ticker is taken from the SEC's file and used only as a name; the
+Nasdaq lists are a private check. No column says how a company got in, and the XBI holdings file is never
+published. The public page credits the SEC, and ClinicalTrials.gov with the date its records were processed, as
+their terms ask (`docs/decisions/0001`). The review file and the linking files stay in the data folder.
+
+**The list is not published until the open point below is settled.**
+
+The private universe files hold market values computed from prices, so they fall under the deletion rule of record
+0007 if the price account ever ends. What stays in that case is the list of who was in and out, without the numbers.
 
 ## Differs from the spec
-One narrowing, for the owner to confirm: **companies that report to the SEC as foreign companies are left out of
-version 1**, also when their shares trade in the US. They file no quarterly reports, no event reports in the usual
-form and no insider trades, so streams 2 and 4 would be empty for them, and their share count is published once a
-year. The spec already leaves out non-US listings; this goes one step further.
+1. One narrowing, for the owner to confirm: **companies that report to the SEC as foreign companies are left out of
+   version 1**, also when their shares trade in the US. They file no quarterly reports, no event reports in the
+   usual form and no insider trades, so streams 2 and 4 would be empty for them, and their share count is published
+   once a year. The spec already leaves out non-US listings; this goes one step further.
+2. **Open point for the owner: the public list gives away part of the XBI fund's holdings.** The spec says that
+   which companies are in the XBI fund is never published. But a company on our public list that does not have
+   industry code 2834 or 2836 can only have come in through the XBI fund, and anyone can look up a company's code.
+   The same holds for such a company named in a published decision. State Street's terms forbid passing its data
+   on. Three ways out:
+
+   | Way out | For | Against |
+   |---|---|---|
+   | **a. Add two more industry codes as a door of our own** (8731, research services, and 2835, diagnostics, where many young biotech companies sit), with the same filter | A company outside 2834 and 2836 then no longer points to the XBI fund. Also closes the known gap that such companies are missed | The universe changes a little; more companies that are not biotech must be marked out in the owner's review |
+   | b. Drop the XBI fund as a door | Nothing can be inferred | Misses the biotech companies that carry yet another code |
+   | c. Accept it | No change | Goes against the spec's own sentence, and arguably against the terms |
+
+   **Recommended: a**, checked on the first run by counting how many companies come in through the XBI fund only.
+   Until the owner has chosen, the list is not published.
 
 ## Consequences
 - It can always be shown which universe a session used, and why a company was in or out on that date.
@@ -124,9 +146,7 @@ year. The spec already leaves out non-US listings; this goes one step further.
   size filter does not remove. The owner's review file shows them, and a company can be marked "not biotech" there.
 - Market value can be off by the size of a recent share sale until the next report. The filter bounds are wide
   enough for that; a company near a bound may enter a month late.
-- A careful reader could work out part of the XBI fund's holdings from our public list (a company that is in it
-  without the two industry codes). The file itself and the fund's weights are never shown, and the fund publishes its
-  holdings daily itself; we judge this to be within its terms, and say so here so that the owner can decide otherwise.
+- The universe needs 60 trading days of prices before its first version; record 0007 fetches that history once.
 - Partner-run trials are missing until the drug-name step is built.
 
 ## Revisit

@@ -40,7 +40,9 @@ Exceptions exist only on plans from $250 a month. `robots.txt` of the website an
 | Save the data on our own machine | Yes, while the account exists | A licence "to access, download, store and use the Information" |
 | Keep it after the account ends | **No** | "you must stop using it and delete it promptly, and in any event within thirty (30) days, including downloaded files, stored copies and caches" |
 | Publish prices, also single ones ("filled at $12.34") | **No** | Not allowed to "share, redistribute, publish … Information, make it available to anyone else" |
-| Publish numbers computed from prices | Only when prices cannot be worked back out of them | You may keep and use, "for your own personal purposes, your own analyses and other results that do not contain Information and cannot reasonably be used to recreate it or as a substitute for it" |
+| Keep and use our own results computed from prices | Yes, when prices cannot be worked back out of them | You may keep and use, "for your own personal purposes, your own analyses and other results that do not contain Information and cannot reasonably be used to recreate it or as a substitute for it" |
+| **Publish** such results | **Unclear**: the terms speak of keeping and using, not of publishing. See open point 1 | Same clause |
+| Copies in an automatic backup after the account ends | For at most 90 days, unused | "An automatic backup that you do not actively use may retain a copy until it is overwritten in your normal backup cycle, and in any event for no more than ninety (90) days after your license ends" |
 | Publish an index fund's daily value or return | **No**, by our reading: its prices can be worked back out | Same clause |
 | Let Claude read the data | Yes, on a condition | A tool may process the data "only on your behalf"; it "may not use the Information for its own purposes". Using the data to train a model is forbidden |
 | Publish an index or a benchmark made from the data | Not without a separate licence | Not allowed to "create, calculate or publish an index, benchmark, or settlement or reference price" |
@@ -68,24 +70,48 @@ URTH. The spec already provides for this.
 **Option B.**
 
 1. **Massive is the only price source. Tiingo is not used**, not for prices, not as a check.
-2. **What is saved.** Every morning one request: the whole US market for the last trading day, unadjusted (opening,
-   highest, lowest and closing price, volume), exactly as received. Plus the list of share splits. A timer job
-   without any model, like the archive's.
+2. **What is saved.** Every morning one request: the whole US market for the last trading day, with prices as
+   they were traded ("unadjusted": not recalculated afterwards for share splits), being the opening, highest,
+   lowest and closing price and the volume, exactly as received. Plus the list of share splits. A timer job without
+   any model, like the archive's.
+   **Once, at the start: the history the free plan offers (two years), one request per trading day**, spread over
+   a few hours to stay under five requests a minute. The universe needs 60 trading days of it (record 0006), the
+   check of the trading costs a year (record 0005), the historical study as much as there is.
 3. **When.** Early in the morning, Amsterdam time, after the prices are out. (The spec said "every night"; the
    service only has a day's prices from 06:00.)
 4. **Where: a folder of its own**, `~/bobby-hedgefund-data/prices/`, with its own fingerprint list, **not** inside
    the day-1 archive. Reason: the archive's rule is "never deleted", and these files must be deleted within 30 days
-   if the Massive account ever ends. Anything that contains a price (also the private part of the decision log,
-   record 0004) follows the same rule. This is the one exception to the never-delete rule; while the account
-   exists nothing is deleted.
+   if the Massive account ever ends. This is the one exception to the never-delete rule; while the account exists
+   nothing is deleted. **Everything that contains a price follows the same rule:**
+   - the price files;
+   - the private part of the decision log (record 0004) and the private values of the funds, the Dice funds and the
+     index funds (record 0005);
+   - the numbers in the private universe files (record 0006);
+   - the session folders and the saved conversations of the sessions (spec, section 3), which hold what the agents
+     read;
+   - older versions of all of these in the machine's backup, which must be gone within 90 days.
+
+   A script `bobby-prices purge` does the deleting and writes down what it removed; the step for the backup is
+   described with it. Fingerprints of deleted content stay in the public log; `bobby-log verify` then reports
+   "content deleted under record 0007" instead of damage. This is tested once on a copy before the funds start.
 5. **No second source.** Instead the job checks each day's file against the day before: a price change of more
    than half without a share split or a filing is flagged for a look, and share splits are checked against the
    company's SEC filing (record 0005).
-6. **What is never published:** a price of any share or fund; share counts of a position (with the position's size
-   they give the price away); the daily value or return of XBI, IBB or URTH; a chart of any single share or fund.
-7. **What is published in any case**, because no price is in it: every decision with its thesis and its size as a
-   percentage of the fund, the day and rule by which it is filled ("the opening price of 3 February"), every
-   forecast and its outcome, the scores of the forecasts.
+6. **What is never published. This is the one list; the log seals exactly this** (record 0004):
+   - a price of any share or fund, and a chart of any single share or fund;
+   - share counts of a position, the amount of money of a trade, its trading cost, a fund's cash (with the size in
+     percent, each of them gives a price or a fund value away);
+   - a market value of a company, or a figure per share, in any written text;
+   - the daily value or return of XBI, IBB or URTH;
+   - the daily values of the 1,000 Dice funds (record 0005): prices can be worked back out of them;
+   - until open point 1 is settled: the value and return of each of our own funds, their place among the Dice
+     funds, and any comparison with an index fund.
+7. **What is published in any case:** every decision with its thesis and its size as a percentage of the fund; the
+   rule by which it will be filled ("the first opening price after publication, by the rule of record 0003"), and
+   afterwards the day on which it was filled; every forecast and its outcome; the scores of the forecasts. The
+   written text of a thesis, a day page or a letter is checked by a script for prices and numbers computed from
+   them before it is published; what it finds is sealed (record 0004). Until that check exists, nothing is
+   published.
 8. **Agents may read prices.** The files stay on this machine and are read by the Claude session on the owner's
    behalf. Condition, see open point 2.
 9. **IWDA** is replaced by URTH, as the spec provides; the track record says so.
@@ -109,6 +135,9 @@ URTH. The spec already provides for this.
 - Section 6, stream 1: Tiingo is dropped; no cross-check source; the download runs in the morning.
 - Section 5: fill prices are not shown in the public log, and `values.csv` is published only after open point 1
   is settled. The spec foresaw the first ("if not, the public log shows returns only"); the second is new.
+- Section 5, the thesis: its numbers that come from prices (market value against cash, what the price seems to
+  assume) are sealed in the public version.
+- Section 3: the saved conversations of the sessions fall under the deletion rule.
 - Section 4, "Index funds for comparison": the index funds are computed and shown privately (in the app on the
   home network); publicly at most as a coarse figure, and only after open point 1.
 - Rule "archived files are never deleted": one exception, point 4 above.
@@ -122,6 +151,9 @@ URTH. The spec already provides for this.
 - One source means a wrong price is harder to notice. The jump check and the filings catch the large mistakes.
 - If Massive ends its free plan or changes its terms, the experiment has no prices. Saved files cover the past only
   while the account exists.
+- After a deletion, the private half of the evidence is gone: it can still be shown that the public log was never
+  changed, but no longer what the sealed numbers were, why a company passed the universe filter, or what exactly a
+  session read.
 - The Tiingo account is not needed any more. The owner may close it; its key stays unused.
 - The whole-market file also covers companies outside the universe, which the monthly universe run needs
   (record 0006).

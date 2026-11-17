@@ -4,7 +4,8 @@ Status: proposed
 
 ## Context
 Stream 2 of the spec (`docs/SPEC.md`, section 6) saves the SEC filings of the 150-250 companies in the universe:
-event reports (8-K), share sales (S-3, 424B5), insider trades (Form 4) and large-holder filings (13D, 13G). The
+event reports, share sales, insider trades and filings by holders of more than 5% (the SEC's form names for these
+are 8-K; S-3 and 424B5; Form 4; 13D and 13G). The
 universe itself (record 0006) also rests on SEC data. Fetching is done by a nightly timer job without any model, like
 the day-1 archive (`docs/decisions/0001`).
 
@@ -64,10 +65,14 @@ Checked by reading the source of both libraries (versions 6.2.0 and 5.1.0), with
    - once per new filing of a form type we follow: the complete filing as one text file from
      `/Archives/edgar/data/`. That one file holds all documents of the filing.
    - For 250 companies this is about 250 to 300 requests a night.
+   - The monthly universe run (record 0006) needs more, once a month: the SEC's ticker file, and the filing list
+     and reported share count of every company with the two industry codes, a few thousand requests in all. At one
+     a second that is about an hour, run at night.
 2. **Speed: at most one request a second**, a tenth of what the SEC allows. No parallel requests. When the SEC
    answers "too many requests" or refuses, the job stops for that night and sends the usual phone message.
-3. **The header** is a generic client name followed by the contact address, in the SEC's own example form. It names
-   neither the owner nor the project.
+3. **The header** is a generic client name followed by the contact address, in the SEC's own example form. It does
+   not name the project, and it says nothing about the owner beyond what the address itself shows (the owner chose
+   their normal address for this, see point 4).
 4. **The contact address** is read from the local settings file that git ignores (`.env`, name
    `SEC_CONTACT_EMAIL`; `.env.example` holds the name only). The owner decided on 2026-11-16 that their normal
    address is used. The address is never written to a log, a saved file, an error message or the repository. If it

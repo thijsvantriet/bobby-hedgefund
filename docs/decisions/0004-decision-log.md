@@ -51,40 +51,58 @@ becomes evidence when its newest fingerprint is handed, every day, to parties th
 ### 1. Records and fingerprints
 - **JSON Lines**, one record per line, UTF-8, lines ending in a single line-feed. The layout of the spec:
   `track-record/log/<year>/<month>/<date>.jsonl`.
-- **The fingerprint of a record is the SHA-256 of: the fingerprint of the previous record (as text), a line-feed,
-  and the exact bytes of the line.** The first record uses a fixed, published starting value. The chain runs on
-  across day files.
+- **The fingerprint of a record is the SHA-256 of: the fingerprint of the previous record (as text), a line-feed
+  (the character that ends a line), and the exact bytes of the line without its own final line-feed.** The first
+  record uses a fixed, published starting value. The chain runs on across day files.
 - Every record carries: the format version, its running number, its kind, the time, the fingerprint of the record
   before it.
-- To keep the bytes stable everywhere: one fixed way of writing JSON, non-ASCII characters written as escapes,
-  amounts and percentages as text or whole numbers (no floating-point numbers), and a line in `.gitattributes` that
-  stops git from converting line endings in `track-record/`.
+- To keep the bytes stable on every computer: one fixed way of writing JSON; letters outside the basic English
+  set written as codes; amounts as whole cents and percentages as text (never numbers with a floating decimal
+  point, which different programs print differently); and a setting in the repository (`.gitattributes`) that stops
+  git from converting line endings in `track-record/`.
 - **`track-record/HEAD`** holds the newest fingerprint and the number of records. It catches a log that lost its
   last lines by accident.
 - Nothing is edited: an outcome, a second thought or a found mistake is a new record that points to the old one
   (spec, section 5). A new format version applies from its first record on; old records are never rewritten.
 
 ### 2. Sealed fields: things that may not be public
-Some content may not be published: prices and share counts (record 0007), and text that the leak check removes (a
-key, an address, a quote that is too long).
-- The **public record** then holds, in place of that content, the word "sealed" or "[removed]" and **the
-  fingerprint of the content** (mixed with a random value, so that a price cannot be guessed from it).
+Some content may not be published:
+- **everything on the list in record 0007, point 6**: prices, share counts, amounts of money of a trade, trading
+  costs, cash, and (until open point 1 of that record is settled) the values and returns of funds and index funds.
+  That list is the only one; this record does not keep a second;
+- **numbers in written text that come from prices** (a market value, a figure per share): see below;
+- text that the leak check removes: a key, an address, a quote that is too long.
+
+How it works:
+- The **public record** holds, in place of that content, the word "sealed" or "[removed]" and **the fingerprint of
+  the content** (mixed with a random value, so that a price cannot be guessed from it).
 - The **content itself** and the random value are written to a private file with the same record number, in
-  `~/bobby-hedgefund-data/log-private/`.
-- The public line is written **once** and never changed. If the content may be shown later, a new record reveals
-  it, and anyone can check it against the fingerprint published at the time.
-- The fields that say what was decided (fund, company, action, size in percent, the fill rule) are never sealed and
-  never touched by the leak check.
-- Private files that contain prices fall under the deletion rule of record 0007.
+  `~/bobby-hedgefund-data/log-private/`. One exception: a key or an address that the leak check removes is not kept
+  anywhere.
+- The public line is written **once** and never changed. If content may be shown later (for example after a yes
+  from the price service), a new record reveals it, and anyone can check it against the fingerprint published at
+  the time. Without such permission nothing is revealed.
+- The fields that say what was decided (fund, company, action, size in percent, and the rule by which it will be
+  filled) are never sealed and never touched by the leak check. A decision states the fill **rule**; the fill
+  **day** is only known later and is stated in the fill record.
+- **Written text is checked by a script before the line is written.** The thesis has a part "the numbers" that
+  scripts fill in; its entries that come from prices are sealed automatically. In the free text the agents are
+  told to use no prices, market values or per-share figures, and the script removes and seals any amount of money
+  it cannot trace to a filing. In doubt it seals. The same check runs on the day page and the letters.
+- Private files that contain prices fall under the deletion rule of record 0007. After such a deletion `verify`
+  reports those fingerprints as "content deleted under record 0007", not as damage.
 
 ### 3. Publication
-- A script makes one commit per session with the day's lines, the day page and `HEAD`, and pushes it straight to
-  `main` (spec, section 5). The script refuses to commit anything outside `track-record/`, and refuses when an
-  existing line would change. **GitHub cannot enforce the folder limit on this plan; the script and
-  `bobby-log verify` do.**
+- A script makes **one commit per session for the day's decisions**: the day's lines, the day page and `HEAD`,
+  pushed straight to `main` (spec, section 5). This is the commit whose receipt time counts.
+- After it, the same script may make further commits that only **add new files** in `track-record/`: the timestamp
+  proof (point 4), the weekly summary, the monthly letter, a new universe list. They never touch the log.
+- The script refuses to commit anything outside `track-record/`, and refuses when an existing line would change.
+  **GitHub cannot enforce the folder limit on this plan; the script and `bobby-log verify` do.**
+- The script runs from the published main branch only (record 0003).
 - Code and documents keep the route of a branch and a pull request. That is a working rule, not a lock.
-- **Ruleset on `main`:** rewriting history and deleting the branch are blocked, with nobody exempt. Switched on
-  before the pilot.
+- **Ruleset on `main`** (a set of rules that GitHub enforces on a branch): rewriting history (a "forced push") and
+  deleting the branch are blocked, with nobody exempt. Switched on before the pilot.
 
 ### 4. Proof of time
 Three layers, from precise to independent:
@@ -94,8 +112,9 @@ Three layers, from precise to independent:
 2. **GH Archive** records the same push independently of the owner. Nothing to build; it is named in the README
    as a way to check.
 3. **OpenTimestamps on the daily `HEAD` fingerprint.** After publishing, the script asks for a timestamp of the
-   new fingerprint and stores the small proof file in `track-record/timestamps/`. The proof is completed some hours
-   later; the next session stores the completed version (a new file; the first one stays). Only a fingerprint
+   new fingerprint and stores the small proof file in `track-record/timestamps/`, in a second commit right after
+   the day's commit. The proof is completed some hours later, when it is anchored in the public Bitcoin record; the
+   next session stores the completed version (a new file; the first one stays). Only a fingerprint
    leaves the machine. If the timestamp service cannot be reached, the day's publication still counts and the next
    session tries again.
 
@@ -109,7 +128,9 @@ anyone can run the public part on a copy of the repository.
 
 ## What this proves, and what not
 - **Proven to anyone:** the log as it stands is one unbroken chain; each day's state existed no later than its
-  Bitcoin-anchored timestamp (precise to a few hours); GitHub received each day's commit at the recorded second.
+  Bitcoin-anchored timestamp (precise to a few hours).
+- **Recorded by GitHub, and readable by anyone today:** the second at which GitHub received each day's commit. How
+  long GitHub keeps this is not documented, which is why the other two layers exist.
 - **Proven for sealed content:** that it was fixed at the time, once it is revealed. Until then it is not checkable
   by outsiders.
 - **Not proven by the chain alone:** that the author never replaced the whole log. That rests on the outside
@@ -128,14 +149,19 @@ anyone can run the public part on a copy of the repository.
 4. Section 1, steps 6 and 7: the leak check on the log's text runs **before** the public line is written, not
    after, so that a line never has to be changed. The decision fields are fixed first and are not touched by it.
    The page for the day is still checked afterwards.
-5. Section 5: fill prices and share counts are sealed, not shown (record 0007).
+5. Section 5: fill prices, share counts and the other content on the list of record 0007 are sealed, not shown.
+6. Section 5, "one commit": the day's decisions are one commit; proofs, summaries and letters follow in commits of
+   their own.
 
 ## Consequences
 - A stranger can check the whole public log with one command and no account.
 - Publishing depends on GitHub; the independent timestamp depends on volunteers' servers at the moment of
   stamping, and on nobody afterwards.
-- The OpenTimestamps program is open source under the LGPL. It is used as a separate tool, not built into our code,
-  so it does not change our MIT licence (`docs/decisions/0002`).
+- The OpenTimestamps program is open source under the LGPL, a licence that asks for sharing changes to the program
+  itself. It is used as a separate tool, not built into our code, so it does not change our MIT licence
+  (`docs/decisions/0002`).
+- The rule against numbers from prices in written text limits what a thesis may say; the agents' instructions
+  (record 0009) must be written for it.
 - Two files per day instead of one where something is sealed; `verify` needs the private files to check everything.
 - Because whole numbers and text are used for amounts, every script that reads the log must convert them the same
   way; this gets a test.

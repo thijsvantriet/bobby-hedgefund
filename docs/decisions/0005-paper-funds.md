@@ -40,29 +40,45 @@ hard part (the company events) must be supplied by us anyway (`docs/research/OPE
 ### 1. The books: option A
 - The decision log (record 0004), with its private files for prices, is the only truth. Positions, cash and the
   value of every fund are recomputed from it.
-- **A fill is written to the log as a fact**: number of shares, price, cost, and the version of the rules used
-  (shares and price in the sealed part, record 0007). Recomputing adds facts up; it never works out an old fill
-  again. A later change of the code can therefore not change the past.
+- **A fill is written to the log as a fact**: the day, number of shares, price, amount, cost, and the version of
+  the rules used. Everything but the day and the rule version is in the sealed part (record 0007, point 6; record
+  0004). Recomputing adds facts up; it never works out an old fill again. A later change of the code can therefore
+  not change the past.
 - Prices for the daily values come only from the saved price files, never from a fresh download.
 - A test checks that a full recomputation gives exactly the published values.
 - A database copy (option C) is added only if recomputing takes more than about a minute, or when the app needs it.
 - Everything is keyed on the SEC company number, never on the ticker (record 0006).
 - **The Dice funds** follow completely from the published starting number of the random generator, the covered
-  list on the draw day and the prices. The log holds their starting number, each monthly draw and their daily
-  values, not a line for every one of their trades.
+  list on the draw day and the prices. The public log holds their starting number and each monthly draw, not a line
+  for every one of their trades. **Their daily values are kept in a private file and are never published**: with a
+  thousand funds of twenty known companies each, every share's daily price move could be worked back out of them.
+  What may be public is each AI fund's place among them, and only after open point 1 of record 0007 is settled.
+  The Dice and Rules funds follow the same booking rules as the AI funds: whole shares, the same costs, the same
+  wait for a missing price; a monthly draw is an order like any other, made in the first session of the month.
 
 ### 2. Booking an order
+**The risk limits are checked once, when the decision is made** (spec, section 1, step 6), against the fund as it
+is then. An order that passed is not checked against the limits again on the fill day; only the mechanical rules
+below can still make it smaller.
+
 In this order, on the fill day (the rules of the spec, made exact):
-1. Company events of that day are booked first (point 4).
-2. The fund's value is taken at the last closing prices before the fill day.
-3. An order of "x% of the fund" becomes x% of that value, divided by the opening price, rounded **down** to whole
+1. **The price file of that day must be there.** If the morning download failed or has not run, nothing is booked
+   and nothing counts as "no price"; the booking waits for the file.
+2. Company events of that day are booked first (point 4).
+3. The fund's value is taken at the last closing prices before the fill day.
+4. An order of "x% of the fund" becomes x% of that value, divided by the opening price, rounded **down** to whole
    shares. A sale of a whole position sells all its shares.
-4. Sells are booked, then buys. If cash is short after the sells, every buy of that day is cut by the same
-   proportion and rounded down again.
-5. The trading cost is charged on the amount of each trade and taken from cash.
-6. A trade that ends up smaller than 0.5% of the fund is not made; the log says so.
-7. No opening price that day: the order waits, for at most 5 trading days, then lapses; the log says so.
-8. The risk limits of the fund are checked before booking, by script (spec, section 1, step 6).
+5. Sells are booked, then buys. The cash needed for a buy is its amount plus its trading cost. If cash is short
+   after the sells, every buy of that day is cut by the same proportion and rounded down again.
+6. The trading cost is charged on the amount of each trade and taken from cash.
+7. A trade that ends up smaller than 0.5% of the fund is not made, and the log says so; its cash simply stays in
+   the fund. **The sale of a whole position is always made**, however small.
+8. A share that has no opening price on the fill day although the price file is there (trading was halted): the
+   order waits for the first day with an opening price. After 5 trading days, counted from the day it should have
+   been filled, it lapses; the log says so. A new decision about the same company in the same fund replaces a
+   waiting order, and the log says that too.
+
+Money is counted in whole cents. Amounts are rounded to the nearest cent; a trading cost is rounded up.
 
 Daily values use closing prices. A share without a price that day keeps its last price, and the value is marked.
 
@@ -84,30 +100,42 @@ Daily values use closing prices. A share without a price that day keeps its last
 - Returns are shown before and after costs (spec).
 
 ### 4. Company events, one rule each
-Every event is one line in a table of company events, with the link to the SEC filing it comes from, and is a
-record in the log. The script applies the table; no portfolio manager can enter or change an event. Share splits
-come from the price service's list and are checked against the filing. Takeovers and the like are rare; they are
-entered from the filing in a normal working session and never by an agent that manages a fund.
+Every event is one line in a table of company events, with the link to the SEC filing it comes from. The table is
+a file in the data folder that only grows. Share splits (a company replacing each share by several, or several by
+one) come from the price service's list and are checked against the filing. Takeovers and the like are rare; a
+line for them is added from the filing in a normal working session, outside the daily round, and never by an agent
+that manages a fund. **Only the daily script writes to the log:** in step 2 of the next session it reads the new
+lines of the table, writes an event record for each and applies it. No portfolio manager can enter or change an
+event.
 
 | Event | Rule |
 |---|---|
-| Share split, either direction | Shares × the ratio. A fraction of a share is paid out in cash at the first opening price after the split, without cost. All prices in the books are unadjusted |
+| Share split, either direction | Shares × the ratio. A fraction of a share is paid out in cash at the first opening price after the split, without cost. All prices in the books are the prices as they were traded on the day, not prices that the service has recalculated afterwards for later splits |
 | Takeover for cash | Cash at the deal price on the day the deal completes, without trading cost |
 | Takeover for shares | Shares of the buyer by the deal's ratio, fraction in cash. If the buyer is not on the covered list (it usually is a large company), the shares are sold at the buyer's next opening price, with the normal cost |
 | Mixed deal | The standard terms of the deal; choices offered to shareholders are not modelled |
 | Right to a later payment (a "contingent value right", common in biotech takeovers) | Valued at **zero**. If a payment is ever made, it is booked as cash on that day, as a new record |
-| Spin-off | The new shares by the ratio; sold at their first opening price if the new company is not on the covered list; valued at zero if they have not traded within 20 trading days |
+| Spin-off (part of a company becomes a separate listed company, and shareholders get its shares) | The new shares by the ratio; sold at their first opening price if the new company is not on the covered list; valued at zero if they have not traded within 20 trading days |
 | Removal from the exchange for cause, or bankruptcy | Sold at the first price available within 5 trading days after the removal; otherwise at the last price less 55%; zero when the company is wound up with nothing for shareholders |
 | New ticker or new name | Nothing is booked; the linking table gets a dated line |
 
 A company that is taken over or removed leaves the universe on that day. Dividends are rare in this universe; a
 cash dividend is added to cash on its payment day.
 
+## Differs from the spec
+1. Section 4 says company events "are booked by script from SEC filings". Share splits are. For takeovers and the
+   like, a line is added to the table by hand from the filing, and the script books it. Reason: the terms of a
+   deal cannot be read reliably by a simple program, and there will be only a handful.
+2. Section 4 says the Dice funds show "where does each fund fall among 1,000 random ones". The place may be shown
+   (after open point 1 of record 0007); the values of the thousand funds themselves stay private.
+3. The 0.5% minimum does not apply to selling a whole position.
+
 ## Consequences
 - The books can be checked by anyone who has the log and the prices; the public can check everything except the
   sealed prices, which they can look up themselves.
 - If the private files with prices ever have to be deleted (record 0007), the books can no longer be recomputed;
-  the published records and values stay.
+  the published records stay.
+- The check of the trading costs needs a year of past prices; record 0007 fetches that history once.
 - Whole shares and rounding down leave a little cash unused; the same for every fund.
 - The rules lean to the cautious side on purpose (zero for rights to later payments, a 55% cut for removed shares),
   so that the results are not flattered.
