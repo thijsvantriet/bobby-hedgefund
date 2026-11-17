@@ -24,39 +24,43 @@ follows and credits every source (`CLAUDE.md`, README "Data sources and credit")
 
 ## 1. The daily session
 
-The owner opens a Claude Code session in the project folder, types `/usage` and then `/bobby-day`. The owner is
-needed three times: at the start, for the publishing check (step 8), and to type `/usage` once more at the end.
+The owner opens a Claude Code session in the project folder and types `/bobby-day`. **That is the owner's only
+action** (owner, 2026-11-17: one thing per session, not three). Everything after it runs by itself, including
+publishing; the owner may walk away.
 
 | # | Step | Done by | Ends by minute |
 |---|---|---|---|
-| 1 | Checks: the nightly jobs ran, the archive and the decision log are intact, no stop file is present. Note the start time, the usage figures and the **data cut-off** (the time of the newest data this session may use) | Script + owner | 1 |
+| 1 | Checks: the nightly jobs ran, the archive and the decision log are intact, no stop file is present. Note the start time and the **data cut-off** (the time of the newest data this session may use) | Script | 1 |
 | 2 | Book what happened since the last session: fill earlier decisions at their opening price, update each fund's value, apply share splits and takeovers | Script | 2 |
 | 3 | Screening: for every watched company, is there news since the last session that matters? Output: a short list | Screening agent | 7 |
 | 4 | Deep analysis of at most **4 companies**: the analysts write or update one shared report per company, and record which catalysts have resolved | Analyst agents | 25 |
 | 5 | Decisions: each AI fund's portfolio manager reads the reports and decides: buy, add, reduce, sell or do nothing, with a thesis | Portfolio managers | 38 |
 | 6 | Risk limits checked; an order that breaks a limit is cut down or refused, and that is logged too. The two funds without AI make their moves. **The day's records are written and committed on the laptop: from here they are final** | Script | 40 |
 | 7 | The readable day page is made; a script checks the day's files for keys, addresses and long quotes | Script | 41 |
-| 8 | Publishing check by the owner, then the script publishes | Owner + script | 43 |
-| 9 | One-screen summary: what was decided, why, and how much of the usage limits the session took | Session + owner | 45 |
+| 8 | The script publishes | Script | 42 |
+| 9 | One-screen summary for when the owner looks again: what was decided, why, and how much usage the session took | Session | 43 |
 
 **Time. Owner: a normal day takes 20-30 minutes, with a hard stop at 45.** No new deep analysis starts after
 minute 20. Step 5 starts at minute 28 at the latest; a portfolio manager that has not finished at minute 38 is
 stopped, and its fund gets a record "no decision today: out of time". Work that did not fit waits for the next
 session. *Why a fixed stop:* it keeps usage predictable and the day light for the owner.
 
-**Extras get their own session.** The weekly check on the screening (section 3), the weekly summary, the monthly
-letter and the monthly re-run of the universe are done with a second command, `/bobby-extra`, on any day. It makes
-no fund decisions, so its timing cannot matter. Its usage counts towards the limit of section 7.
+**Weekly and monthly extras run in the same session**, after step 8, so their timing cannot touch a decision: the
+check on the screening (section 3) and the weekly summary in the first session of the week; the monthly letter and
+the re-run of the universe in the first session of the month. On such a day the session makes at most 2 deep
+analyses instead of 4, so that everything still ends within 45 minutes. An extra that does not fit moves to the next
+session.
 
 **Which companies get a deep analysis**, in this order: (1) companies a fund holds that have news; (2) other
 companies the screening flagged; (3) companies with a catalyst on our calendar within 60 days, nearest first;
 (4) the rest of the universe in rotation, so that every company gets a first report (about ten weeks for 200
 companies). *Why:* holdings first, because a missed sell signal costs most.
 
-**The owner's role in a session is to start it and to check for leaks before publishing.** The owner does not
-change, add or block decisions. The check in step 8 is only about things that may not be public (a key, an address,
-a long quote). If something is found, that text is taken out and a correction record says so; the decisions
-themselves are published as they were committed in step 6.
+**The owner's role in a session is to start it.** The owner does not change, add or block decisions. The leak
+check before publishing is a script (step 7), together with the repository's existing check on every push. If it
+finds something that may not be public (a key, an address, a long quote), that text is replaced by "[removed]" and a
+correction record says so; the decisions themselves are published as they were committed in step 6. The owner sees
+it in the summary and in the monthly review.
 
 **The agents cannot look things up themselves.** Their agent files give them no web search and no web access. They
 read only the files that the scripts prepared, all saved before the data cut-off. *Why:* this is what makes the
@@ -162,7 +166,7 @@ for an agent inside a session.
   industry codes (2834, 2836).
 - **Filter:** market value between $300 million and $10 billion, at least $2 million traded a day on average, share
   price at least $2. Expected: 150-250 companies.
-- **Frozen with a date** at the start, re-run once a month (in a `/bobby-extra` session), every version kept. A company that
+- **Frozen with a date** at the start, re-run once a month (section 1, extras), every version kept. A company that
   drops out is no longer bought but may be held.
 - Large pharma companies are context only (buyers, competitors), never bought.
 
@@ -274,8 +278,8 @@ never published.
 | What | When | How |
 |---|---|---|
 | Log, day page, values, forecasts | End of every session | One commit, published at once; that moment is the decision time of section 2 |
-| Weekly summary | Weekly, in a `/bobby-extra` session | Written by script from the log |
-| Monthly letter | Monthly, in a `/bobby-extra` session | Section 8 |
+| Weekly summary | First session of the week, after publishing | Written by script from the log |
+| Monthly letter | First session of the month, after publishing | Section 8 |
 | README "Track record" | Once, at the start | Links to `track-record/`; it holds no figures itself |
 
 The daily publication goes straight to the main branch, made by a script that refuses to change anything outside
@@ -319,10 +323,10 @@ days 4-5 (the Debate fund uses the most, so it must be measured, not guessed). P
 separate folder and do not count.
 
 **Measured per session**
-- the two usage percentages shown by `/usage` (the five-hour limit and the weekly limit). The owner types the
-  command at the start and at the end, because an agent cannot; the difference is what the session cost. On pilot
-  days the owner does no other Claude work during the session, or the figures are muddied. The pilot also checks
-  whether the figures can be read automatically;
+- usage, measured without the owner: a script counts the tokens of every model call per role from the session's
+  own record (exact, per session). Where Claude Code makes the usage percentages available to scripts (its status
+  line data), the script also records the five-hour and weekly percentages at the start and the end; the pilot
+  checks this in its first session;
 - minutes from start to end, and per step;
 - number of agent runs per role, companies screened, companies analysed;
 - how often the three repeated decisions agreed;
@@ -342,8 +346,13 @@ figures we work out what three AI funds would use.
 During the live run the same figures are logged every session. A week above 25% triggers the next step down at
 once; two steps down without getting under the limit is a reason to stop (section 9).
 
-Only percentages are published; details of the owner's subscription stay out of the repository. `/usage` is
-approximate and there is no exact per-session figure, so the percentages are a guide, not an invoice.
+**Turning tokens into percentages.** If the percentages cannot be read by script, the pilot ties tokens to the
+limit once: the owner reads `/usage` a single time, at the end of the pilot week, and the script divides. From then
+on the token count per week is the measure, and the owner looks at `/usage` only at the monthly review, as a check.
+No per-session action is needed.
+
+Only percentages are published; details of the owner's subscription stay out of the repository. The percentages are
+approximate (the owner's other Claude use shares the same limits), so they are a guide, not an invoice.
 
 After the pilot: a short report in `docs/`, the owner's go or no-go, then the funds start on a date announced in
 the README at least a day before.
@@ -361,7 +370,7 @@ a public page later is a separate decision for the owner. What it shows, game-st
 - a calendar of coming catalysts; the latest letter; the days without a session.
 
 **The monthly letter to investors. Owner: in the repository and the app, plus a phone message with the link.**
-Written once a month, in a `/bobby-extra` session, by the three portfolio managers, one page each, in plain language: what
+Written once a month, in the first session of the month after publishing, by the three portfolio managers, one page each, in plain language: what
 we did, what went right and wrong, what we expect next month. Followed by a fixed table part made by script. It is
 also the report for the monthly review.
 
@@ -425,7 +434,7 @@ sources. Numbers continue after `0002`.
 
 ## Words used
 - **Agent**: one run of a Claude model with a fixed role and instructions.
-- **Session**: one conversation in Claude Code, opened by the owner.
+- **Session**: one conversation in Claude Code, opened by the owner with one command.
 - **Catalyst**: a dated event that can move a share price a lot, such as a trial result or an FDA decision.
 - **Thesis**: the written reasoning for a position, in a fixed form.
 - **Data cut-off**: the time of the newest information a session may use.
