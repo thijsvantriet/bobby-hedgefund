@@ -73,7 +73,9 @@ class Fetcher:
     backoff: tuple[float, ...] = (5.0, 30.0, 90.0)  # waits before retry 1, 2, 3
     sleep: Callable[[float], None] = time.sleep
 
-    def get(self, url: str) -> Response:
+    def get(self, url: str, *, retry_refused: bool = True) -> Response:
+        """Download one address. With retry_refused=False a "too many requests" answer (HTTP 429) is not retried
+        here: the caller comes back much later, because quick retries can keep a publisher's block alive."""
         if urlsplit(url).scheme not in ("http", "https"):
             raise FetchError(f"only http(s) addresses are fetched, not {url!r}")
         attempt = 0
@@ -81,6 +83,9 @@ class Fetcher:
             try:
                 return self._get_once(url)
             except _Retryable as exc:
+                if exc.refused and not retry_refused:
+                    asked = "" if exc.retry_after is None else f", asked to wait {exc.retry_after:.0f} s"
+                    raise FetchError(f"{url}: {exc.reason} (not retried at once{asked})") from None
                 if attempt >= len(self.backoff):
                     raise FetchError(f"{url}: {exc.reason} (gave up after {attempt + 1} tries)") from None
                 wait = self.backoff[attempt]
@@ -101,7 +106,8 @@ class Fetcher:
                 raw = resp.read(self.max_bytes + 1)
         except urllib.error.HTTPError as exc:
             if exc.code in RETRY_STATUS:
-                raise _Retryable(f"HTTP {exc.code}", _retry_after(exc.headers.get("Retry-After"))) from None
+                waiting = _retry_after(exc.headers.get("Retry-After"))
+                raise _Retryable(f"HTTP {exc.code}", waiting, refused=exc.code == 429) from None
             raise FetchError(f"{url}: HTTP {exc.code}") from None
         except (OSError, http.client.HTTPException) as exc:
             # OSError covers network errors, time-outs and TLS errors; HTTPException covers broken responses
@@ -130,10 +136,11 @@ class Fetcher:
 
 
 class _Retryable(Exception):
-    def __init__(self, reason: str, retry_after: float | None):
+    def __init__(self, reason: str, retry_after: float | None, refused: bool = False):
         super().__init__(reason)
         self.reason = reason
         self.retry_after = retry_after
+        self.refused = refused  # the publisher said "too many requests" (HTTP 429)
 
 
 def _retry_after(value: str | None) -> float | None:

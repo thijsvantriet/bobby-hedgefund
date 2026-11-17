@@ -28,6 +28,13 @@ def test_retries_on_server_error_then_succeeds(site, fetcher: Fetcher, waits: li
     assert waits == [1.0, 2.0]
 
 
+def test_refusal_is_not_retried_when_the_caller_comes_back_later(site, fetcher: Fetcher, waits: list[float]) -> None:
+    site.add("/f", {"status": 429, "headers": {"Retry-After": "40"}})
+    with pytest.raises(FetchError, match="not retried at once, asked to wait 40 s"):
+        fetcher.get(site.base + "/f", retry_refused=False)
+    assert len(site.hits) == 1 and waits == []
+
+
 def test_gives_up_after_the_last_retry(site, fetcher: Fetcher, waits: list[float]) -> None:
     site.add("/f", {"status": 503})
     with pytest.raises(FetchError, match="gave up after 3 tries"):

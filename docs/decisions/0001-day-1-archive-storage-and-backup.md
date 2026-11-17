@@ -171,6 +171,20 @@ Left as is: `systemd/install.sh` installs whatever committed branch is checked o
 - Published results name the source and the date of the data wherever a source is used (README, "Data sources and
   credit").
 
+## Update 2026-11-17: EMA refusals
+On each of the first three runs EMA refused one of its five files ("too many requests"), a different one each time,
+also at five minutes apart. EMA publishes no request limit. What the runs showed: a refused file was still refused
+5 and 35 seconds later, sometimes served after two minutes, and once refused again in a second round five minutes
+later. Guess, not proven: quick retries keep the block alive.
+Change: for EMA a refused file is no longer retried at once. It is left alone and asked for again after 10, 20, 40
+and 60 minutes (one request per round). This sends fewer requests than before. The files only change at 06:00 and
+18:00 Amsterdam time, so a file fetched hours after 23:30 is still that day's version. If EMA states a waiting time
+in its answer, the error message now shows it. No later round starts more than four hours after the first EMA
+request, so a night on which the site hangs still ends by itself with a proper "failed" record; the job's time
+limit is now 8 hours. While a run waits for a later round it keeps the archive locked: `bobby-archive verify` and
+`baseline` then answer "busy" (`status` still works). Check after a week of runs whether refusals still end in a failed
+run; if so, spread the five files over the night or ask EMA.
+
 ## Sources
 - BagIt, the file-archive format with checksum lists: [RFC 8493](https://www.rfc-editor.org/rfc/rfc8493)
 - WARC 1.1, the web-archive format: [IIPC specification](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
