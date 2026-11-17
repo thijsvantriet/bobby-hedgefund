@@ -45,7 +45,8 @@ hard part (the company events) must be supplied by us anyway (`docs/research/OPE
   0004). Recomputing adds facts up; it never works out an old fill again. A later change of the code can therefore
   not change the past.
 - Prices for the daily values come only from the saved price files, never from a fresh download.
-- A test checks that a full recomputation gives exactly the published values.
+- A test checks that a full recomputation gives exactly the values that were stored (private, and published only
+  as far as record 0007 allows).
 - A database copy (option C) is added only if recomputing takes more than about a minute, or when the app needs it.
 - Everything is keyed on the SEC company number, never on the ticker (record 0006).
 - **The Dice funds** follow completely from the published starting number of the random generator, the covered
@@ -54,18 +55,27 @@ hard part (the company events) must be supplied by us anyway (`docs/research/OPE
   thousand funds of twenty known companies each, every share's daily price move could be worked back out of them.
   What may be public is each AI fund's place among them, and only after open point 1 of record 0007 is settled.
   The Dice and Rules funds follow the same booking rules as the AI funds: whole shares, the same costs, the same
-  wait for a missing price; a monthly draw is an order like any other, made in the first session of the month.
+  wait for a missing price. A monthly draw is made in the first session of the month and filled like any other
+  order: companies that are no longer drawn are sold whole, new ones are bought at their equal part, and a company
+  that stays is brought back to its equal part only when that takes a trade of 0.5% of the fund or more.
 
 ### 2. Booking an order
-**The risk limits are checked once, when the decision is made** (spec, section 1, step 6), against the fund as it
-is then. An order that passed is not checked against the limits again on the fill day; only the mechanical rules
-below can still make it smaller.
+**The risk limits are checked when the decision is made** (spec, section 1, step 6), against the fund as it is
+then, with orders that are still waiting counted as if they were filled (for the limit per share and the limit of
+25 positions). On the fill day an order is not checked against those limits again, with one exception: **the
+brake**. A fund that is 30% or more below its own highest value at the last close before the fill day makes no
+buys; they are cancelled and the log says so. Apart from that, only the mechanical rules below can make an order
+smaller.
+
+**"x% of the fund" is always the size of the trade**, not the weight to end up with. A sale is never larger than
+the shares held.
 
 In this order, on the fill day (the rules of the spec, made exact):
 1. **The price file of that day must be there.** If the morning download failed or has not run, nothing is booked
    and nothing counts as "no price"; the booking waits for the file.
-2. Company events of that day are booked first (point 4).
-3. The fund's value is taken at the last closing prices before the fill day.
+2. The fund's value is taken at the last closing prices before the fill day, with the shares as they were at that
+   close.
+3. Company events of the fill day are booked (point 4).
 4. An order of "x% of the fund" becomes x% of that value, divided by the opening price, rounded **down** to whole
    shares. A sale of a whole position sells all its shares.
 5. Sells are booked, then buys. The cash needed for a buy is its amount plus its trading cost. If cash is short
@@ -129,10 +139,12 @@ cash dividend is added to cash on its payment day.
 2. Section 4 says the Dice funds show "where does each fund fall among 1,000 random ones". The place may be shown
    (after open point 1 of record 0007); the values of the thousand funds themselves stay private.
 3. The 0.5% minimum does not apply to selling a whole position.
+4. The brake (30% below the highest value) is also applied on the fill day, to buys that were decided earlier.
 
 ## Consequences
-- The books can be checked by anyone who has the log and the prices; the public can check everything except the
-  sealed prices, which they can look up themselves.
+- The books can be checked in full by whoever has the log with its private files and the prices: that is the
+  owner. The public can check the decisions, their sizes in percent and the fill days, and can look up the prices of
+  those days themselves; the amounts and the values of the funds are sealed (record 0007).
 - If the private files with prices ever have to be deleted (record 0007), the books can no longer be recomputed;
   the published records stay.
 - The check of the trading costs needs a year of past prices; record 0007 fetches that history once.

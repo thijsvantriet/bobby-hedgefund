@@ -1,7 +1,8 @@
 # Bobby Hedgefund
 
 A paper-money biotech fund run by a team of LLM agents, fed by open data (clinical trials, FDA, SEC filings, papers,
-company news), run forward for 26 weeks and compared with XBI, IBB, IWDA and two funds without AI (docs/SPEC.md).
+company news), run forward for 26 weeks and compared with two funds without AI and with index funds (XBI, IBB and
+a world index fund; docs/SPEC.md).
 
 **This is an experiment with paper money. Nothing here is investment advice, and no real money is traded.**
 
@@ -33,7 +34,7 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-17: **spec approved**: the owner merged PR #8. Next: Claude writes decision records 0003-0008.
 
-2026-11-17: **decision records 0003-0008 written** (docs/decisions/, all "proposed" until the owner merges them): how the agents run, the decision log, the paper funds, the universe and linking table, the price source, SEC access. Each rests on a narrow research question and on the source's own terms where a download is involved. Reading the terms changed three things from the spec: (1) Tiingo's free plan cannot be used at all, so Massive is the only price source, and no price, share count or index-fund series may be published (0007); the public log therefore "seals" such content: it shows a fingerprint, not the number (0004); (2) SEC filings are fetched by our own small program and only read with the edgartools library, and the SEC's "latest filings" feed is off limits to scripts (0008); (3) companies that report to the SEC as foreign companies are left out of version 1 (0006). Three points wait for the owner: ask Massive in writing whether our own fund results may be public (0007), check that the Claude account does not use conversations for training (0007), and choose how to keep the public company list from giving away holdings of the XBI fund (0006). A reviewer agent checked the records against the spec and each other; its findings are worked in. No code was written.
+2026-11-17: **decision records 0003-0008 written** (docs/decisions/, all "proposed" until the owner merges them): how the agents run, the decision log, the paper funds, the universe and linking table, the price source, SEC access. Each rests on a narrow research question and on the source's own terms where a download is involved. Reading the terms changed three things from the spec: (1) Tiingo's free plan cannot be used at all, so Massive is the only price source, and no price, share count or index-fund series may be published (0007); the public log therefore "seals" such content: it shows a fingerprint, not the number (0004); (2) SEC filings are fetched by our own small program and only read with the edgartools library, and the SEC's "latest filings" feed is off limits to scripts (0008); (3) companies that report to the SEC as foreign companies are left out of version 1 (0006). Three open points wait for the owner: ask Massive in writing whether our own fund results may be public (0007), check that the Claude account does not use conversations for training (0007), and choose how to keep published company names from giving away holdings of the XBI fund (0006; nothing that names a company is published before that). Merging the records also confirms the places where they differ from the spec, listed in each record under "Differs from the spec" (among them: no foreign filers in version 1, our own program fetches SEC filings, the world index through the US-listed fund URTH, index comparisons private). A reviewer agent checked the records against the spec and each other; its findings are worked in. No code was written.
 
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
@@ -88,7 +89,8 @@ Published decisions are never edited afterwards. That nothing is added with hind
 (docs/SPEC.md, section 2): a decision is public before the price it gets exists, and published history cannot be rewritten.
 The record will be built from real market and trial data; the data files themselves are not published (see below),
 only our own numbers and conclusions, with the sources named. The form is set in docs/SPEC.md, section 5: a folder
-`track-record/` with the decision log, a readable page per day, the values per fund, and a monthly letter.
+`track-record/` with the decision log, a readable page per day, a monthly letter, and (if the price service
+allows it) the values per fund.
 
 ## Data sources and credit
 The project follows each source's terms of use. No file from any source is in this repository, and none will be:

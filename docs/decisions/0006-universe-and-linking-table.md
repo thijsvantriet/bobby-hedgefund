@@ -113,7 +113,9 @@ Nasdaq lists are a private check. No column says how a company got in, and the X
 published. The public page credits the SEC, and ClinicalTrials.gov with the date its records were processed, as
 their terms ask (`docs/decisions/0001`). The review file and the linking files stay in the data folder.
 
-**The list is not published until the open point below is settled.**
+**Until the open point below is settled, the list is not published, and neither is anything else that names a
+company** (a decision, a draw of the Dice funds, a record of the pilot): record 0004, point 3. The point must
+therefore be settled before the first public decision.
 
 The private universe files hold market values computed from prices, so they fall under the deletion rule of record
 0007 if the price account ever ends. What stays in that case is the list of who was in and out, without the numbers.

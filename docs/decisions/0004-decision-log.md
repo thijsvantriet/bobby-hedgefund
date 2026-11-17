@@ -67,10 +67,8 @@ becomes evidence when its newest fingerprint is handed, every day, to parties th
 
 ### 2. Sealed fields: things that may not be public
 Some content may not be published:
-- **everything on the list in record 0007, point 6**: prices, share counts, amounts of money of a trade, trading
-  costs, cash, and (until open point 1 of that record is settled) the values and returns of funds and index funds.
-  That list is the only one; this record does not keep a second;
-- **numbers in written text that come from prices** (a market value, a figure per share): see below;
+- **everything on the list in record 0007, point 6** (content that comes from prices). That list is not repeated
+  here, so that there is only one;
 - text that the leak check removes: a key, an address, a quote that is too long.
 
 How it works:
@@ -93,10 +91,20 @@ How it works:
   reports those fingerprints as "content deleted under record 0007", not as damage.
 
 ### 3. Publication
-- A script makes **one commit per session for the day's decisions**: the day's lines, the day page and `HEAD`,
-  pushed straight to `main` (spec, section 5). This is the commit whose receipt time counts.
-- After it, the same script may make further commits that only **add new files** in `track-record/`: the timestamp
-  proof (point 4), the weekly summary, the monthly letter, a new universe list. They never touch the log.
+- A script makes **one commit per session for the day's decisions**: the day's lines, the day page, new lines in
+  `forecasts.csv` and `HEAD`, pushed straight to `main` (spec, section 5). This is the commit whose receipt time
+  counts. The day's files are prepared in the data folder and placed in `track-record/` only at this moment.
+- `forecasts.csv` only grows as well: the outcome of a forecast is a new line that points to the forecast, not a
+  change of the old line. `values.csv` holds our own funds only, and exists only once open point 1 of record 0007
+  allows it.
+- After the day's commit, the same script may make further commits that only **add new files** in `track-record/`:
+  the timestamp proof (point 4), the weekly summary, the monthly letter, and a new universe list once the open
+  point of record 0006 is settled. They never touch the log.
+- **Nothing that names a company is published** (a decision, a draw of the Dice funds, the universe list, a record
+  of the pilot) **before the owner has settled the open point of record 0006.** Until then the pilot's log stays in
+  the data folder.
+- A commit that GitHub did not receive is sent again at the start of the next session, before anything else
+  (record 0003). The fill day follows from when GitHub received it: the first US trading day whose opening is at least 30 minutes after GitHub received the publication.
 - The script refuses to commit anything outside `track-record/`, and refuses when an existing line would change.
   **GitHub cannot enforce the folder limit on this plan; the script and `bobby-log verify` do.**
 - The script runs from the published main branch only (record 0003).
@@ -152,6 +160,9 @@ anyone can run the public part on a copy of the repository.
 5. Section 5: fill prices, share counts and the other content on the list of record 0007 are sealed, not shown.
 6. Section 5, "one commit": the day's decisions are one commit; proofs, summaries and letters follow in commits of
    their own.
+7. Section 5, `forecasts.csv` "and the outcome once known": the outcome is added as a new line, never filled in on
+   the old one. `values.csv` is not part of the daily commit until record 0007 allows it, and then holds our own
+   funds only.
 
 ## Consequences
 - A stranger can check the whole public log with one command and no account.

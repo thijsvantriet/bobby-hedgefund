@@ -88,7 +88,8 @@ URTH. The spec already provides for this.
      index funds (record 0005);
    - the numbers in the private universe files (record 0006);
    - the session folders and the saved conversations of the sessions (spec, section 3), which hold what the agents
-     read;
+     read; and Claude Code's own records of those sessions on this machine, which it removes by itself after 30
+     days by default (that setting must not be made longer);
    - older versions of all of these in the machine's backup, which must be gone within 90 days.
 
    A script `bobby-prices purge` does the deleting and writes down what it removed; the step for the backup is
@@ -97,8 +98,10 @@ URTH. The spec already provides for this.
 5. **No second source.** Instead the job checks each day's file against the day before: a price change of more
    than half without a share split or a filing is flagged for a look, and share splits are checked against the
    company's SEC filing (record 0005).
-6. **What is never published. This is the one list; the log seals exactly this** (record 0004):
-   - a price of any share or fund, and a chart of any single share or fund;
+6. **What is never published. This is the one list of content that comes from prices; the log seals exactly
+   this** (record 0004). Other things that are never published have their own rules: which companies are in the
+   XBI fund (record 0006), and keys, addresses and long quotes (spec, section 5).
+   - a price of any share or index fund, and a chart of any single share or index fund;
    - share counts of a position, the amount of money of a trade, its trading cost, a fund's cash (with the size in
      percent, each of them gives a price or a fund value away);
    - a market value of a company, or a figure per share, in any written text;
@@ -107,7 +110,7 @@ URTH. The spec already provides for this.
    - until open point 1 is settled: the value and return of each of our own funds, their place among the Dice
      funds, and any comparison with an index fund.
 7. **What is published in any case:** every decision with its thesis and its size as a percentage of the fund; the
-   rule by which it will be filled ("the first opening price after publication, by the rule of record 0003"), and
+   rule by which it will be filled (the one sentence of record 0003, point 4), and
    afterwards the day on which it was filled; every forecast and its outcome; the scores of the forecasts. The
    written text of a thesis, a day page or a letter is checked by a script for prices and numbers computed from
    them before it is published; what it finds is sealed (record 0004). Until that check exists, nothing is
@@ -122,8 +125,10 @@ URTH. The spec already provides for this.
    results. By our reading they do not allow a price to be worked back, if position sizes are shown in percent and
    fund values are rounded. But the terms only say such results may be kept and used "for your own personal
    purposes"; they do not say "published". **Recommended:** the owner asks Massive in writing (a short question;
-   Claude drafts it), before the funds start. If the answer is yes: publish as the spec describes, minus single
-   prices. If it is no, or there is no answer by the owner's go: the owner chooses between keeping all figures
+   Claude drafts it), before the funds start. If the answer is yes: the last item of the list in point 6 falls
+   away, so our own funds' values (`values.csv`, our own funds only), their places among the Dice funds and the
+   coarse comparison with the index funds are published. Everything else on that list stays unpublished whatever
+   the answer. If it is no, or there is no answer by the owner's go: the owner chooses between keeping all figures
    computed from prices on the home network only (the public track record then shows decisions, theses and forecast
    scores, which is result 2 of the spec in full), and a paid plan. Until then nothing computed from prices is
    published.
@@ -134,7 +139,7 @@ URTH. The spec already provides for this.
 ## Differs from the spec
 - Section 6, stream 1: Tiingo is dropped; no cross-check source; the download runs in the morning.
 - Section 5: fill prices are not shown in the public log, and `values.csv` is published only after open point 1
-  is settled. The spec foresaw the first ("if not, the public log shows returns only"); the second is new.
+  is settled, and then with our own funds only (no index funds, no Dice funds). The spec foresaw the first ("if not, the public log shows returns only"); the second is new.
 - Section 5, the thesis: its numbers that come from prices (market value against cash, what the price seems to
   assume) are sealed in the public version.
 - Section 3: the saved conversations of the sessions fall under the deletion rule.

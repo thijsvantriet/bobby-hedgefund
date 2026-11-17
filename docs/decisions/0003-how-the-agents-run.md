@@ -59,10 +59,18 @@ such schedules end after seven days.
   happens.
 - **The data cut-off is that start time.** The script then fills a folder for this session with copies of the files
   the agents may read, and takes only files that the saved-files lists show as saved before the cut-off.
-- **Which code runs.** The session runs the code of the main branch as it is on GitHub: the script refuses when
-  another branch is checked out, when files have been changed and not committed, or when the local main branch is
-  not the published one. Work in progress can therefore never write the real log (the same idea as the installed
-  copy that the nightly archive runs, `docs/decisions/0001`).
+- **Which code runs.** The session runs the code of the main branch as it is on GitHub. The script first tidies up
+  what an earlier session may have left behind, in this order:
+  1. files in `track-record/` that were written but never committed (a crash in the middle of step 6) are removed;
+     they are copies, the day's records are prepared in the data folder and only placed in `track-record/` at the
+     moment of the commit;
+  2. commits that the publishing script made earlier and that GitHub has not received yet (publishing failed) are
+     sent now. Only commits made by that script, touching only `track-record/`, are sent this way.
+
+  Then it refuses when another branch is checked out, when files have been changed and not committed, or when the
+  local main branch still differs from the published one (for example because there is no internet: a session that
+  cannot publish does not run). Work in progress can therefore never write the real log (the same idea as the
+  installed copy that the nightly archive runs, `docs/decisions/0001`).
 - Step 1 checks the morning price download (record 0007) as well as the nightly jobs.
 
 ### 2. A fresh session, and one round a day
@@ -79,7 +87,9 @@ one counts as used. It keeps the **first** start time and data cut-off of that d
 no newer data comes in; it re-uses the reports already saved and reads the same session folder. A second crash makes
 the day a skipped day.
 
-Refusals and restarts are written to the log, and so are the creation and the removal of the `STOP` file.
+Refusals, restarts, and the creation and removal of the `STOP` file are noted in the data folder at once, and
+written to the log as records in the next round that is committed. Nothing is written to `track-record/` outside
+a round.
 
 ### 3. What the agents can touch
 The spec says the agents get no web search and no web access. This record makes that precise, in two layers:
@@ -99,9 +109,10 @@ publishes is done by scripts.
 ### 4. Skipped days and the fill day
 As in the spec, section 2, unchanged:
 - a day without a session is a day without trades for all five funds; nothing is caught up;
-- the fill day follows from the start time written down in point 1: started before 14:00 Amsterdam time on a US
-  trading day and published at least 30 minutes before the US market opens gives that day's opening price; every
-  other case gives the opening price of the next US trading day;
+- **the fill day, in one sentence used by every record: the first US trading day whose opening is at least 30 minutes after GitHub received the publication;
+  and for a session started at or after 14:00 Amsterdam time, never the day of the session itself.** In the normal
+  case this is exactly the spec's rule: started before 14:00 on a US trading day and published at least 30 minutes
+  before the opening gives that day's opening price, anything else the next trading day's;
 - a decision is final when it is committed, and public when GitHub has received it (record 0004);
 - if publishing fails, the same commit is sent again; the agents never run twice for one day;
 - skipped days are counted and shown;
@@ -131,6 +142,11 @@ Nothing in the rules changes. Three additions make them more exact.
    should just know it.
 3. **Reading is limited by a check before every tool use**, not only by the agent files (point 3 above). The spec
    speaks of the agent files only.
+4. **A gap closed in the fill rule.** The spec says "every other case: the next US trading day". If publishing
+   fails and GitHub receives the commit only after that next opening, the spec's words would give a price that
+   already existed. The sentence in point 4 ties the fill day to the moment GitHub received the publication, so
+   that can never happen.
+5. Refusals and stop-file changes reach the log in the next committed round, not at the moment they happen.
 
 ## Consequences
 - The use of the subscription is ordinary use by its owner: one person, one session, started by hand.
