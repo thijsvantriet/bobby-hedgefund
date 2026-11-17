@@ -1,0 +1,141 @@
+# 0007. Price source: Massive only; what is saved and what may be published
+Date: 2026-11-17
+Status: proposed. **Holds two open points for the owner** (see "Open points").
+
+## Context
+Prices are needed for the universe filter, for booking paper trades at the opening price, for the daily value of
+every fund and for the comparison with index funds (`docs/SPEC.md`, section 6 stream 1, sections 4 and 5). The spec
+planned Tiingo as the main source and Massive (formerly Polygon) as a second source to cross-check, both on their
+free plans (owner: free sources only), and left to this record what their terms allow: what may be saved, and
+whether single prices and index values may be shown in the public track record. The spec asked for this before the
+format of the decision log is fixed (record 0004).
+
+Requirements: follow each source's terms; never publish a source's data when its terms forbid it; the repository is
+public; saved raw files are normally never deleted (`docs/decisions/0001`).
+
+Both services are **closed, commercial services**. There is no open or official free source of US daily prices whose
+terms allow publication (searched again for this record; the nearest, the free files of the IEX exchange, hold only
+that one exchange's trades and their terms could not be read).
+
+## Terms and robots.txt (read 2026-11-17)
+
+### Tiingo: [terms of use](https://www.tiingo.com/tos), last updated 5 November 2026
+The free ("Starter") plan cannot be used for this project.
+
+| What we planned | Allowed on the free plan? | The terms say |
+|---|---|---|
+| Save the prices every night | **No** | 1.6(a): "you may not write, save, archive, back up, or otherwise retain Tiingo Data in any persistent or durable storage" |
+| Use it to check a second source | **No** | 1.6: not for "using Tiingo end-of-day data to validate another end-of-day dataset" |
+| Publish how AI agents perform | **Not without a paid enterprise licence** | 1.7(d): a licence is needed "to test, evaluate, compare, or benchmark the performance of any AI or machine learning model or system" |
+| Show prices | **No** | 7.3: "All data via the API is for internal consumption only" |
+
+Exceptions exist only on plans from $250 a month. `robots.txt` of the website and of the data service forbids only
+`/admin`; it does not matter here.
+
+### Massive: [terms for individuals](https://massive.com/legal/individuals-terms-of-service) and [market data terms](https://massive.com/legal/market-data-terms-of-service), both last updated 3 November 2026
+
+| What we want | Allowed? | The terms say |
+|---|---|---|
+| Use by a private person for a hobby | Yes | "Personal use includes your own research, analysis and investment activities, using any software, tools or methods you choose" |
+| Save the data on our own machine | Yes, while the account exists | A licence "to access, download, store and use the Information" |
+| Keep it after the account ends | **No** | "you must stop using it and delete it promptly, and in any event within thirty (30) days, including downloaded files, stored copies and caches" |
+| Publish prices, also single ones ("filled at $12.34") | **No** | Not allowed to "share, redistribute, publish … Information, make it available to anyone else" |
+| Publish numbers computed from prices | Only when prices cannot be worked back out of them | You may keep and use, "for your own personal purposes, your own analyses and other results that do not contain Information and cannot reasonably be used to recreate it or as a substitute for it" |
+| Publish an index fund's daily value or return | **No**, by our reading: its prices can be worked back out | Same clause |
+| Let Claude read the data | Yes, on a condition | A tool may process the data "only on your behalf"; it "may not use the Information for its own purposes". Using the data to train a model is forbidden |
+| Publish an index or a benchmark made from the data | Not without a separate licence | Not allowed to "create, calculate or publish an index, benchmark, or settlement or reference price" |
+
+`robots.txt` of massive.com forbids nothing; the data service has no robots file. We only call the documented data
+service with the owner's key.
+
+**Free plan as documented:** five requests a minute; two years of history; prices after the end of the day, for all
+US shares; one request returns the whole market for one day; a day's prices are available after midnight New York
+time (06:00 in Amsterdam); unadjusted prices can be asked for; share splits are listed.
+
+### IWDA
+Neither service carries IWDA: both cover US listings only. The US-listed fund on the same index (MSCI World) is
+URTH. The spec already provides for this.
+
+## Options considered
+
+| Option | For | Against |
+|---|---|---|
+| A. As in the spec: Tiingo saved nightly, Massive as cross-check | - | Forbidden by Tiingo's terms (saving, cross-checking, publishing results of AI agents) |
+| **B. Massive only, free plan; publish nothing from which a price can be worked back** | Allowed. One request a day gives the whole market. Storing is allowed | One source, so no cross-check. Prices and index-fund figures stay private. Data must be deleted if the account ever ends |
+| C. A paid plan with the right to show data | Prices and index comparisons could be public | Costs money every month (owner: free only); the terms of such a plan were not read |
+
+## Decision
+**Option B.**
+
+1. **Massive is the only price source. Tiingo is not used**, not for prices, not as a check.
+2. **What is saved.** Every morning one request: the whole US market for the last trading day, unadjusted (opening,
+   highest, lowest and closing price, volume), exactly as received. Plus the list of share splits. A timer job
+   without any model, like the archive's.
+3. **When.** Early in the morning, Amsterdam time, after the prices are out. (The spec said "every night"; the
+   service only has a day's prices from 06:00.)
+4. **Where: a folder of its own**, `~/bobby-hedgefund-data/prices/`, with its own fingerprint list, **not** inside
+   the day-1 archive. Reason: the archive's rule is "never deleted", and these files must be deleted within 30 days
+   if the Massive account ever ends. Anything that contains a price (also the private part of the decision log,
+   record 0004) follows the same rule. This is the one exception to the never-delete rule; while the account
+   exists nothing is deleted.
+5. **No second source.** Instead the job checks each day's file against the day before: a price change of more
+   than half without a share split or a filing is flagged for a look, and share splits are checked against the
+   company's SEC filing (record 0005).
+6. **What is never published:** a price of any share or fund; share counts of a position (with the position's size
+   they give the price away); the daily value or return of XBI, IBB or URTH; a chart of any single share or fund.
+7. **What is published in any case**, because no price is in it: every decision with its thesis and its size as a
+   percentage of the fund, the day and rule by which it is filled ("the opening price of 3 February"), every
+   forecast and its outcome, the scores of the forecasts.
+8. **Agents may read prices.** The files stay on this machine and are read by the Claude session on the owner's
+   behalf. Condition, see open point 2.
+9. **IWDA** is replaced by URTH, as the spec provides; the track record says so.
+
+## Open points for the owner
+1. **May the funds' own results be public?** The value and return of each of our paper funds, their rank among the
+   random funds, and a coarse comparison with the index funds (for example one figure per month) are our own
+   results. By our reading they do not allow a price to be worked back, if position sizes are shown in percent and
+   fund values are rounded. But the terms only say such results may be kept and used "for your own personal
+   purposes"; they do not say "published". **Recommended:** the owner asks Massive in writing (a short question;
+   Claude drafts it), before the funds start. If the answer is yes: publish as the spec describes, minus single
+   prices. If it is no, or there is no answer by the owner's go: the owner chooses between keeping all figures
+   computed from prices on the home network only (the public track record then shows decisions, theses and forecast
+   scores, which is result 2 of the spec in full), and a paid plan. Until then nothing computed from prices is
+   published.
+2. **The Claude account must not use conversations for training.** Massive's terms forbid that a tool uses the
+   data for its own purposes. The owner checks once that the setting that lets conversations be used to improve the
+   models is off, and again at each monthly review.
+
+## Differs from the spec
+- Section 6, stream 1: Tiingo is dropped; no cross-check source; the download runs in the morning.
+- Section 5: fill prices are not shown in the public log, and `values.csv` is published only after open point 1
+  is settled. The spec foresaw the first ("if not, the public log shows returns only"); the second is new.
+- Section 4, "Index funds for comparison": the index funds are computed and shown privately (in the app on the
+  home network); publicly at most as a coarse figure, and only after open point 1.
+- Rule "archived files are never deleted": one exception, point 4 above.
+- The historical study has at most two years of prices from this source.
+
+## Consequences
+- The core promise is untouched: every decision is public before its price exists. Anyone can look up that price
+  themselves; we just do not print it.
+- The public track record is thinner on numbers than the spec planned until the owner has Massive's answer.
+- The app on the home network can show everything: that is personal use.
+- One source means a wrong price is harder to notice. The jump check and the filings catch the large mistakes.
+- If Massive ends its free plan or changes its terms, the experiment has no prices. Saved files cover the past only
+  while the account exists.
+- The Tiingo account is not needed any more. The owner may close it; its key stays unused.
+- The whole-market file also covers companies outside the universe, which the monthly universe run needs
+  (record 0006).
+
+## Revisit
+Revisit: by 2027-02, or when Massive changes its terms or its free plan, when Massive answers the owner's question,
+or before the owner's go for the start of the funds, whichever comes first.
+
+## Sources
+All read on 2026-11-17.
+- Tiingo: [terms of use](https://www.tiingo.com/tos) (sections 1.6, 1.7, 7.3), [pricing](https://www.tiingo.com/about/pricing), [robots.txt](https://www.tiingo.com/robots.txt)
+- Massive: [terms for individuals](https://massive.com/legal/individuals-terms-of-service), [market data terms](https://massive.com/legal/market-data-terms-of-service), [pricing](https://massive.com/pricing), [robots.txt](https://massive.com/robots.txt)
+- iShares, [URTH](https://www.ishares.com/us/products/239696/ishares-msci-world-etf) (tracks the MSCI World index)
+- Earlier research: `docs/research/DATA-SOURCES.md` ("Prices"), now overtaken on Tiingo
+
+Not verified: whether Massive counts coarse results as allowed (open point 1); whether the free plan lists
+dividends; IWDA's index on its own page (taken from a search result); the terms of a paid plan.

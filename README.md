@@ -33,12 +33,18 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-17: **spec approved**: the owner merged PR #8. Next: Claude writes decision records 0003-0008.
 
+2026-11-17: **decision records 0003-0008 written** (docs/decisions/, all "proposed" until the owner merges them): how the agents run, the decision log, the paper funds, the universe and linking table, the price source, SEC access. Each rests on a narrow research question and on the source's own terms where a download is involved. Reading the terms changed three things from the spec: (1) Tiingo's free plan cannot be used at all, so Massive is the only price source, and no price, share count or index-fund series may be published (0007); the public log therefore "seals" such content: it shows a fingerprint, not the number (0004); (2) SEC filings are fetched by our own small program and only read with the edgartools library, and the SEC's "latest filings" feed is off limits to scripts (0008); (3) companies that report to the SEC as foreign companies are left out of version 1 (0006). Two points wait for the owner (0007): ask Massive in writing whether our own fund results may be public, and check that the Claude account does not use conversations for training. No code was written.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
-1. ~~Owner reads and merges the spec~~ (done 2026-11-17). Claude writes the decision records it lists (section 10), starting with
-   0003-0008: how the agents run, the decision log, the paper funds, the universe and linking table, prices, SEC access.
+1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Claude writes decision records 0003-0008~~ (written
+   2026-11-17, "proposed"). **Now: the owner reads and merges them**, and settles the two open points in 0007 (a
+   written question to Massive about publishing our own fund results; the training setting of the Claude account).
+   The points where a record differs from the spec are listed in each record under "Differs from the spec"; after
+   the merge they go into the spec under "Changes". Records 0009-0014 follow when their step comes (spec, section 10).
 2. Build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
-   matches), daily prices, SEC filings, trial-record changes. Each starts with reading the source's terms.
+   matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
+   (0007, 0008); still to read before the first request: the robots file of the SEC's data service.
    Alongside: the historical study, limited to two weeks of work. Open before it: AACT shows no terms page, so ask
    AACT before building that download.
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
