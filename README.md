@@ -28,8 +28,8 @@ portfolio and no results yet. The log below shows each step.
 ## Next step
 1. Owner, when EPO approves the account: put its Consumer Key and Secret in `.env` (only needed if patents make it into the spec).
 2. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
-   Terms: read on 2026-11-16 (docs/decisions/0001, "Update"). Open: the owner opens the ClinicalTrials.gov terms page
-   once in a browser to confirm the wording; AACT shows no terms page, so ask AACT before building that download.
+   Terms: read on 2026-11-16, ClinicalTrials.gov confirmed by the owner in a browser on 2026-11-17
+   (docs/decisions/0001, "Update"). Open: AACT shows no terms page, so ask AACT before building that download.
    Also for the spec: where and in what form the track record is published (see "Track record").
    Also for the spec: how the agents run. Two candidates to compare: the Claude API (separate account, pay per use,
    hard spending limit) or scheduled Claude Code sessions on the owner's subscription (no API account). To research
@@ -90,7 +90,7 @@ by any of them. Downloaded so far (details and terms per source: docs/decisions/
 
 | Source | What we save | Condition we follow |
 |---|---|---|
-| [ClinicalTrials.gov](https://clinicaltrials.gov/) (U.S. National Library of Medicine) | Trial records with a company involved | Free for everyone. Credit ClinicalTrials.gov as the source, show the date the data were processed, and say so when data were changed ([terms](https://clinicaltrials.gov/about-site/terms-conditions)). We send at most one request per two seconds |
+| [ClinicalTrials.gov](https://clinicaltrials.gov/) (U.S. National Library of Medicine) | Trial records with a company involved | Free for everyone. In anything published from it: credit ClinicalTrials.gov as the source, keep it current, show the date the data were processed, and describe any change made to the data ([terms](https://clinicaltrials.gov/about-site/terms-conditions)). We send at most one request per two seconds |
 | [European Medicines Agency](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format) | Five data files on medicines | Reuse allowed with the source credited ([legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)) |
 | [Nasdaq Trader symbol directory](https://www.nasdaqtrader.com/Trader.aspx?id=SymbolDirDefs) | Lists of US-listed symbols | Copyright Nasdaq, Inc. One copy for personal, non-commercial use; the files are never passed on or published ([terms](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain)) |
 | [State Street, SPDR S&P Biotech ETF (XBI)](https://www.ssga.com/) | The fund's daily holdings file | Personal use only; the file is never passed on or published ([terms](https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions)) |

@@ -146,9 +146,19 @@ Left as is: `systemd/install.sh` installs whatever committed branch is checked o
   (in the versions we could read) keep the data current and state any changes made to them. Some records may contain
   material under someone else's copyright. The terms hold for as long as we keep the data. NLM asks for the phrase
   "Source: National Library of Medicine" ([NLM web policies](https://www.nlm.nih.gov/web_policies.html)).
-  **How it was read:** the live page only loads in a browser; this comes from a search engine's copy of that page
-  (several years old) and older archived versions. The owner confirms the current wording once in a browser.
-  Nothing was found on request speed beyond `robots.txt`.
+  **How it was read:** the live page only loads in a browser; this came from a search engine's copy of that page
+  (several years old) and older archived versions. Nothing was found on request speed beyond `robots.txt`.
+  **Confirmed 2026-11-17:** the owner opened the live page in a browser. The four conditions apply to "any
+  publication or distribution of these data": attribute the source as ClinicalTrials.gov; keep the data current at
+  all times; clearly display the date the data were processed by ClinicalTrials.gov; state any modifications, with
+  a complete description. Also: claim no ownership of any part of the database and never present it as anything
+  other than a United States Government database; do not use e-mail addresses from the records for marketing or
+  promotion; the data carry an international copyright outside the United States, and some may be under the
+  copyright of third parties; no warranty is given.
+  **What this means for us:** we do not publish or pass on the records themselves. A published decision or report
+  that uses a trial fact names ClinicalTrials.gov and the date of the record it was taken from, and says that the
+  wording is our own summary. If the project ever publishes records themselves, all four conditions apply in full,
+  including keeping them current: decide that in a new decision record first.
 - **Nasdaq Trader** ([copyright and disclaimer](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain), read
   in full): content may not be copied, stored or distributed without Nasdaq's written consent, except fair use and
   "one unaltered permanent copy to be used by the viewer for personal and non-commercial use only"; "Nasdaq stock
