@@ -43,8 +43,7 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    AACT before building that download.
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
    usage limits a session takes.
-4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. Aim: pilot in January 2027, start
-   in February 2027.
+4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Estimate: pilot around January 2027.
 5. In the first live weeks: the app, the alerts and the first monthly letter. A review with the owner every month.
 
 ## Day-1 archive
