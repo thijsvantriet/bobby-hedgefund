@@ -24,7 +24,9 @@ Also in `.env`, no account needed: `SEC_CONTACT_EMAIL`, the address sent with ev
 2026-11-16: the owner's normal address is fine).
 
 Status 2026-11-16 (each key tested with one small request, and a made-up key was refused): Tiingo, Massive, openFDA,
-FRED, NCBI, FDA Data Dashboard, OpenAlex and AACT (key and database login) work. EPO: account waiting for approval.
+FRED, NCBI, FDA Data Dashboard, OpenAlex and AACT (key and database login) work. EPO: approved and tested on
+2026-11-17 (the owner registers an "app" on EPO's developer site, which gives the key and the secret; a login and one
+patent lookup worked, a made-up key was refused). All nine accounts now work.
 The FDA portal gives one key per service: `FDA_ENFORCEMENT_KEY` is for its Enforcement Reports (recalls) service, untested.
 OpenAlex's free key has a daily budget of 1 US dollar of usage (about 10,000 simple requests), no payment details asked.
 
