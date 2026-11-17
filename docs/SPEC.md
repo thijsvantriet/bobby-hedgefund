@@ -28,6 +28,10 @@ The owner opens a Claude Code session in the project folder and types `/bobbyhed
 action** (owner, 2026-11-17: one thing per session, not three). Everything after it runs by itself, including
 publishing; the owner may walk away.
 
+**Every day's round starts in a fresh session**: a new session, or `/clear` in the one still open from the day
+before. The session does not close itself when the round is done; it waits, which uses nothing. The command refuses
+to run in a session that has already done a round, so yesterday's reading can never leak into today's.
+
 | # | Step | Done by | Ends by minute |
 |---|---|---|---|
 | 1 | Checks: the nightly jobs ran, the archive and the decision log are intact, no stop file is present. Note the start time and the **data cut-off** (the time of the newest data this session may use) | Script | 1 |
