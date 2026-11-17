@@ -17,6 +17,7 @@ Specs: docs/SPEC.md (once written); decisions: docs/decisions/ (ADR format, use 
 - Follow every source's rules (owner, 2026-11-16): never publish a source's data when its terms forbid it, and credit
   every source in use in the README ("Data sources and credit"). The repository is meant to be public: no keys, addresses or
   details of the home setup in tracked files or commit messages.
+- Public repository: yes. Everything committed, pushed or written in a PR or issue is public; git hooks check commits and pushes, /wrapup checks the rest.
 - Long-running services: compose file in ~/server/<name>/compose.yaml (read ~/server/CLAUDE.md first); scheduled jobs as systemd user timers in this repo.
 - Python with uv. Work on a branch, open a PR; bigger changes get a `reviewer` subagent review before they count as done.
 - Master to-do list: Home Assistant `todo.home_todo`; keep only detail here in the README.
