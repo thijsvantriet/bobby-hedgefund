@@ -341,9 +341,38 @@ def test_patient_group_reports_a_file_refused_in_every_round_once(
     assert waits == [7.0, 7.0, 1.0, 100.0, 7.0, 200.0, 7.0]
 
 
-def test_the_ema_group_is_patient() -> None:
+def test_patient_group_starts_no_round_past_its_time_limit(site, fetcher: Fetcher, waits, tmp_path: Path) -> None:
+    site.add("/a", {"status": 429, "body": b"slow down"})
+    files = (FileSource("a.txt", site.base + "/a", (b"Symbol|",), 10),)
+    group = FileGroup("demo", files, 7.0, later_rounds=(100.0, 200.0, 400.0), time_limit=1000.0)
+    ticks = iter([0.0, 50.0, 900.0])  # the start, before round 1 (50 + 100 fits), before round 2 (900 + 200 does not)
+    with Archive(tmp_path) as archive, pytest.raises(SourceError, match=r"a\.txt: not downloaded"):
+        sources.run_file_group(archive, fetcher, group, "r1", clock=lambda: next(ticks))
+    assert site.hits == ["/a", "/a"] and waits == [100.0]
+
+
+def test_patient_group_with_nothing_refused_does_not_wait(site, fetcher: Fetcher, waits, tmp_path: Path) -> None:
+    site.add("/a", {"body": b"Symbol|file a is fine"})
+    files = (FileSource("a.txt", site.base + "/a", (b"Symbol|",), 10),)
+    with Archive(tmp_path) as archive:
+        group = FileGroup("demo", files, 7.0, later_rounds=(100.0, 200.0), time_limit=1000.0)
+        assert sources.run_file_group(archive, fetcher, group, "r1") == {"stored": 1, "unchanged": 0}
+    assert site.hits == ["/a"] and waits == []
+
+
+def test_suspect_file_in_a_later_round_is_kept_and_reported_once(site, fetcher: Fetcher, tmp_path: Path) -> None:
+    site.add("/a", {"status": 429, "body": b"slow down"}, {"body": b"<html>an error page, long enough</html>"})
+    files = (FileSource("a.txt", site.base + "/a", (b"Symbol|",), 10),)
+    with Archive(tmp_path) as archive, pytest.raises(SourceError) as err:
+        sources.run_file_group(archive, fetcher, FileGroup("demo", files, 7.0, later_rounds=(100.0, 200.0)), "r1")
+    assert str(err.value).count("a.txt") == 1 and "does not start like" in str(err.value)
+    assert site.hits == ["/a", "/a"]  # stored as suspect in round 1, not asked for again
+
+
+def test_the_ema_group_is_patient_and_fits_the_job_time_limit() -> None:
     ema = next(g for g in sources.FILE_GROUPS if g.source == "ema")
     assert ema.later_rounds and min(ema.later_rounds) >= 600
+    assert 0 < ema.time_limit <= 4 * 3600
 
 
 def _three_lines(root: Path) -> tuple[Path, Path]:

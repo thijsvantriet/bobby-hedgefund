@@ -66,6 +66,7 @@ overwrite them. It does no analysis. What, where and why: docs/decisions/0001-da
 ```
 bobby-archive status               # last run per source, stored size
 bobby-archive verify               # re-reads every file and checks it against its fingerprint; writes nothing
+                                   # (answers "busy" while a nightly run is still waiting to retry a file)
 bobby-archive run                  # run the daily download by hand
 bobby-archive baseline             # one-time full copy of the trial records (--resume if interrupted)
 ```

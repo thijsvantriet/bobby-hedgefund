@@ -8,8 +8,10 @@ from __future__ import annotations
 import io
 import json
 import math
+import time
 import zipfile
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -44,6 +46,9 @@ class FileGroup:
     # Waits (seconds) before each extra round for files that could not be downloaded. Empty: one extra round after
     # `pause`. When set, a "too many requests" answer is not retried at once but left for these later rounds.
     later_rounds: tuple[float, ...] = ()
+    # No extra round starts when it would begin later than this many seconds after the group started (0: no limit).
+    # Keeps a night with a hanging site from running into the job's time limit.
+    time_limit: float = 0.0
 
 
 _EMA = "https://www.ema.europa.eu/en/documents/report/"
@@ -118,11 +123,14 @@ FILE_GROUPS: tuple[FileGroup, ...] = (
         ),
         pause=300.0,
         later_rounds=(600.0, 1200.0, 2400.0, 3600.0),
+        time_limit=4 * 3600.0,
     ),
 )
 
 
-def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: str) -> dict[str, Any]:
+def run_file_group(
+    archive: Archive, fetcher: Fetcher, group: FileGroup, run: str, clock: Callable[[], float] = time.monotonic
+) -> dict[str, Any]:
     """Download and store every file of a group.
 
     Each file is tried on its own: one that fails or looks wrong never stops the others. Files that could not be
@@ -151,6 +159,7 @@ def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: st
         counts["stored" if rec["kind"] == "file" else "unchanged"] += 1
         return None
 
+    started = clock()
     missed: list[FileSource] = []
     for index, item in enumerate(group.files):
         if index:
@@ -160,6 +169,8 @@ def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: st
     needed_more = len(missed)
     reasons: dict[str, str] = {}
     for wait in group.later_rounds or (group.pause,):  # the extra rounds
+        if not missed or (group.time_limit and clock() - started + wait > group.time_limit):
+            break
         still: list[FileSource] = []
         for index, item in enumerate(missed):
             fetcher.sleep(group.pause if index else wait)
@@ -168,8 +179,6 @@ def run_file_group(archive: Archive, fetcher: Fetcher, group: FileGroup, run: st
                 still.append(item)
                 reasons[item.name] = reason
         missed = still
-        if not missed:
-            break
     wrong.extend(f"{item.name}: not downloaded ({reasons[item.name]})" for item in missed)
     if wrong:
         raise SourceError("; ".join(wrong))
