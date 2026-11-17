@@ -24,7 +24,7 @@ follows and credits every source (`CLAUDE.md`, README "Data sources and credit")
 
 ## 1. The daily session
 
-The owner opens a Claude Code session in the project folder and types `/bobby-day`. **That is the owner's only
+The owner opens a Claude Code session in the project folder and types `/bobbyhedgefund-day`. **That is the owner's only
 action** (owner, 2026-11-17: one thing per session, not three). Everything after it runs by itself, including
 publishing; the owner may walk away.
 
