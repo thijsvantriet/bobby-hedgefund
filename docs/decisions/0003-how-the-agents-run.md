@@ -1,6 +1,6 @@
 # 0003. How the agents run: sessions opened by hand, skipped days, and the moment a decision counts
 Date: 2026-11-17
-Status: proposed
+Status: accepted (owner, 2026-11-17: read the main points and said "merge")
 
 ## Context
 The agents are Claude models. Something has to start them every day, and the way they are started decides three
@@ -164,6 +164,10 @@ Nothing in the rules changes. Three additions make them more exact.
   refuses and says why.
 - To check in the pilot, besides the spec's own list: that `/clear` is reported as a fresh start; that the effort
   level set in an agent file is really used.
+- **Owner, 2026-11-17: after the pilot week, review how much the agents miss by having no web access** (for
+  example a news article they would have wanted to look up). The session notes every time an agent says it lacked
+  something. If it is a real problem, the way out that keeps the data cut-off is to save more beforehand (the
+  company news feeds of stream 6, earlier than planned), not to let agents browse during a session.
 - Found on the way, for record 0009: Claude Code removes its own session records after 30 days by default and writes
   them with a small delay, so the copy for our data folder is best made (or completed) at the start of the next
   session. The usage percentages are only given to the status-line script, which must write them to a file for the

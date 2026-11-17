@@ -1,6 +1,6 @@
 # 0006. Universe and linking table: sources, filter, and how matches are stored and checked
 Date: 2026-11-17
-Status: proposed. **Holds one open point for the owner** (see "Differs from the spec", point 2).
+Status: accepted (owner, 2026-11-17: read the main points and said "merge"). The open point on the XBI names is settled: option a.
 
 ## Context
 Two lists carry everything else (`docs/SPEC.md`, section 4 "Universe" and section 6, stream 0):
@@ -113,9 +113,9 @@ Nasdaq lists are a private check. No column says how a company got in, and the X
 published. The public page credits the SEC, and ClinicalTrials.gov with the date its records were processed, as
 their terms ask (`docs/decisions/0001`). The review file and the linking files stay in the data folder.
 
-**Until the open point below is settled, the list is not published, and neither is anything else that names a
-company** (a decision, a draw of the Dice funds, a record of the pilot): record 0004, point 3. The point must
-therefore be settled before the first public decision.
+The open point below was settled on 2026-11-17 (option a), so the list and records that name a company may be
+published once the first run has shown that no company comes in through the XBI fund only, or those companies are
+left out of what is public (record 0004, point 3).
 
 The private universe files hold market values computed from prices, so they fall under the deletion rule of record
 0007 if the price account ever ends. What stays in that case is the list of who was in and out, without the numbers.
@@ -137,8 +137,10 @@ The private universe files hold market values computed from prices, so they fall
    | b. Drop the XBI fund as a door | Nothing can be inferred | Misses the biotech companies that carry yet another code |
    | c. Accept it | No change | Goes against the spec's own sentence, and arguably against the terms |
 
-   **Recommended: a**, checked on the first run by counting how many companies come in through the XBI fund only.
-   Until the owner has chosen, the list is not published.
+   **Decided by the owner on 2026-11-17: option a.** Companies with industry code 8731 or 2835 that pass the same
+   filter are in the universe by our own rule. The first run counts how many companies still come in through the
+   XBI fund only (with yet another code); if any do, they are not named publicly, and the count is added here as an
+   update.
 
 ## Consequences
 - It can always be shown which universe a session used, and why a company was in or out on that date.

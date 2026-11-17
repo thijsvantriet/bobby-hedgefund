@@ -1,6 +1,6 @@
 # 0005. Paper funds: where the books are kept, how orders are booked, costs, splits and takeovers
 Date: 2026-11-17
-Status: proposed
+Status: accepted (owner, 2026-11-17: read the main points and said "merge")
 
 ## Context
 Five paper funds and 1,000 random "Dice" funds each start with $1,000,000 of paper money and trade once a day at
@@ -53,7 +53,8 @@ hard part (the company events) must be supplied by us anyway (`docs/research/OPE
   list on the draw day and the prices. The public log holds their starting number and each monthly draw, not a line
   for every one of their trades. **Their daily values are kept in a private file and are never published**: with a
   thousand funds of twenty known companies each, every share's daily price move could be worked back out of them.
-  What may be public is each AI fund's place among them, and only after open point 1 of record 0007 is settled.
+  Each AI fund's place among them is not published either (record 0007, open point 1: answered no); it is shown
+  in the app at home.
   The Dice and Rules funds follow the same booking rules as the AI funds: whole shares, the same costs, the same
   wait for a missing price. A monthly draw is made in the first session of the month and filled like any other
   order: companies that are no longer drawn are sold whole, new ones are bought at their equal part, and a company
@@ -137,7 +138,7 @@ cash dividend is added to cash on its payment day.
    like, a line is added to the table by hand from the filing, and the script books it. Reason: the terms of a
    deal cannot be read reliably by a simple program, and there will be only a handful.
 2. Section 4 says the Dice funds show "where does each fund fall among 1,000 random ones". The place may be shown
-   (after open point 1 of record 0007); the values of the thousand funds themselves stay private.
+   privately; neither the place nor the values of the thousand funds are published (record 0007, open point 1).
 3. The 0.5% minimum does not apply to selling a whole position.
 4. The brake (30% below the highest value) is also applied on the fill day, to buys that were decided earlier.
 

@@ -1,6 +1,6 @@
 # 0008. SEC filings: access rules, the contact address, and how filings are fetched
 Date: 2026-11-17
-Status: proposed
+Status: accepted (owner, 2026-11-17: read the main points and said "merge")
 
 ## Context
 Stream 2 of the spec (`docs/SPEC.md`, section 6) saves the SEC filings of the 150-250 companies in the universe:

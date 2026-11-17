@@ -455,4 +455,26 @@ sources. Numbers continue after `0002`.
 - **Decision record (ADR)**: a short document in `docs/decisions/` that records one design choice and why.
 
 ## Changes
-None yet.
+**2026-11-17, with decision records 0003-0008** (owner: merged). Where a record and the text above differ, the
+record holds. Each record lists its points under "Differs from the spec".
+- **Prices (0007):** Massive is the only price source; Tiingo's free plan forbids saving its data. The download
+  runs in the morning. No price, share count, trade amount, index-fund series or value of the Dice funds is ever
+  published. Nor is anything else computed from prices: the price service answered on 2026-11-17 that any public
+  display of derived data needs a business licence. So fund values, returns, places among the Dice funds and
+  comparisons with index funds are kept privately and shown in the app at home; the public track record shows
+  decisions, reasoning, fill days and forecast scores. IWDA is replaced by URTH. Everything that contains prices must be deleted within 30 days
+  if the price account ends.
+- **Log (0004):** content that may not be public is sealed: the public line shows its fingerprint. The leak check
+  on the log's text runs before the line is written. The day's decisions are one commit; proofs, summaries and
+  letters follow in their own. Outcomes in `forecasts.csv` are new lines. A daily independent timestamp
+  (OpenTimestamps). The owner can switch the rewrite protection off; the protection is that this is visible.
+- **How the agents run (0003):** the fill day is the first US trading day whose opening is at least 30 minutes
+  after GitHub received the publication (never the session's own day when it started at or after 14:00). Agents'
+  reading is limited to the session folder by a check before every tool use. The session runs the published main
+  branch only. After the pilot week: review what the agents miss without web access.
+- **Paper funds (0005):** takeovers are entered by hand from the filing and booked by script. The 0.5% minimum does
+  not apply to selling a whole position. The 30% brake also cancels earlier buys on the fill day.
+- **Universe (0006):** companies that report to the SEC as foreign companies are left out. Industry codes 8731 and
+  2835 are added as a door of our own, so that a published company name does not point to the XBI fund.
+- **SEC filings (0008):** fetched by our own program; the edgartools library only reads saved files. The SEC's
+  "latest filings" feed is not used.

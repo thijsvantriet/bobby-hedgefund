@@ -36,17 +36,15 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-17: **decision records 0003-0008 written** (docs/decisions/, PR #10, all "proposed" until the owner merges them): how the agents run, the decision log, the paper funds, the universe and linking table, the price source, SEC access. Each rests on a narrow research question and on the source's own terms where a download is involved. Reading the terms changed three things from the spec: (1) Tiingo's free plan cannot be used at all, so Massive is the only price source, and no price, share count or index-fund series may be published (0007); the public log therefore "seals" such content: it shows a fingerprint, not the number (0004); (2) SEC filings are fetched by our own small program and only read with the edgartools library, and the SEC's "latest filings" feed is off limits to scripts (0008); (3) companies that report to the SEC as foreign companies are left out of version 1 (0006). Three open points wait for the owner: ask Massive in writing whether our own fund results may be public (0007), check that the Claude account does not use conversations for training (0007), and choose how to keep published company names from giving away holdings of the XBI fund (0006; nothing that names a company is published before that). Merging the records also confirms the places where they differ from the spec, listed in each record under "Differs from the spec" (among them: no foreign filers in version 1, our own program fetches SEC filings, the world index through the US-listed fund URTH, index comparisons private). A reviewer agent checked the records against the spec and each other; its findings are worked in. No code was written.
 
-2026-11-17: the owner sent Massive the question whether our own fund results may be public (weekly, rounded returns and the place among the random funds; no prices). Waiting for the answer; until then nothing computed from prices is published (docs/decisions/0007, open point 1).
+2026-11-17: **records 0003-0008 accepted**: the owner went through the main points and merged PR #10. Chosen on the way: two more industry codes (8731, 2835) as a door of our own, so that published company names do not point to the XBI fund (0006); the Claude account's training setting is confirmed off (0007); after the pilot week we review what the agents miss without web access (0003). The differences from the spec are listed in its "Changes" section.
+
+2026-11-17: the owner asked Massive whether our own fund results may be public (weekly, rounded returns and the place among the random funds; no prices). **Answer the same day: no**, public display of anything derived from its data needs a business licence. So nothing computed from prices is published; fund results are kept privately and shown in the app at home, and the public track record shows decisions, reasoning, fill days and forecast scores (docs/decisions/0007, open point 1).
 
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
-1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Claude writes decision records 0003-0008~~ (written
-   2026-11-17, "proposed"). **Now: the owner reads and merges them**, and settles the three open points (0007: a
-   written question to Massive about publishing our own fund results, and the training setting of the Claude
-   account; 0006: the public company list and the XBI fund).
-   The points where a record differs from the spec are listed in each record under "Differs from the spec"; after
-   the merge they go into the spec under "Changes". Records 0009-0014 follow when their step comes (spec, section 10).
-2. Build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
+1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
+   Records 0009-0014 follow when their step comes (spec, section 10).
+2. **Now:** build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
    matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
    (0007, 0008); still to read before the first request: the robots file of the SEC's data service.
    Alongside: the historical study, limited to two weeks of work. Open before it: AACT shows no terms page, so ask
@@ -84,15 +82,14 @@ systemd/install.sh                 # installs the snapshot and the timer; refuse
 
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with
-its reasoning and time, the score of every forecast, and a regular plain-language report. Whether the value of each
-paper portfolio may be published too depends on the price service's answer (docs/decisions/0007, proposed); prices
-and index-fund figures will not be.
+its reasoning and time, the day it was filled, the score of every forecast, and a regular plain-language report.
+Fund values, returns and comparisons with index funds are not published: the price service's terms do not allow
+public display of anything computed from its prices (docs/decisions/0007). They are kept privately.
 Published decisions are never edited afterwards. That nothing is added with hindsight follows from fixed rules
 (docs/SPEC.md, section 2): a decision is public before the price it gets exists, and published history cannot be rewritten.
 The record will be built from real market and trial data; the data files themselves are not published (see below),
 only our own numbers and conclusions, with the sources named. The form is set in docs/SPEC.md, section 5: a folder
-`track-record/` with the decision log, a readable page per day, a monthly letter, and (if the price service
-allows it) the values per fund.
+`track-record/` with the decision log, a readable page per day, the forecasts and a monthly letter.
 
 ## Data sources and credit
 The project follows each source's terms of use. No file from any source is in this repository, and none will be:

@@ -1,6 +1,6 @@
 # 0004. Decision log: format, fingerprint chain, publication and proof of time
 Date: 2026-11-17
-Status: proposed
+Status: accepted (owner, 2026-11-17: read the main points and said "merge")
 
 ## Context
 The project's central promise is that every decision of every fund is public before the market can act on it and
@@ -95,14 +95,15 @@ How it works:
   `forecasts.csv` and `HEAD`, pushed straight to `main` (spec, section 5). This is the commit whose receipt time
   counts. The day's files are prepared in the data folder and placed in `track-record/` only at this moment.
 - `forecasts.csv` only grows as well: the outcome of a forecast is a new line that points to the forecast, not a
-  change of the old line. `values.csv` holds our own funds only, and exists only once open point 1 of record 0007
-  allows it.
+  change of the old line. `values.csv` is kept privately and is not part of the public track record (record 0007, open
+  point 1: answered no).
 - After the day's commit, the same script may make further commits that only **add new files** in `track-record/`:
-  the timestamp proof (point 4), the weekly summary, the monthly letter, and a new universe list once the open
-  point of record 0006 is settled. They never touch the log.
+  the timestamp proof (point 4), the weekly summary, the monthly letter, and a new universe list (under the
+  condition of the next point). They never touch the log.
 - **Nothing that names a company is published** (a decision, a draw of the Dice funds, the universe list, a record
-  of the pilot) **before the owner has settled the open point of record 0006.** Until then the pilot's log stays in
-  the data folder.
+  of the pilot) **before the point on the XBI fund in record 0006 is closed**: the owner chose its option a on
+  2026-11-17, and the first universe run must show that no named company points to the XBI fund. Until then the
+  pilot's log stays in the data folder.
 - A commit that GitHub did not receive is sent again at the start of the next session, before anything else
   (record 0003). The fill day follows from when GitHub received it: the first US trading day whose opening is at least 30 minutes after GitHub received the publication.
 - The script refuses to commit anything outside `track-record/`, and refuses when an existing line would change.

@@ -1,6 +1,6 @@
 # 0007. Price source: Massive only; what is saved and what may be published
 Date: 2026-11-17
-Status: proposed. **Holds two open points for the owner** (see "Open points").
+Status: accepted (owner, 2026-11-17: read the main points and said "merge"). Open point 1 is answered (no publication of anything computed from prices); open point 2 is confirmed.
 
 ## Context
 Prices are needed for the universe filter, for booking paper trades at the opening price, for the daily value of
@@ -107,7 +107,7 @@ URTH. The spec already provides for this.
    - a market value of a company, or a figure per share, in any written text;
    - the daily value or return of XBI, IBB or URTH;
    - the daily values of the 1,000 Dice funds (record 0005): prices can be worked back out of them;
-   - until open point 1 is settled: the value and return of each of our own funds, their place among the Dice
+   - (open point 1, answered no on 2026-11-17, so for good:) the value and return of each of our own funds, their place among the Dice
      funds, and any comparison with an index fund.
 7. **What is published in any case:** every decision with its thesis and its size as a percentage of the fund; the
    rule by which it will be filled (the one sentence of record 0003, point 4), and
@@ -136,28 +136,40 @@ URTH. The spec already provides for this.
    above: each fund's return in percent, rounded to one decimal, at most once a week; each fund's place among the
    random funds; and, as a part that may be refused separately, one sentence a month comparing a fund with an index
    fund. It states that AI models read the data on the owner's behalf with training switched off, and offers a
-   credit line. If the answer is yes, those limits (weekly, rounded) are what is published; daily values stay in
-   the app at home. Waiting for the answer.
+   credit line.
+   **Answer from Massive's support, received 2026-11-17: no.** In short: the published terms are the whole
+   agreement and support gives no separate permissions; personal, non-business use is allowed; and "any public
+   display of our data/derived data requires a business license". **Outcome: nothing computed from prices is
+   published**, also not rounded or weekly: no fund values, no returns, no place among the Dice funds, no
+   comparison with an index fund. The last item of the list in point 6 therefore stays for good, and `values.csv`
+   is not part of the public track record. All of it is kept in full on the owner's machine and shown in the app
+   at home. A business licence is a paid plan; the owner's rule is free sources only, so it comes back only at a
+   monthly review, with a concrete reason and a price.
 2. **The Claude account must not use conversations for training.** Massive's terms forbid that a tool uses the
    data for its own purposes. The owner checks once that the setting that lets conversations be used to improve the
    models is off, and again at each monthly review.
+   **Confirmed by the owner on 2026-11-17: the setting is off.** (Conversations still pass through Anthropic's
+   service to be answered; the setting is about whether they are used to train models.)
 
 ## Differs from the spec
 - Section 6, stream 1: Tiingo is dropped; no cross-check source; the download runs in the morning.
-- Section 5: fill prices are not shown in the public log, and `values.csv` is published only after open point 1
-  is settled, and then with our own funds only (no index funds, no Dice funds). The spec foresaw the first ("if not, the public log shows returns only"); the second is new.
+- Section 5: fill prices are not shown in the public log, and `values.csv` is not published at all
+  (open point 1). The spec foresaw the first ("if not, the public log shows returns only"); the second is new.
 - Section 5, the thesis: its numbers that come from prices (market value against cash, what the price seems to
   assume) are sealed in the public version.
 - Section 3: the saved conversations of the sessions fall under the deletion rule.
 - Section 4, "Index funds for comparison": the index funds are computed and shown privately (in the app on the
-  home network); publicly at most as a coarse figure, and only after open point 1.
+  home network), never publicly (open point 1).
 - Rule "archived files are never deleted": one exception, point 4 above.
 - The historical study has at most two years of prices from this source.
 
 ## Consequences
 - The core promise is untouched: every decision is public before its price exists. Anyone can look up that price
   themselves; we just do not print it.
-- The public track record is thinner on numbers than the spec planned until the owner has Massive's answer.
+- The public track record holds no performance figures: it shows every decision with its reasoning, the day it
+  was filled (with a link to a public page where the price can be seen), and every forecast with its score. Result
+  1 of the spec (differences between funds) is worked out and kept privately; result 2 (quality of the
+  probabilities) is fully public.
 - The app on the home network can show everything: that is personal use.
 - One source means a wrong price is harder to notice. The jump check and the filings catch the large mistakes.
 - If Massive ends its free plan or changes its terms, the experiment has no prices. Saved files cover the past only
@@ -170,8 +182,8 @@ URTH. The spec already provides for this.
   (record 0006).
 
 ## Revisit
-Revisit: by 2027-02, or when Massive changes its terms or its free plan, when Massive answers the owner's question,
-or before the owner's go for the start of the funds, whichever comes first.
+Revisit: by 2027-02, or when Massive changes its terms or its free plan, or before the owner's go for the start
+of the funds, whichever comes first.
 
 ## Sources
 All read on 2026-11-17.
