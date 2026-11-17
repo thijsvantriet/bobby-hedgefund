@@ -31,9 +31,11 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-17: **spec drafted** (docs/SPEC.md, status "proposed" until the owner merges it). Claude drafted it from the research with one recommendation per choice; the owner decided eight points (session length, days a week, share of the usage limits, free data only, where the app lives, the letter, the alerts, when it ends). No code and no decision records yet. Later the same day the owner simplified the daily routine: their only action is typing `/bobbyhedgefund-day`, each day's round starts in a fresh session, and the leak check, usage count and weekly/monthly extras run by themselves.
 
+2026-11-17: **spec approved**: the owner merged PR #8. Next: Claude writes decision records 0003-0008.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
-1. Owner reads and merges the spec. Then Claude writes the decision records it lists (section 10), starting with
+1. ~~Owner reads and merges the spec~~ (done 2026-11-17). Claude writes the decision records it lists (section 10), starting with
    0003-0008: how the agents run, the decision log, the paper funds, the universe and linking table, prices, SEC access.
 2. Build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
    matches), daily prices, SEC filings, trial-record changes. Each starts with reading the source's terms.

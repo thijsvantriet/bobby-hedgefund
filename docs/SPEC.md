@@ -1,6 +1,6 @@
 # Bobby Hedgefund: specification, version 1
 
-Date: 2026-11-17. Status: **proposed**; it counts once the owner has merged it.
+Date: 2026-11-17. Status: **approved** by the owner on 2026-11-17 (merged as PR #8).
 Drafted by Claude from the research in `docs/research/`. The owner acts as process facilitator and decided the eight
 points marked **Owner** (asked on 2026-11-17). Everything else is a recommendation with a one-line reason, and can be
 changed at a monthly review (section 9).
