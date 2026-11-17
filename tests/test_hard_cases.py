@@ -308,6 +308,44 @@ def test_file_still_refused_in_the_second_round_is_reported_once(site, fetcher: 
     assert site.hits.count("/a") == 6 and site.hits.count("/b") == 1
 
 
+def test_patient_group_leaves_a_refused_file_alone_and_comes_back_later(
+    site, fetcher: Fetcher, waits, tmp_path: Path
+) -> None:
+    busy = {"status": 429, "body": b"slow down", "headers": {"Retry-After": "40"}}
+    site.add("/a", busy, busy, {"body": b"Symbol|file a, served in the third round"})
+    site.add("/b", {"body": b"Symbol|file b is always fine"})
+    files = tuple(FileSource(n, site.base + "/" + n[0], (b"Symbol|",), 10) for n in ("a.txt", "b.txt"))
+    with Archive(tmp_path) as archive:
+        group = FileGroup("demo", files, 7.0, later_rounds=(100.0, 200.0, 400.0))
+        result = sources.run_file_group(archive, fetcher, group, "r1")
+        assert archive.verify().ok
+    assert result == {"stored": 2, "unchanged": 0, "second_try": 1}
+    assert site.hits == ["/a", "/b", "/a", "/a"]  # one request per round, no quick retries
+    assert waits == [7.0, 100.0, 200.0]  # the third extra round is not needed
+
+
+def test_patient_group_reports_a_file_refused_in_every_round_once(
+    site, fetcher: Fetcher, waits, tmp_path: Path
+) -> None:
+    site.add("/a", {"status": 429, "body": b"slow down", "headers": {"Retry-After": "40"}})
+    site.add("/b", {"status": 429, "body": b"slow down"})
+    site.add("/c", {"status": 503}, {"body": b"Symbol|file c after a server error"})
+    files = tuple(FileSource(n, site.base + "/" + n[0], (b"Symbol|",), 10) for n in ("a.txt", "b.txt", "c.txt"))
+    with Archive(tmp_path) as archive, pytest.raises(SourceError) as err:
+        sources.run_file_group(archive, fetcher, FileGroup("demo", files, 7.0, later_rounds=(100.0, 200.0)), "r1")
+    text = str(err.value)
+    assert text.count("a.txt: not downloaded") == 1 and text.count("b.txt: not downloaded") == 1
+    assert "asked to wait 40 s" in text and "c.txt" not in text
+    assert site.hits.count("/a") == 3 and site.hits.count("/b") == 3  # first pass plus two rounds
+    assert site.hits.count("/c") == 2  # a server error is still retried at once
+    assert waits == [7.0, 7.0, 1.0, 100.0, 7.0, 200.0, 7.0]
+
+
+def test_the_ema_group_is_patient() -> None:
+    ema = next(g for g in sources.FILE_GROUPS if g.source == "ema")
+    assert ema.later_rounds and min(ema.later_rounds) >= 600
+
+
 def _three_lines(root: Path) -> tuple[Path, Path]:
     with Archive(root) as archive:
         for i in range(3):

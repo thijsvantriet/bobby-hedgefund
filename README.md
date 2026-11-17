@@ -27,6 +27,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-17: EPO approved the account; its key works. All nine free accounts are now set up (docs/ACCOUNTS.md). The owner confirmed the ClinicalTrials.gov terms from the live page (docs/decisions/0001, "Update").
 
+2026-11-17: EMA refused one of its five files on every run so far. Changed: a refused file is left alone and tried again after 10, 20, 40 and 60 minutes, instead of three quick retries (docs/decisions/0001, "Update 2026-11-17"). To check after a week of nightly runs.
+
 ## Next step
 1. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
    Terms: read on 2026-11-16, ClinicalTrials.gov confirmed by the owner in a browser on 2026-11-17
