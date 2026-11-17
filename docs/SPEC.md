@@ -478,3 +478,6 @@ record holds. Each record lists its points under "Differs from the spec".
   2835 are added as a door of our own, so that a published company name does not point to the XBI fund.
 - **SEC filings (0008):** fetched by our own program; the edgartools library only reads saved files. The SEC's
   "latest filings" feed is not used.
+
+**2026-11-17, decision record 0014** (owner). AACT states no terms of use; the owner takes that as permission, so
+the historical study's download may be built under the rules of 0014, without a question to AACT first.
