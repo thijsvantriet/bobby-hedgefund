@@ -25,11 +25,12 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-16: **the repository is public** (owner's explicit yes). Checked from outside without a login: it is visible, GitHub shows the MIT licence, description and topics, only the four pull requests of the new repository exist, the commits of the old repository are not found, and every commit carries GitHub's no-reply address.
 
+2026-11-17: EPO approved the account; its key works. All nine free accounts are now set up (docs/ACCOUNTS.md). The owner confirmed the ClinicalTrials.gov terms from the live page (docs/decisions/0001, "Update").
+
 ## Next step
-1. Owner, when EPO approves the account: put its Consumer Key and Secret in `.env` (only needed if patents make it into the spec).
-2. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
-   Terms: read on 2026-11-16 (docs/decisions/0001, "Update"). Open: the owner opens the ClinicalTrials.gov terms page
-   once in a browser to confirm the wording; AACT shows no terms page, so ask AACT before building that download.
+1. Interview + spec (docs/SPEC.md), in plan mode. Agenda: the open questions in docs/research/SUMMARY.md.
+   Terms: read on 2026-11-16, ClinicalTrials.gov confirmed by the owner in a browser on 2026-11-17
+   (docs/decisions/0001, "Update"). Open: AACT shows no terms page, so ask AACT before building that download.
    Also for the spec: where and in what form the track record is published (see "Track record").
    Also for the spec: how the agents run. Two candidates to compare: the Claude API (separate account, pay per use,
    hard spending limit) or scheduled Claude Code sessions on the owner's subscription (no API account). To research
@@ -45,11 +46,11 @@ portfolio and no results yet. The log below shows each step.
    this out (rule for skipped days, fixed moment at which decisions count) and records it as a decision.
    Owner's preference for models (2026-11-16): most agents Opus on high effort, the most important
    role on the strongest model; to weigh against a cheap model for the daily screening. Measure usage in the pilot.
-3. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
+2. Historical study: event studies (how small-biotech prices move around readouts, FDA dates, financing) and a case library of
    "missed" situations; this decides which data sources to build first.
-4. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
-5. One-week pilot with one fund setup to measure real token cost.
-6. Parallel setups live for ~6 months.
+3. Build those data streams on top of the archive (prices, SEC filings, the company linking table).
+4. One-week pilot with one fund setup to measure real token cost.
+5. Parallel setups live for ~6 months.
 
 ## Day-1 archive
 A job that runs every night at 23:30 and saves a few public files exactly as published, because their publishers
@@ -90,7 +91,7 @@ by any of them. Downloaded so far (details and terms per source: docs/decisions/
 
 | Source | What we save | Condition we follow |
 |---|---|---|
-| [ClinicalTrials.gov](https://clinicaltrials.gov/) (U.S. National Library of Medicine) | Trial records with a company involved | Free for everyone. Credit ClinicalTrials.gov as the source, show the date the data were processed, and say so when data were changed ([terms](https://clinicaltrials.gov/about-site/terms-conditions)). We send at most one request per two seconds |
+| [ClinicalTrials.gov](https://clinicaltrials.gov/) (U.S. National Library of Medicine) | Trial records with a company involved | Free for everyone. In anything published from it: credit ClinicalTrials.gov as the source, keep it current, show the date the data were processed, and describe any change made to the data ([terms](https://clinicaltrials.gov/about-site/terms-conditions)). We send at most one request per two seconds |
 | [European Medicines Agency](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format) | Five data files on medicines | Reuse allowed with the source credited ([legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)) |
 | [Nasdaq Trader symbol directory](https://www.nasdaqtrader.com/Trader.aspx?id=SymbolDirDefs) | Lists of US-listed symbols | Copyright Nasdaq, Inc. One copy for personal, non-commercial use; the files are never passed on or published ([terms](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain)) |
 | [State Street, SPDR S&P Biotech ETF (XBI)](https://www.ssga.com/) | The fund's daily holdings file | Personal use only; the file is never passed on or published ([terms](https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions)) |
