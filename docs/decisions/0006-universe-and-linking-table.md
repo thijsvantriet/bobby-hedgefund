@@ -1,0 +1,178 @@
+# 0006. Universe and linking table: sources, filter, and how matches are stored and checked
+Date: 2026-11-17
+Status: accepted (owner, 2026-11-17: read the main points and said "merge"). The open point on the XBI names is settled: option a.
+
+## Context
+Two lists carry everything else (`docs/SPEC.md`, section 4 "Universe" and section 6, stream 0):
+- the **universe**: the 150-250 companies the funds may follow;
+- the **linking table**: which company belongs to which SEC number, ticker, sponsor names in the trial registry, and
+  later which drugs and trials.
+
+The spec fixed who is in the universe (companies in the XBI fund plus US-listed SEC filers with industry codes 2834
+and 2836), the filter (market value $300 million to $10 billion, at least $2 million traded a day, share price at
+least $2), that it is frozen with a date and re-run monthly with every version kept, and that the owner checks about
+200 matches once. Left to this record: where each field comes from, how names are matched, and how the lists are
+stored so that it can always be shown which version a session used.
+
+A wrong link is costly: news of one company would be read as news of another. And no open list links trial sponsors
+to listed companies (`docs/research/OPEN-SOURCE.md`, "Linking the data"; confirmed again: the published studies of
+registry sponsors leave name variants unmerged, and say that automatic matching is less accurate than matching by
+hand).
+
+Requirements: free and official sources; one permanent key per company; nothing overwritten; the XBI holdings file
+and the Nasdaq lists are never passed on (`docs/decisions/0001`).
+
+## Options considered
+
+**Storage of the lists**
+
+| Option | How it works | For | Against |
+|---|---|---|---|
+| **A. Dated plain files** | Every run writes a new dated file (CSV). The owner's accept/reject decisions go into a file that only grows. Nothing is overwritten. | Readable in any spreadsheet; two versions can be compared line by line; the same pattern as the archive; a session notes the file's name and fingerprint. Matches the published advice for research data: keep raw data, use plain formats, give every record a permanent key | A question across many versions needs a small script |
+| B. A database with "valid from / valid to" dates per row | One file (SQLite); a change adds a row and closes the old one. The standard method in data warehouses | Easy to query | One file that changes every month: a bug can rewrite history unnoticed; harder to check by eye |
+| C. A, plus a database rebuilt from the files | Files are the truth, the database is a copy for searching | Both | More code; not needed for a few hundred rows |
+
+**Matching company names to sponsor names**
+
+| Option | For | Against |
+|---|---|---|
+| Exact names only | No false matches | Misses most: registry names are free text ("X Therapeutics, Inc.", "X Tx", a subsidiary) |
+| **Similarity scores, every suggested match confirmed by a person** | Standard practice in record linkage: clean the names, score how alike they are, let a person judge the doubtful ones, report how many were right and how many were missed | The owner's time, once |
+| A statistical or learned matcher (splink, dedupe) | Scales to millions | Far more than one name field and 200 companies need; harder to explain |
+
+## Decision
+
+### 1. One key
+Every row is keyed on the **SEC company number (CIK)**. The SEC states that these numbers are never reused. Tickers
+change and get reused, so a ticker is a property with a date, never a key.
+
+### 2. Where each field comes from
+
+"Shell company" below means a listed company without a real business, often waiting to merge with one.
+
+| Field | Source | Known limit |
+|---|---|---|
+| Company number, name, former names, industry code | SEC, each company's filing-list file (access rules: record 0008) | Companies choose their own industry code and rarely update it |
+| Ticker and exchange | SEC's company-ticker-exchange file; the Nasdaq symbol lists in the archive as a check | The SEC says of this file that it does "not guarantee accuracy or scope"; it shows today's tickers only, so we keep a copy per run |
+| In the XBI fund | The daily holdings file already in the archive | Private: never published, see point 6 |
+| Shares outstanding | The figure on the cover page of the latest quarterly or yearly report, from the SEC's data service | Up to a quarter old, older after a share sale; companies with several share classes report each class apart |
+| Price, daily traded value | The price source (record 0007) | See there |
+
+**The filter, made exact:**
+- market value = shares outstanding (all classes added up) × the last closing price;
+- traded per day = the average of closing price × volume over the last 60 trading days;
+- share price = the last closing price;
+- listed on Nasdaq, the New York Stock Exchange or NYSE American; not flagged as a shell company.
+
+Every company gets a line with the numbers used and their dates, also the ones that fail the filter, so that the
+effect of each rule can be seen.
+
+OpenFIGI (a lookup service for security identifiers, run by Bloomberg; the identifiers are free, the service is
+closed) is **left out**: the SEC's own files are enough for US shares.
+
+### 3. Matching, step by step
+1. Per company: the SEC name and all former names; lower case, punctuation and legal endings (Inc, Corp, Ltd, plc)
+   removed. The original text is kept next to the cleaned one.
+2. From the archived trial records: every distinct name of a lead sponsor or collaborator that the registry classes
+   as industry, or as unclear. Cleaned the same way.
+3. Every company name is scored against every sponsor name with the open-source library rapidfuzz (MIT). A name that
+   is identical after cleaning is marked "strong".
+4. **Review file for the owner:** a spreadsheet file with one line per suggested match: company, sponsor name as
+   written in the registry, score, number of trials, one example trial, and two empty columns: decision (yes, no,
+   parent or subsidiary) and note. **Nothing is accepted automatically in version 1**, not even the strong ones.
+5. **Check for missed matches:** for 20 companies picked at random, the registry is searched by hand, and what step
+   3 missed is counted. The share of right suggestions and the share of missed ones are added to this record as an
+   update.
+6. **Monthly re-run:** only new companies and new sponsor names go to the owner. Earlier decisions are reused and
+   never edited; a changed mind is a new line that points to the old one.
+7. **Trials, then drugs.** A company's trials follow from its confirmed sponsor names. Trials run by a partner are
+   found through drug names; these are added in a later step, each with the document they came from, and are checked
+   on a sample. Until then the table says plainly that partner trials can be missing.
+
+### 4. Storage: option A
+```
+~/bobby-hedgefund-data/universe/
+  2027-01-05_universe.csv        every candidate, the numbers used, in or out, and why (private: has the XBI flag)
+  2027-01-05_inputs.txt          which archived files and price files this run read, with their fingerprints
+~/bobby-hedgefund-data/linking/
+  decisions.jsonl                the owner's decisions, one per line, only ever added to
+  2027-01-05_linking.csv         the table as it follows from the decisions on that date
+```
+The session's start record in the decision log names the universe file it used and its fingerprint (spec, section
+5). A database copy for searching (option C) may be added later; it would be rebuilt from these files and never be
+the source.
+
+### 5. When
+The first version is made before the pilot; the owner's check happens then. The re-run is on the first session of
+each month, after publishing (spec, section 1). It uses only files that the nightly jobs saved.
+
+### 6. What is published
+The universe is meant to be published in `track-record/` as **our own list**: company name, SEC company number
+and ticker, with the date of the version. The ticker is taken from the SEC's file and used only as a name; the
+Nasdaq lists are a private check. No column says how a company got in, and the XBI holdings file is never
+published. The public page credits the SEC, and ClinicalTrials.gov with the date its records were processed, as
+their terms ask (`docs/decisions/0001`). The review file and the linking files stay in the data folder.
+
+The open point below was settled on 2026-11-17 (option a), so the list and records that name a company may be
+published once the first run has shown that no company comes in through the XBI fund only, or those companies are
+left out of what is public (record 0004, point 3).
+
+The private universe files hold market values computed from prices, so they fall under the deletion rule of record
+0007 if the price account ever ends. What stays in that case is the list of who was in and out, without the numbers.
+
+## Differs from the spec
+1. One narrowing, for the owner to confirm: **companies that report to the SEC as foreign companies are left out of
+   version 1**, also when their shares trade in the US. They file no quarterly reports, no event reports in the
+   usual form and no insider trades, so streams 2 and 4 would be empty for them, and their share count is published
+   once a year. The spec already leaves out non-US listings; this goes one step further.
+2. **Open point for the owner: the public list gives away part of the XBI fund's holdings.** The spec says that
+   which companies are in the XBI fund is never published. But a company on our public list that does not have
+   industry code 2834 or 2836 can only have come in through the XBI fund, and anyone can look up a company's code.
+   The same holds for such a company named in a published decision. State Street's terms forbid passing its data
+   on. Three ways out:
+
+   | Way out | For | Against |
+   |---|---|---|
+   | **a. Add two more industry codes as a door of our own** (8731, research services, and 2835, diagnostics, where many young biotech companies sit), with the same filter | A company outside 2834 and 2836 then no longer points to the XBI fund. Also closes the known gap that such companies are missed | The universe changes a little; more companies that are not biotech must be marked out in the owner's review |
+   | b. Drop the XBI fund as a door | Nothing can be inferred | Misses the biotech companies that carry yet another code |
+   | c. Accept it | No change | Goes against the spec's own sentence, and arguably against the terms |
+
+   **Decided by the owner on 2026-11-17: option a.** Companies with industry code 8731 or 2835 that pass the same
+   filter are in the universe by our own rule. The first run counts how many companies still come in through the
+   XBI fund only (with yet another code); if any do, they are not named publicly, and the count is added here as an
+   update.
+
+## Consequences
+- It can always be shown which universe a session used, and why a company was in or out on that date.
+- The owner checks roughly 200 companies' suggested matches once, and a handful every month.
+- Known gaps, accepted: many young biotech companies carry another industry code (research services, diagnostics) and
+  get in only through the XBI fund; code 2834 also holds makers of generic and over-the-counter medicines, which the
+  size filter does not remove. The owner's review file shows them, and a company can be marked "not biotech" there.
+- Market value can be off by the size of a recent share sale until the next report. The filter bounds are wide
+  enough for that; a company near a bound may enter a month late.
+- The universe needs 60 trading days of prices before its first version; record 0007 fetches that history once.
+- Partner-run trials are missing until the drug-name step is built.
+
+## Revisit
+Later, maybe: a database copy for searching; OpenFIGI to tell share classes and foreign listings apart; foreign
+filers in a version 2.
+
+## Sources
+- SEC, [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data)
+  (company numbers "are not recycled"; the ticker files; read 2026-11-17)
+- ClinicalTrials.gov, [data fields of the service](https://clinicaltrials.gov/api/v2/studies/metadata) (lead sponsor,
+  collaborators, sponsor class)
+- Office for National Statistics (UK), [Developing standard tools for data linkage](https://www.ons.gov.uk/methodology/methodologicalpublications/generalmethodology/onsworkingpaperseries/developingstandardtoolsfordatalinkagefebruary2021)
+  (cleaning, scoring, review by a person of the doubtful cases, reporting right and missed matches)
+- Sponsor names in the registry are not standardised: [PLOS ONE 2016](https://pmc.ncbi.nlm.nih.gov/articles/PMC4757412/);
+  automatic matching less accurate than by hand: [TrialsTracker](https://f1000research.com/articles/5-2629/v1)
+- Wilson et al., [Good enough practices in scientific computing](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005510)
+  (never overwrite raw data, plain formats, a permanent key per record)
+- Kimball Group, [type 2 slowly changing dimension](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/type-2/) (option B)
+- [rapidfuzz](https://pypi.org/project/rapidfuzz/) (MIT); [OpenFIGI terms](https://www.openfigi.com/docs/terms-of-service)
+- Earlier research: `docs/research/OPEN-SOURCE.md` ("Linking the data"), `docs/research/DATA-SOURCES.md`
+  ("Corporate actions and the universe")
+
+Not verified: the SEC pages that describe the industry codes and the share-count figure were not fetched (their
+limits above come from the earlier research and general knowledge, and are checked on the first run); whether the
+registry assigns the sponsor class itself or takes it from the sponsor.
