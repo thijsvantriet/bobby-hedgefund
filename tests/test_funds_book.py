@@ -49,7 +49,7 @@ def setup(tmp_path: Path, funds: tuple[str, ...] = ("careful",)) -> tuple[Log, P
                 "dice_seed",
                 {"seed": "ab" * 32, "rule_version": dice.RULE_VERSION, "funds": dice.FUNDS, "per_fund": dice.PER_FUND},
             )
-    store_splits(tmp_path / "prices", [], run="splits-0")  # the booking insists on a complete list of splits
+    store_splits(tmp_path / "prices", [])
     return log, tmp_path / "prices"
 
 
@@ -121,13 +121,43 @@ def test_an_afternoon_session_is_filled_the_next_trading_day_and_a_weekend_is_wa
 
 def test_without_the_price_file_of_a_trading_day_nothing_is_booked_past_it(tmp_path: Path) -> None:
     log, prices = setup(tmp_path)
-    decide(log, MON, order(101))
     store_day(prices, MON, FLAT)
     store_day(prices, WED, FLAT)  # Tuesday's download failed
     booker = run(log, prices, THU)
     assert booker.report.days == [MON] and booker.report.waiting_for == TUE
     store_day(prices, TUE, FLAT, when=datetime(2027, 2, 5, 6, tzinfo=UTC))
     assert run(log, prices, FRI).report.days == [TUE, WED]
+
+
+def test_no_day_is_booked_before_the_fill_day_of_its_orders_is_known(tmp_path: Path) -> None:
+    log, prices = setup(tmp_path)
+    decide(log, MON, order(101))
+    store_day(prices, MON, FLAT)
+    store_day(prices, TUE, {**FLAT, "AAA": (11.0, 11.0)})
+    # The log does not say yet when Monday's publication was received: its orders have no fill day.
+    early = run(log, prices, WED)
+    assert early.report.days == [] and "publication of 2027-02-01 was received" in early.report.notes[0]
+    decide(log, WED, received_for=(MON, 9, 0))
+    assert run(log, prices, WED).report.days == [MON, TUE]
+    (fill,) = [e for e in log.entries() if e.kind == "fill"]
+    assert fill.record["fill_day"] == MON.isoformat() and log.opened(fill)["details"]["price"] == "10"
+
+
+def test_a_list_of_splits_older_than_the_day_stops_the_booking(tmp_path: Path) -> None:
+    from bobby_hedgefund.archive.store import Archive
+    from bobby_hedgefund.prices import massive
+
+    log, prices = setup(tmp_path)
+    store_day(prices, MON, FLAT)
+    body = b'{"status":"OK","adjusted":false,"results":[{"T":"AAA","o":10,"h":10,"l":10,"c":10,"v":1}]}'
+    with Archive(prices) as archive:  # Tuesday's prices arrive, but that morning the list of splits failed
+        archive.store(
+            massive.DAILY_SOURCE, massive.day_name(WED), body, run="x", when=datetime(2027, 2, 4, 6, tzinfo=UTC)
+        )
+    store_day(prices, TUE, FLAT, when=datetime(2027, 2, 2, 1, tzinfo=UTC))  # the list is of the night before
+    booker = run(log, prices, THU)
+    assert booker.report.days == [MON, TUE] and booker.report.waiting_for == WED
+    assert "list of share splits is older" in booker.report.notes[-1]
 
 
 def test_only_price_files_stored_before_the_cut_off_are_used(tmp_path: Path) -> None:
@@ -172,7 +202,6 @@ def test_a_wrong_price_file_shows_up_when_the_books_are_recomputed(tmp_path: Pat
     decide(log, TUE, received_for=(MON, 9, 0))
     run(log, prices, WED)
     other = tmp_path / "other-prices"
-    store_splits(other, [])
     store_day(other, MON, FLAT)
     store_day(other, TUE, {**FLAT, "AAA": (10.0, 11.0)})
     problems = check(log, PriceBook(other))
@@ -210,18 +239,95 @@ def test_a_share_split_multiplies_the_shares_and_pays_a_fraction_out_in_cash(tmp
 
 def test_a_forward_split_and_one_before_the_position_existed(tmp_path: Path) -> None:
     log, prices = holding(tmp_path, 101, "5%")  # 5000 shares of AAA at $10
-    store_splits(prices, [("AAA", TUE, 1, 4), ("AAA", date(2027, 1, 4), 1, 2), ("BBB", TUE, 1, 2)])
+    store_splits(
+        prices,
+        [("AAA", TUE, 1, 4), ("AAA", date(2027, 1, 4), 1, 2), ("BBB", TUE, 1, 2), ("XBI", date(2027, 1, 5), 1, 2)],
+    )
     store_day(prices, TUE, {**FLAT, "AAA": (2.5, 2.5)})
     run(log, prices, WED)
-    fund = replay(log).funds["careful"]
-    assert fund.positions[101].shares == 20_000  # only Tuesday's split; the one of January was before the fund
+    books = replay(log)
+    assert books.funds["careful"].positions[101].shares == 20_000  # only Tuesday's split; January's was before the fund
     assert [e.kind for e in log.entries()].count("company_event") == 1  # BBB is not held: nothing to book
+    # The index funds were bought on Monday at $100: a split of last January is in that price already.
+    assert books.index_units["XBI"] == 10_000 and books.values[TUE]["index"]["XBI"]["value_cents"] == M
+
+
+def test_on_the_day_of_a_split_an_order_is_sized_on_the_fund_as_it_was_at_the_last_close(tmp_path: Path) -> None:
+    log, prices = holding(tmp_path, 101, "5%")  # 5000 shares of AAA at $10: worth $50,000
+    with log.writer(TUE, clock()) as w:
+        w.add("decision", order(102, "buy", "3%"))
+    store_splits(prices, [("AAA", WED, 1, 4), ("XBI", WED, 1, 2)])
+    store_day(prices, TUE, FLAT)
+    store_day(prices, WED, {**FLAT, "AAA": (2.5, 2.5), "XBI": (50.0, 50.0)})
+    decide(log, WED, received_for=(TUE, 9, 0))
+    run(log, prices, THU)
+    fill = next(e for e in log.entries() if e.kind == "fill" and e.record["company"]["cik"] == 102)
+    details = log.opened(fill)["details"]
+    value = M - 12_500  # the fund on Tuesday's close: the buying cost of AAA is all it lost
+    assert details["fund_value_before_cents"] == value  # not 20,000 new shares at the old price of $10
+    assert details["shares"] == (F(3, 100) * value / 2000).__floor__() == 1499
+    books = replay(log)
+    assert books.funds["careful"].positions[101].shares == 20_000
+    assert books.index_units["XBI"] == 20_000 and books.values[WED]["index"]["XBI"]["value_cents"] == M
+    assert check(log, PriceBook(prices)) == []
+
+
+def test_a_reverse_split_to_less_than_one_share_pays_the_position_out_also_without_an_opening_price(
+    tmp_path: Path,
+) -> None:
+    log, prices = holding(tmp_path, 103, "0.5%")  # 1000 shares of CCC at $5
+    store_splits(prices, [("CCC", TUE, 3000, 1)])
+    store_day(prices, TUE, {**FLAT, "CCC": (None, 15_000.0)})  # the new share did not open that day
+    run(log, prices, WED)
+    fund = replay(log).funds["careful"]
+    assert 103 not in fund.positions
+    assert fund.cash == M - 500_000 - 5_000 + 500_000  # a third of a new share, at the old close of $5 times 3000
+
+
+def test_a_run_that_stopped_half_way_through_a_day_comes_out_the_same_as_one_that_did_not(tmp_path: Path) -> None:
+    def scenario(sub: Path, crash: bool) -> tuple[Log, Path]:
+        log, prices = setup(sub)
+        decide(log, MON, order(101, "buy", "60%", fund="careful"), order(102, "buy", "60%"), order(103, "buy", "5%"))
+        store_splits(prices, [("XBI", MON, 1, 2)])
+        store_day(prices, MON, FLAT)
+        decide(log, TUE, received_for=(MON, 9, 0))
+        if crash:
+            real = Booker._write
+            calls = {"n": 0}
+
+            def stops(self, booking, price_file, value_before):  # the second booking of the day never happens
+                calls["n"] += 1
+                if calls["n"] == 2:
+                    raise OSError("power cut")
+                real(self, booking, price_file, value_before)
+
+            Booker._write = stops  # type: ignore[method-assign]
+            try:
+                with pytest.raises(OSError):
+                    run(log, prices, TUE)
+            finally:
+                Booker._write = real  # type: ignore[method-assign]
+            assert [e.kind for e in log.entries()].count("fill") == 1 and not replay(log).booked
+        report = run(log, prices, TUE).report
+        assert report.days == [MON] and report.fills == 3
+        return log, prices
+
+    whole, _ = scenario(tmp_path / "whole", crash=False)
+    broken, prices = scenario(tmp_path / "broken", crash=True)
+
+    def facts(log: Log) -> list:
+        return [(e.kind, e.record.get("ref"), log.opened(e).get("details")) for e in log.entries() if e.kind == "fill"]
+
+    assert facts(whole) == facts(broken) and len(facts(broken)) == 3  # the same cut for cash, no fill twice
+    assert replay(whole).funds["careful"].cash == replay(broken).funds["careful"].cash
+    assert replay(whole).values == replay(broken).values and check(broken, PriceBook(prices)) == []
 
 
 def test_a_takeover_for_cash_pays_the_deal_price_without_cost_and_ends_open_orders(tmp_path: Path) -> None:
     log, prices = holding(tmp_path, 101, "5%")
     with log.writer(TUE, clock()) as w:
         w.add("decision", order(101, "add", "1%"))
+        w.add("session_start", session(log, TUE, 10, received_for=(TUE, 9, 30)))
     table = tmp_path / "events"
     link = "https://www.sec.gov/Archives/edgar/data/101/000000000027000001.txt"
     events.add(
@@ -343,17 +449,44 @@ def test_the_per_stock_limit_cuts_an_order_down_or_refuses_it() -> None:
 
 
 def test_orders_that_are_still_waiting_count_as_if_they_were_filled() -> None:
-    waiting = [engine.Order(7, "careful", 101, "AAA", "n", "buy", F(4, 100), MON)]
-    (v,) = judged(waiting=waiting)(buy(101, "3", "add"))
-    assert (v.outcome, v.allowed) == ("reduced", F(1, 100))
+    waiting = [
+        engine.Order(7, "careful", 101, "AAA", "n", "buy", F(4, 100), MON),
+        engine.Order(8, "careful", 102, "BBB", "n", "buy", F(4, 100), MON),
+    ]
+    held = {1000 + i: 1 for i in range(23)}
+    go = judged(positions=held, waiting=waiting)
+    (v,) = go(buy(103, "2"))
+    assert v.limit == "25 positions"  # 23 held and 2 on their way
+    selling = [engine.Order(9, "careful", 1000, "T1000", "n", "sell", None, MON)]
+    (v,) = judged(positions=held | {1023: 1, 1024: 1}, waiting=selling)(buy(103, "2"))
+    assert v.outcome == "ok"  # a whole position on its way out makes room
+
+
+def test_a_new_decision_replaces_the_waiting_order_for_that_company_and_is_judged_without_it() -> None:
+    # A whole sale of AAA is waiting; a new "buy 5%" replaces it. The position is still there, at about 4.8%.
     selling = [engine.Order(8, "careful", 101, "AAA", "n", "sell", None, MON)]
-    (v,) = judged(positions={101: 5000}, waiting=selling)(Proposal("sell", 101, "n", "AAA"))
-    assert v.limit == "nothing to sell"  # the whole position is on its way out already
+    (v,) = judged(positions={101: 5000}, waiting=selling)(buy(101, "5", "add"))
+    assert v.outcome == "refused" and v.limit == "per-stock limit"  # not 5% on top of the 5% that stays
+    # A buy of 4% is waiting; a new buy of 3% replaces it, it does not come on top of it.
+    buying = [engine.Order(7, "careful", 101, "AAA", "n", "buy", F(4, 100), MON)]
+    (v,) = judged(waiting=buying)(buy(101, "3"))
+    assert (v.outcome, v.allowed) == ("ok", F(3, 100))
+    # When the new decision is refused, the waiting order stays and counts again.
+    held = {1000 + i: 1 for i in range(24)}
+    a, b = judged(positions=held, waiting=buying)(buy(101, "0.1"), buy(102, "2"))
+    assert a.limit == "below the smallest trade" and b.limit == "25 positions"
 
 
-def test_two_orders_for_one_company_in_one_round_share_the_limit() -> None:
+def test_one_order_per_company_in_a_round_whatever_the_order_they_come_in() -> None:
+    go = judged(positions={101: 5000})
+    for first, second in (
+        (Proposal("sell", 101, "n", "AAA"), buy(101, "3", "add")),
+        (buy(101, "0.5", "add"), Proposal("sell", 101, "n", "AAA")),
+    ):
+        results = {v.proposal.action: v for v in go(first, second)}
+        assert results["sell"].outcome == "ok" and results["add"].limit == "one order per company a round"
     a, b = judged()(buy(101, "3"), buy(101, "3", "add"))
-    assert (a.outcome, b.outcome, b.allowed) == ("ok", "reduced", F(2, 100))
+    assert (a.outcome, b.limit) == ("ok", "one order per company a round")
 
 
 def test_at_most_25_positions_and_a_sale_in_the_same_round_makes_room() -> None:
@@ -392,7 +525,9 @@ def test_only_covered_companies_of_the_universe_can_be_bought_but_anything_held_
 
 def test_the_brake_and_the_smallest_trade_at_the_moment_of_the_decision() -> None:
     (v,) = judged(value=70_000_000)(buy(101, "2"))
-    assert v.limit == "brake"
+    assert v.limit == "a limit on the fund's value" and v.basis["limit"] == "brake"  # not named in public
+    (v,) = judged()(Proposal("buy", 101, "n", "AAA"))
+    assert v.limit == "below the smallest trade"  # a buy without a size is refused, not a crash
     (v,) = judged()(buy(101, "0.4"))
     assert v.limit == "below the smallest trade"
     (v,) = judged(positions={101: 5000})(Proposal("reduce", 101, "n", "AAA", F(4, 1000)))
@@ -448,12 +583,48 @@ def test_decisions_are_logged_as_made_and_then_what_the_limits_did(tmp_path: Pat
 
 
 def test_without_a_complete_list_of_splits_nothing_is_booked(tmp_path: Path) -> None:
+    from bobby_hedgefund.archive.store import Archive
+    from bobby_hedgefund.prices import massive
     from bobby_hedgefund.universe.inputs import InputError
 
     log = make_log(tmp_path)
     with log.writer(MON, clock()) as w:
         w.add("funds_start", {"day": MON.isoformat(), "funds": ["careful"], "cash_cents": M})
-    store_day(tmp_path / "prices", MON, FLAT)
+    body = b'{"status":"OK","adjusted":false,"results":[{"T":"AAA","o":10,"h":10,"l":10,"c":10,"v":1}]}'
+    with Archive(tmp_path / "prices") as archive:  # a price file, but never a list of splits
+        archive.store(
+            massive.DAILY_SOURCE, massive.day_name(MON), body, run="x", when=datetime(2027, 2, 2, 6, tzinfo=UTC)
+        )
     with pytest.raises(InputError, match="no complete list of share splits"):
         run(log, tmp_path / "prices", TUE)
     assert [e.kind for e in log.entries()] == ["funds_start"]
+
+
+def test_a_size_that_follows_from_what_a_position_is_worth_is_sealed(tmp_path: Path) -> None:
+    log, prices = holding(tmp_path, 101, "3%")  # 3000 shares of AAA
+    store_day(prices, TUE, {**FLAT, "AAA": (12.0, 12.0)})
+    run(log, prices, WED)
+    books = replay(log)
+    fund = books.funds["careful"]
+    value = books.values[TUE]["funds"]["careful"]["value_cents"]
+    thesis = order(101)["thesis"]
+    wanted = [Proposal("add", 101, "Aaa Therapeutics Inc", "AAA", F(3, 100), {"thesis": thesis})]
+    verdicts = orders.check(fund, value, lambda t: F(12), wanted, buyable={101}, covered={101}, risky=set())
+    assert verdicts[0].outcome == "reduced" and verdicts[0].from_prices
+    with log.writer(WED, clock()) as w:
+        written = orders.place(w, fund, WED, verdicts, fill_rule=FILL_RULE_PILOT, cutoff="2027-02-03T09:00:00Z")
+    reduced = next(e for e in written if e.kind == "order_reduced")
+    assert set(reduced.record["allowed_pct"]) == {"sealed", "why"}  # 5% minus today's weight would give the return away
+    allowed = log.opened(reduced)["allowed_pct"]
+    assert replay(log).funds["careful"].orders[written[0].seq].size == F(allowed[:-1]) / 100 == verdicts[0].allowed
+    assert not log.verify().problems
+
+
+def test_a_price_far_back_can_be_looked_up_without_losing_the_day_just_read(tmp_path: Path) -> None:
+    prices = tmp_path / "prices"
+    days = [d for d in (date(2027, 2, 1 + i) for i in range(26)) if d.weekday() < 5]
+    for i, day in enumerate(days):
+        store_day(prices, day, {"AAA": (10.0, 10.0), **({"OLD": (1.0, 7.0)} if i == 0 else {})})
+    book = PriceBook(prices, today=date(2027, 4, 1))
+    assert book.last_close("OLD", days[-1]) == (F(7), days[0])  # walks back through every stored day
+    assert book.last_close("AAA", days[-1]) == (F(10), days[-1]) and book.last_close("NONE", days[-1]) is None

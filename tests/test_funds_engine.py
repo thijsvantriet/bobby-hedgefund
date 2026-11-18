@@ -146,7 +146,7 @@ def test_the_brake_cancels_buys_at_thirty_percent_below_the_highest_value_and_st
     add(f, 1, 2, "BBB", "buy", "3/100")
     add(f, 2, 1, "AAA", "sell", None)
     results = {b.order.ref: b for b in book(f, {"AAA": "10", "BBB": "10"}, value=70_000_000)}  # exactly 30% down
-    assert isinstance(results[1], Closed) and results[1].outcome == "cancelled by the brake"
+    assert isinstance(results[1], Closed) and results[1].outcome == engine.BRAKED
     assert isinstance(results[2], Fill)
     f.orders[1] = add(fund(), 1, 2, "BBB", "buy", "3/100")
     (fill,) = [b for b in book(f, {"AAA": "10", "BBB": "10"}, value=70_000_001) if b.order.ref == 1]

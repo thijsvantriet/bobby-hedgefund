@@ -19,6 +19,7 @@ MIN_TRADE = Fraction(1, 200)  # a trade below 0.5% of the fund is not made
 BRAKE = Fraction(7, 10)  # at 30% or more below its own highest value a fund buys nothing
 WAIT_DAYS = 5  # an order without an opening price waits this many trading days, then lapses
 START_CASH_CENTS = 100_000_000  # $1,000,000
+BRAKED = "cancelled by a limit on the fund's value"  # the brake; not named in public (records.VALUE_CANCELLED)
 # Trading cost on the amount traded, by the company's market value (starting figures; record 0005, point 3).
 COST_ABOVE_2BN = Fraction(25, 10000)
 COST_1_TO_2BN = Fraction(50, 10000)
@@ -168,7 +169,7 @@ def book_day(
     wanted: list[tuple[Order, Fraction, int, Fraction]] = []
     for order in (o for o in due if o.side == "buy"):
         if braked:
-            out.append(Closed(order, day, "cancelled by the brake"))
+            out.append(Closed(order, day, BRAKED))
             continue
         price = opening_price(order.ticker)
         if price is None:

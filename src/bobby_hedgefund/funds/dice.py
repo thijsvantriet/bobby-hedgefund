@@ -33,7 +33,7 @@ from ..log.seal import Sealed
 from ..log.store import Log
 from ..universe.output import write_new_bytes
 from . import calendar, engine, orders
-from .book import Booker, apply_effect, split_effect, takeover_effect
+from .book import Booker, apply_effect, same_ticker, split_effect, takeover_effect
 from .engine import Closed, Fill, Fund, Order
 from .events import SHARE_TAKEOVER
 
@@ -218,8 +218,15 @@ class DiceBooks:
 
         for number, fund in enumerate(self.funds, start=1):
             booker.books.set_due(list(fund.orders.values()))
-            for ticker, ratio in splits:
-                effect = split_effect(fund, ticker, ratio, opening(ticker))
+            value_before, _ = engine.fund_value(fund, before)  # before today's splits (record 0005, point 2.2)
+            for ticker, ratio, _split_day in splits:
+                if not any(same_ticker(p.ticker, ticker) for p in fund.positions.values()):
+                    continue
+                price = opening(ticker)
+                if price is None:
+                    old_close = before(ticker)
+                    price = old_close / ratio if old_close is not None else None
+                effect = split_effect(fund, ticker, ratio, price)
                 if effect:
                     events.append([number, effect])
                     apply_effect(fund, effect)
@@ -234,7 +241,6 @@ class DiceBooks:
                     for order in [o for o in fund.orders.values() if o.cik == event.cik]:
                         closed.append([number, order.ref, "company left"])
                         del fund.orders[order.ref]
-            value_before, _ = engine.fund_value(fund, before)
             for booking in engine.book_day(
                 fund, day, value_before, opening, booker.rate_of, lambda order: booker.waited(order, day)
             ):

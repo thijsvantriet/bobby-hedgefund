@@ -13,6 +13,7 @@ from fractions import Fraction
 from typing import Any
 
 from ..log import canon
+from ..log.records import VALUE_LIMIT
 from ..log.seal import Sealed
 from ..log.store import Entry, Writer
 from . import engine
@@ -50,6 +51,7 @@ class Verdict:
     limit: str = ""
     allowed: Fraction | None = None
     basis: dict[str, Any] = field(default_factory=dict)  # the numbers behind it: from prices, so private
+    from_prices: bool = False  # the size that was allowed follows from what a position is worth today
 
 
 def make_or_break(entries: list[Entry], today: date) -> set[int]:
@@ -81,14 +83,20 @@ def check(
     closing prices; `risky`: the companies with a make-or-break result within 30 days."""
     per_stock, risky_limit = LIMITS[fund.name]
     weight: dict[int, Fraction] = {}
+    priced: set[int] = set()  # companies whose weight comes from today's prices
     if value > 0:
         for cik, position in fund.positions.items():
             price = price_of(position.ticker)
             weight[cik] = (
                 Fraction(engine.to_cents(price * position.shares), value) if price is not None else Fraction(0)
             )
+            priced.add(cik)
     held = set(fund.positions)
-    for order in fund.orders.values():  # orders that are still waiting count as if they were filled
+    # A new decision about a company replaces an order for it that is still waiting (record 0005, point 2.8), so
+    # that waiting order is left out here. All other waiting orders count as if they were filled.
+    replaced = {p.cik for p in proposals if p.action != "nothing"}
+
+    def count_waiting(order: Order) -> None:
         if order.side == "buy":
             weight[order.cik] = weight.get(order.cik, Fraction(0)) + (order.size or 0)
             held.add(order.cik)
@@ -97,7 +105,12 @@ def check(
             held.discard(order.cik)
         else:
             weight[order.cik] = max(Fraction(0), weight.get(order.cik, Fraction(0)) - order.size)
+
+    for order in fund.orders.values():
+        if order.cik not in replaced:
+            count_waiting(order)
     braked = fund.peak is not None and value <= engine.BRAKE * fund.peak
+    seen: set[int] = set()
 
     def judge(p: Proposal) -> Verdict:
         basis = {
@@ -105,6 +118,9 @@ def check(
             "weight_before": canon.format_pct(weight.get(p.cik, Fraction(0))),
             "positions": len(held),
         }
+        if p.cik in seen:  # a buy and a sale of one company in one round would depend on their order
+            return Verdict(p, "refused", "one order per company a round", basis=basis)
+        seen.add(p.cik)
         if p.action in ("reduce", "sell"):
             if p.cik not in held:
                 return Verdict(p, "refused", "nothing to sell", basis=basis)
@@ -116,9 +132,10 @@ def check(
             else:
                 weight[p.cik] = max(Fraction(0), weight.get(p.cik, Fraction(0)) - p.size)
             return Verdict(p, "ok", allowed=p.size, basis=basis)
-        assert p.size is not None
+        if p.size is None:
+            return Verdict(p, "refused", "below the smallest trade", basis=basis)
         if braked:
-            return Verdict(p, "refused", "brake", basis=basis)
+            return Verdict(p, "refused", VALUE_LIMIT, basis={**basis, "limit": "brake"})
         if p.cik not in buyable:
             return Verdict(p, "refused", "not in the universe", basis=basis)
         if p.cik not in covered:
@@ -138,7 +155,7 @@ def check(
         weight[p.cik] = weight.get(p.cik, Fraction(0)) + allowed
         held.add(p.cik)
         if allowed < p.size:
-            return Verdict(p, "reduced", "per-stock limit", allowed, basis)
+            return Verdict(p, "reduced", "per-stock limit", allowed, basis, from_prices=p.cik in priced)
         return Verdict(p, "ok", allowed=allowed, basis=basis)
 
     order = sorted(range(len(proposals)), key=lambda i: (proposals[i].action not in ("reduce", "sell"), i))
@@ -146,6 +163,11 @@ def check(
     for i in order:
         p = proposals[i]
         verdicts[i] = Verdict(p, "ok") if p.action == "nothing" else judge(p)
+        if verdicts[i].outcome == "refused":  # the waiting order it would have replaced stays, and counts again
+            for waiting in fund.orders.values():
+                if waiting.cik == p.cik and p.cik in replaced:
+                    count_waiting(waiting)
+            replaced.discard(p.cik)
     return [verdicts[i] for i in range(len(proposals))]
 
 
@@ -197,7 +219,9 @@ def place(
                         **common,
                         "limit": verdict.limit,
                         "asked_pct": asked,
-                        "allowed_pct": canon.format_pct(verdict.allowed),
+                        "allowed_pct": Sealed(canon.format_pct(verdict.allowed))
+                        if verdict.from_prices
+                        else canon.format_pct(verdict.allowed),
                         "basis": Sealed(verdict.basis),
                     },
                 )
