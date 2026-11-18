@@ -93,6 +93,17 @@ def read_records(root: Path) -> list[dict[str, Any]]:
     return records
 
 
+def read_stored(root: Path, rec: dict[str, Any]) -> bytes:
+    """Return the original bytes of the stored file a manifest record points to. Needs no lock: stored files are
+    never changed, so reading one is safe while a download job is running."""
+    rel = Path(str(rec["path"]))
+    if rel.is_absolute() or ".." in rel.parts or rel.parts[:1] != (RAW,):
+        raise ArchiveError(f"manifest path points outside the archive: {rec['path']!r}")
+    data = (root / rel).read_bytes()
+    compressed = rec["compress"] == "xz" if "compress" in rec else rel.suffix == ".xz"
+    return lzma.decompress(data) if compressed else data
+
+
 @dataclass
 class VerifyReport:
     lines: int = 0
@@ -458,12 +469,7 @@ class Archive:
 
     def read(self, rec: dict[str, Any]) -> bytes:
         """Return the original bytes of a stored file (decompressed if it was stored compressed)."""
-        rel = Path(str(rec["path"]))
-        if rel.is_absolute() or ".." in rel.parts or rel.parts[:1] != (RAW,):
-            raise ArchiveError(f"manifest path points outside the archive: {rec['path']!r}")
-        data = (self.root / rel).read_bytes()
-        compressed = rec["compress"] == "xz" if "compress" in rec else rel.suffix == ".xz"
-        return lzma.decompress(data) if compressed else data
+        return read_stored(self.root, rec)
 
     # -- checking ------------------------------------------------------------------------------------------------
 

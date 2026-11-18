@@ -44,6 +44,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **stream 0, part 1: SEC access built** (`bobby-archive sec-companies`, docs/decisions/0008, "Update 2026-11-18"). Before the first request the SEC's robots files were read: the data service has none, and the main site does not forbid the ticker file. The command stores the SEC's ticker file and the filing list of every company with a stock-exchange listing (6,051), one request a second, about two and a half hours, once. Tried on 20 companies first; the archive check passes and the contact address is stored nowhere. Stream 0 is built in five parts: (1) these SEC files, (2) the candidate list and the sponsor names, (3) daily prices, (4) the filter, (5) name matching and the owner's check. The universe filter needs prices, so the linking table comes after stream 1.
 
+2026-11-18: **stream 0, part 2: candidate list and sponsor names built** (`bobby-universe`, see "Universe and linking table" below). Reading code only, on files the archive already holds; every file read is checked against its fingerprint. First result: 26,149 distinct company-like sponsor names in 170,192 trial records. A reviewer agent found that a look-alike ticker (AB-C next to ABC) could link a fund holding to the wrong company; fixed and tested before the merge. The candidate list is written once the SEC company files are complete; its counts (among them: how many companies come in through the XBI fund only) then go into docs/decisions/0006 as an update.
+
 2026-11-18: **the owner wants the pilot at the end of November 2026**, not in January. The order of work stays; see "Next step" for what must exist by then.
 
 ## Next step
@@ -52,8 +54,8 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    Records 0009-0014 follow when their step comes (spec, section 10).
 2. **Now:** build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
    matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
-   (0007, 0008). Stream 0, part 1 (the SEC company files) is built; next is part 2, the candidate list and the
-   sponsor names, then daily prices.
+   (0007, 0008). Stream 0, parts 1 and 2 (the SEC company files, the candidate list and the sponsor
+   names) are built; next is daily prices (stream 1, record 0007), then the filter and the name matching.
    Alongside: the historical study, limited to two weeks of work. Its AACT download is settled (0014): go ahead
    under the download rules written there; choose which monthly copies to fetch first (all of them do not fit on the disk).
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
@@ -90,6 +92,30 @@ uv run ruff check && uv run ruff format --check && uv run pyright && uv run pyte
 systemd/install.sh                 # installs the snapshot and the timer; refuses uncommitted or failing code
 ```
 
+## Universe and linking table (stream 0, in progress)
+Design: docs/decisions/0006. Two commands read the archive and write dated files next to it; they download nothing
+and never replace a file (a second run on one day gets `-2` in its name). The results are private: they hold the
+XBI flag and are never committed.
+
+```
+bobby-universe candidates          # companies that can enter the universe, before the filter on size and trading
+bobby-universe sponsor-names       # every company-like sponsor name in the archived trial records (2 minutes)
+```
+
+- `~/bobby-hedgefund-data/universe/<date>_candidates.csv`: one line per company with one of our four industry
+  codes or a place in the XBI fund: SEC company number, name, tickers, industry code, the door it came through,
+  whether it reports as a foreign company (left out of version 1), former names, a check of its ticker against
+  the Nasdaq lists, and the name the fund's file gives it (the link to the fund is made by ticker, so the two names
+  can be compared by eye). A fund holding that cannot be linked to exactly one company goes to
+  `<date>_xbi-unmatched.csv` instead of being guessed. `<date>_inputs.txt` lists the archived files that were
+  read, with their fingerprints.
+- `~/bobby-hedgefund-data/linking/<date>_sponsor-names.csv`: sponsor name as written in the registry, its classes,
+  number of trials, one example trial.
+- In these files a text that a spreadsheet would run as a formula (starting with `=`, `+`, `-` or `@`) has an
+  apostrophe in front.
+
+Still to come: daily prices, the filter, name matching and the owner's check of the matches.
+
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with
 its reasoning and time, the day it was filled, the score of every forecast, and a regular plain-language report.
@@ -112,6 +138,7 @@ by any of them. Downloaded so far (details and terms per source: docs/decisions/
 | [European Medicines Agency](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format) | Five data files on medicines | Reuse allowed with the source credited ([legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)) |
 | [Nasdaq Trader symbol directory](https://www.nasdaqtrader.com/Trader.aspx?id=SymbolDirDefs) | Lists of US-listed symbols | Copyright Nasdaq, Inc. One copy for personal, non-commercial use; the files are never passed on or published ([terms](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain)) |
 | [State Street, SPDR S&P Biotech ETF (XBI)](https://www.ssga.com/) | The fund's daily holdings file | Personal use only; the file is never passed on or published ([terms](https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions)) |
+| [U.S. Securities and Exchange Commission, EDGAR](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) | The ticker file and each listed company's filing list (from 2026-11-18) | Free for everyone; at most one request a second with a declared contact, as the SEC asks; the filings' own text belongs to the companies and is only summarised and linked, never republished at length (docs/decisions/0008) |
 
 Sources that were only read for the research are linked where they are used in `docs/research/`. Candidates for later
 streams, with their terms: docs/research/DATA-SOURCES.md.
