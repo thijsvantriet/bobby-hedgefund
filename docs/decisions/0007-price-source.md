@@ -193,8 +193,8 @@ read first; what they showed is written here because the pages do not say all of
   (`/v2/aggs/grouped/locale/us/market/stocks/<day>?adjusted=false`) and the split list (`/stocks/v1/splits`,
   from two years back, in pages). Nothing else is asked.
 - **The key travels in a request header**, never in an address: addresses are stored in the fingerprint list and
-  printed in messages, headers are not. The fetcher only ever asks that one host, also after a redirect, and the
-  address of a next page that would carry a key is refused. Tests check that the key reaches no stored file, no
+  printed in messages, headers are not. The fetcher only ever asks that one host, only over an encrypted
+  connection, also after a redirect, and the address of a next page that would carry a key is refused. Tests check that the key reaches no stored file, no
   list line and no printed line, also when the service refuses, and that it is not shown when the fetcher is printed.
 - **Speed:** a pause of 13 seconds before every request (under five a minute). "Too many requests" ends the job
   at once; running it again continues, because a day that is stored is never fetched twice.
@@ -203,23 +203,41 @@ read first; what they showed is written here because the pages do not say all of
   another folder). An answer is checked before it is stored: it must be marked as not recalculated for splits, its
   count must match, and every line must belong to the day asked for. Anything else is refused and not stored.
 - **Days without prices.** A weekend is not asked for. The service answers a market holiday with an empty list,
-  and it answers the same way for a day whose prices are not out yet. So a working day without prices is asked
-  again on later runs for four days, and after that noted as a holiday for good.
+  and it answers the same way for a day whose prices are not out yet, or when it has a hiccup. So an empty answer
+  only counts as "the market was closed" when the day is more than four days old **and** either it is a regular
+  US market holiday (worked out by rule in `prices/holidays.py`) or the service gave the same empty answer in two
+  separate runs. `bobby-prices status` lists settled days that are not a regular holiday, for one look by a person
+  (the market also closes on rare special days).
+- **A day that looks half-filled.** A recent day with fewer than 80% of the usual number of shares (the middle
+  value of the stored days within a month of it) is not stored but asked again on the next run; stored files are
+  never replaced, so a half-filled file must not get in. After four days it is stored as it is, and marked.
+- **A wrong answer for one day** (not the expected layout, prices of another day, "not found") is noted and the
+  job goes on with the next day; the run then ends as failed, so the phone message goes out. A refusal ("too many
+  requests", "forbidden") or a broken connection stops the job at once.
 - **History.** The free plan refuses days older than two years ("past historical entitlements"). The one-time
   download starts 730 days back; a refusal within the oldest ten days of that is noted and not asked again, any
   other refusal is a failure. A day's file is about 1.4 MB as received and about 0.25 MB stored; about 520 days.
 - **When.** A timer at 07:30 and again at 12:30 local time (point 3 said "early in the morning"): the second run
   costs nothing when the first got everything and catches prices that came out late. A failure sends the phone
   message "Bobby prices".
+- **The split list** is asked from the first day of a month two years back, so the address stays the same for a
+  month and an unchanged list is not stored again.
 - **The check of point 5.** `bobby-prices check` compares each day with the stored day before and lists every
   closing price that moved by more than half without a share split between the two days. The morning run does this
   for each new day. The list covers the whole market, so it is long and mostly shows small shares; once the
   universe exists it is narrowed to it. The comparison with SEC filings comes with stream 2.
-- **`bobby-prices purge`** (point 4) removes the whole prices folder at once, after writing a note that lists
-  every removed file with its fingerprint (no prices). It needs an explicit flag, refuses while a download runs,
-  can only ever delete that one folder inside the data folder, and does not follow links. So far it covers the
+- **`bobby-prices purge`** (point 4) removes the whole prices folder, after writing a note that lists every
+  removed file with its fingerprint (no prices). It needs an explicit flag, can only ever delete that one folder
+  inside the data folder, and does not follow links. It takes the folder's lock (so it refuses while a download
+  runs), sets the folder aside under another name in one step and only then deletes, so a download that starts
+  meanwhile cannot write into what is being deleted; an interrupted purge is finished by running it again.
+  Before a purge: switch the morning timer off and take the key out of `.env`. So far it covers the
   price files only; the other places that will hold prices (universe numbers, the private fund books, session
   folders) are added to it when they are built. The backup step stays a step by hand.
+- **Review.** A reviewer agent read the code before the pull request. Worked in: one bad day no longer blocks
+  the days after it; the half-filled-day rule; the two-answers rule for days without prices; encrypted addresses
+  only; the purge keeps its lock while it sets the folder aside; days stored in a run that later fails are still
+  compared.
 - **Dividends** (listed under "Not verified"): not looked at; not needed before the fund books.
 
 ## Sources

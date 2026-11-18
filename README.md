@@ -116,7 +116,8 @@ bobby-prices purge                 # deletes every saved price; only for the day
   were traded on that day (not recalculated afterwards for share splits). Plus the service's list of share splits.
 - There is no second price source. Instead `check` compares each day with the day before and writes
   `prices/checks/<date>_jumps.csv`: a list to look at, not a list of errors (a trial result can halve a share).
-- A working day without prices is asked again for four days; after that it counts as a market holiday.
+- A working day without prices counts as "market closed" only when it is more than four days old and is a regular
+  US market holiday, or when the service said so twice. A recent day that looks half-filled is asked again.
 
 ## Universe and linking table (stream 0, in progress)
 Design: docs/decisions/0006. Two commands read the archive and write dated files next to it; they download nothing

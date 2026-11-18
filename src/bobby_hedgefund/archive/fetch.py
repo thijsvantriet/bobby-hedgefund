@@ -64,20 +64,24 @@ class _SafeRedirects(urllib.request.HTTPRedirectHandler):
     redirect, and a header that declares who is asking must not reach a host it was not meant for."""
 
     allowed_hosts: frozenset[str] | None = None
+    https_only: bool = False
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
         old, new = urlsplit(req.full_url).scheme, urlsplit(newurl).scheme
         if new not in ("http", "https") or (old == "https" and new != "https"):
             raise urllib.error.HTTPError(newurl, code, f"refused redirect from {old} to {new}", headers, fp)
+        if self.https_only and new != "https":
+            raise urllib.error.HTTPError(newurl, code, "refused redirect to an unencrypted address", headers, fp)
         if self.allowed_hosts is not None and (urlsplit(newurl).hostname or "") not in self.allowed_hosts:
             raise urllib.error.HTTPError(newurl, code, "refused redirect to another host", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 @functools.cache
-def _opener(allowed_hosts: frozenset[str] | None) -> urllib.request.OpenerDirector:
+def _opener(allowed_hosts: frozenset[str] | None, https_only: bool = False) -> urllib.request.OpenerDirector:
     handler = _SafeRedirects()
     handler.allowed_hosts = allowed_hosts
+    handler.https_only = https_only
     return urllib.request.build_opener(handler)
 
 
@@ -89,6 +93,7 @@ class Fetcher:
     # Extra request headers, for example a key. Never shown when a fetcher is printed, and never part of an error
     # message or a stored line. Give `allowed_hosts` along with a key: headers travel with a redirect.
     headers: dict[str, str] = field(default_factory=dict, repr=False)
+    https_only: bool = False  # when set: an unencrypted address is never asked (a key must not travel in the open)
     timeout: float = 120.0
     max_bytes: int = 300 * 1024 * 1024
     backoff: tuple[float, ...] = (5.0, 30.0, 90.0)  # waits before retry 1, 2, 3
@@ -99,6 +104,8 @@ class Fetcher:
         here: the caller comes back much later, because quick retries can keep a publisher's block alive."""
         if urlsplit(url).scheme not in ("http", "https"):
             raise FetchError(f"only http(s) addresses are fetched, not {url!r}")
+        if self.https_only and urlsplit(url).scheme != "https":
+            raise FetchError("this fetcher only asks encrypted (https) addresses")
         if self.allowed_hosts is not None and (urlsplit(url).hostname or "") not in self.allowed_hosts:
             raise FetchError(f"{url}: this host is not on the list this fetcher may ask")
         attempt = 0
@@ -122,7 +129,7 @@ class Fetcher:
             url, headers={**self.headers, "User-Agent": self.user_agent, "Accept": "*/*", "Accept-Encoding": "gzip"}
         )
         try:
-            with _opener(self.allowed_hosts).open(request, timeout=self.timeout) as resp:
+            with _opener(self.allowed_hosts, self.https_only).open(request, timeout=self.timeout) as resp:
                 status = resp.status
                 headers = {k.lower(): v for k, v in resp.headers.items()}
                 final_url = resp.geturl()

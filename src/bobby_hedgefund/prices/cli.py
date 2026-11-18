@@ -41,7 +41,7 @@ def _fetch(args: argparse.Namespace, *, start_days_back: int, with_splits: bool)
     new_days: list[date] = []
 
     def days() -> dict:
-        summary = massive.run_days(
+        return massive.run_days(
             archive,
             fetcher,
             run,
@@ -50,14 +50,15 @@ def _fetch(args: argparse.Namespace, *, start_days_back: int, with_splits: bool)
             today=today,
             url=massive.DAILY_URL,
             limit=getattr(args, "limit", None),
+            stored_now=new_days,  # filled as each day is stored, so also when a later day stops the run
         )
-        new_days.extend(date.fromisoformat(d) for d in summary.pop("new_days"))
-        return summary
 
     with Archive(prices_root(), wait=args.wait) as archive:
         ok = _attempt(archive, massive.DAILY_SOURCE, run, days)
         if with_splits:
-            start = today - timedelta(days=massive.HISTORY_DAYS)
+            # From the first day of a month two years back: the address then stays the same for a month, and an
+            # unchanged list is not stored again.
+            start = (today - timedelta(days=massive.HISTORY_DAYS)).replace(day=1)
             ok = (
                 _attempt(
                     archive,
@@ -77,7 +78,11 @@ def cmd_daily(args: argparse.Namespace) -> int:
         print(f"NOT RUN: {exc}")
         return 1
     if new_days:
-        _check(new_days)
+        try:
+            _check(new_days)
+        except (InputError, OutputError) as exc:
+            # The prices are saved; only the comparison could not be made. Not a failed download.
+            print(f"check skipped: {exc}")
     return 0 if ok else 1
 
 
@@ -96,6 +101,10 @@ def _check(days: list[date] | None) -> int:
     records = read.day_records(inputs)
     splits = read.load_splits(inputs)
     order = list(records)
+    if days is not None:
+        # A day that was stored late changes the comparison of the day after it too.
+        wanted = set(days) | {order[i + 1] for i, day in enumerate(order[:-1]) if day in days}
+        days = sorted(wanted)
     rows: list[tuple[object, ...]] = []
     checked = 0
     loaded: tuple[date, dict[str, read.Bar]] | None = None
@@ -133,20 +142,27 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 def cmd_status(_: argparse.Namespace) -> int:
     code = print_status(prices_root(), "prices")
-    days = sorted(massive.stored_days(Inputs(prices_root()).records))
+    records = Inputs(prices_root()).records
+    days = sorted(massive.stored_days(records))
     if days:
         print(f"days stored: {len(days)}, from {days[0]} to {days[-1]}")
+    today = massive.market_today()
+    odd = massive.unexpected_closed_days(records, today)
+    if odd:
+        print(f"working days without prices that are not a regular holiday: {', '.join(d.isoformat() for d in odd)}")
+    waiting = massive._open_days(records, days[0], today - timedelta(days=1), today) if days else []
+    if waiting:
+        print(f"working days not stored yet: {len(waiting)} ({', '.join(d.isoformat() for d in waiting[:8])})")
     return code
 
 
 def cmd_purge(args: argparse.Namespace) -> int:
     if not args.yes_delete_everything:
         print("NOT DONE: this deletes every saved price for good. It is meant for the day the account with the")
-        print("price service ends (docs/decisions/0007, point 4). To go ahead: add --yes-delete-everything")
+        print("price service ends (docs/decisions/0007, point 4). First switch the morning download off")
+        print("(systemctl --user disable --now bobby-prices.timer) and take the key out of the .env file.")
+        print("To go ahead: add --yes-delete-everything")
         return 1
-    if prices_root().is_dir():
-        with Archive(prices_root(), readonly=True):  # refuses while a download is running
-            pass
     note, files = purge.purge(data_dir())
     if note is None:
         print("nothing to delete: there is no prices folder")

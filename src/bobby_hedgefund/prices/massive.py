@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from ..archive.fetch import Fetcher, FetchError
 from ..archive.sources import SourceError
 from ..archive.store import Archive
+from . import holidays
 
 DAILY_SOURCE = "massive-daily"
 SPLITS_SOURCE = "massive-splits"
@@ -30,15 +31,27 @@ HISTORY_EDGE_DAYS = 10
 # A working day without prices is a market holiday, or a day whose prices are not out yet. For this many days it is
 # asked again; after that it counts as a holiday for good.
 EMPTY_IS_FINAL_AFTER_DAYS = 4
+# A day with far fewer shares than the days around it was probably fetched while the service was still filling it.
+THIN_SHARE = 0.8  # of the usual number of shares in a day's file
+THIN_NEEDS_DAYS = 5  # stored days needed nearby before "usual" means anything
+THIN_WINDOW_DAYS = 30
+# An HTTP answer that says something about one day only; the job notes it and goes on with the next day.
+ONE_DAY_STATUS = frozenset({400, 404})
 DAILY_LOOKBACK_DAYS = 14  # the morning job also fills gaps of the last two weeks
 MAX_SPLIT_PAGES = 50
 MARKET_ZONE = ZoneInfo("America/New_York")
 
 
-def massive_fetcher(key: str, *, allowed_hosts: frozenset[str] = HOSTS, **kwargs: Any) -> Fetcher:
-    """A fetcher that carries the key as a header, and only ever asks the price service's own host."""
+def massive_fetcher(
+    key: str, *, allowed_hosts: frozenset[str] = HOSTS, https_only: bool = True, **kwargs: Any
+) -> Fetcher:
+    """A fetcher that carries the key as a header, and only ever asks the price service's own host, encrypted."""
     return Fetcher(
-        user_agent=CLIENT_NAME, allowed_hosts=allowed_hosts, headers={"Authorization": f"Bearer {key}"}, **kwargs
+        user_agent=CLIENT_NAME,
+        allowed_hosts=allowed_hosts,
+        https_only=https_only,
+        headers={"Authorization": f"Bearer {key}"},
+        **kwargs,
     )
 
 
@@ -65,14 +78,15 @@ def _get(fetcher: Fetcher, url: str, pause: float) -> Any:
     return fetcher.get(url, retry_refused=False)  # "too many requests" ends the job; no quick second try
 
 
-def _notes(records: list[dict[str, Any]], key: str) -> set[date]:
-    found: set[date] = set()
+def _noted_days(records: list[dict[str, Any]], key: str) -> list[date]:
+    """The days of all notes with this key, one entry per note."""
+    found: list[date] = []
     for r in records:
         if r.get("source") == DAILY_SOURCE and r.get("kind") == "run" and r.get("status") == "note":
             meta = r.get("meta")
             if isinstance(meta, dict) and key in meta:
                 try:
-                    found.add(date.fromisoformat(str(meta[key])))
+                    found.append(date.fromisoformat(str(meta[key])))
                 except ValueError:
                     continue
     return found
@@ -88,9 +102,40 @@ def stored_days(records: list[dict[str, Any]]) -> set[date]:
     return days
 
 
-def closed_days(records: list[dict[str, Any]]) -> set[date]:
-    """Working days on which the market was closed: asked for, and without prices for good."""
-    return _notes(records, "closed_day")
+def closed_days(records: list[dict[str, Any]], today: date) -> set[date]:
+    """Working days on which the market was closed: the service had no prices for them, and that is settled.
+
+    Settled means: the day is more than a few days old, and either it is a regular market holiday, or the service
+    gave the same empty answer in two separate runs (a single empty answer can be a hiccup of the service)."""
+    answers: dict[date, int] = {}
+    for key in ("empty_day", "closed_day"):  # "closed_day" is the name the first version of this job wrote
+        for day in _noted_days(records, key):
+            answers[day] = answers.get(day, 0) + 1
+    return {
+        day
+        for day, n in answers.items()
+        if (today - day).days > EMPTY_IS_FINAL_AFTER_DAYS and (n >= 2 or holidays.is_regular_holiday(day))
+    }
+
+
+def unexpected_closed_days(records: list[dict[str, Any]], today: date) -> list[date]:
+    """Settled closed days that are not a regular holiday: worth one look by a person."""
+    return sorted(d for d in closed_days(records, today) if not holidays.is_regular_holiday(d))
+
+
+def _usual_shares(records: list[dict[str, Any]], day: date) -> float | None:
+    """The middle number of shares in the stored files of the days around `day`; None with too few of them."""
+    counts = []
+    for r in records:
+        if r.get("source") == DAILY_SOURCE and r.get("kind") == "file" and isinstance(r.get("meta"), dict):
+            other = name_day(str(r.get("name")))
+            n = r["meta"].get("shares")
+            if other is not None and isinstance(n, int) and abs((other - day).days) <= THIN_WINDOW_DAYS:
+                counts.append(n)
+    if len(counts) < THIN_NEEDS_DAYS:
+        return None
+    counts.sort()
+    return float(counts[len(counts) // 2])
 
 
 def _working_days(start: date, end: date) -> Iterator[date]:
@@ -137,40 +182,61 @@ def run_days(
     pause: float = PAUSE,
     limit: int | None = None,
     keep_going: Callable[[], bool] = lambda: True,
+    stored_now: list[date] | None = None,
 ) -> dict[str, Any]:
     """Store the price file of every working day from `start` to `end` that is not stored yet.
 
     Nothing is fetched twice, so an interrupted run is continued by simply running it again. `limit` stops after
-    that many requests; `keep_going` answering False stops before the next request.
+    that many requests; `keep_going` answering False stops before the next request. Each day that is stored is
+    added to `stored_now` at once, so the caller knows them also when a later day stops the run.
+
+    A wrong answer for one day is noted and the job goes on with the next day; at the end the run fails, so that
+    it is noticed. A refusal ("too many requests", "forbidden") or a broken connection stops the job at once.
     """
     have = stored_days(archive.records)
-    skip = have | closed_days(archive.records) | _notes(archive.records, "outside_history")
+    skip = have | closed_days(archive.records, today) | set(_noted_days(archive.records, "outside_history"))
     todo = [d for d in _working_days(start, end) if d not in skip]
-    asked = stored = closed = empty = outside = 0
-    new_days: list[str] = []
+    asked = stored = empty = outside = thin = 0
+    failed: list[str] = []
     for day in todo:
         if (limit is not None and asked >= limit) or not keep_going():
             break
         address = url.format(day=day.isoformat())
+        age = (today - day).days
         asked += 1
         try:
             resp = _get(fetcher, address, pause)
+            count = check_day(resp.body, day)
         except FetchError as exc:
-            if exc.status == 403 and (today - day).days >= HISTORY_DAYS - HISTORY_EDGE_DAYS:
+            if exc.status == 403 and age >= HISTORY_DAYS - HISTORY_EDGE_DAYS:
                 # The oldest edge of the two years: the service no longer hands this day out. Not asked again.
                 archive.record_run(DAILY_SOURCE, run, "note", meta={"outside_history": day.isoformat()})
                 outside += 1
                 continue
-            raise  # a refusal or a broken connection stops the job; running it again continues
-        count = check_day(resp.body, day)
-        if count == 0:
-            final = (today - day).days > EMPTY_IS_FINAL_AFTER_DAYS
-            archive.record_run(
-                DAILY_SOURCE, run, "note", meta={("closed_day" if final else "empty_day"): day.isoformat()}
-            )
-            closed += final
-            empty += not final
+            if exc.status not in ONE_DAY_STATUS:
+                raise  # a refusal or a broken connection stops the job; running it again continues
+            archive.record_run(DAILY_SOURCE, run, "note", meta={"failed_day": day.isoformat()}, error=str(exc))
+            failed.append(day.isoformat())
             continue
+        except SourceError as exc:
+            archive.record_run(DAILY_SOURCE, run, "note", meta={"failed_day": day.isoformat()}, error=str(exc))
+            failed.append(day.isoformat())
+            continue
+        if count == 0:
+            # A holiday, or prices that are not out yet, or a hiccup: `closed_days` decides when it is settled.
+            archive.record_run(DAILY_SOURCE, run, "note", meta={"empty_day": day.isoformat()})
+            empty += 1
+            continue
+        usual = _usual_shares(archive.records, day)
+        is_thin = usual is not None and count < THIN_SHARE * usual
+        if is_thin and age <= EMPTY_IS_FINAL_AFTER_DAYS:
+            # Probably still being filled by the service: not stored, asked again on the next run.
+            archive.record_run(DAILY_SOURCE, run, "note", meta={"thin_day": day.isoformat(), "shares": count})
+            thin += 1
+            continue
+        meta: dict[str, Any] = {"day": day.isoformat(), "shares": count}
+        if is_thin:
+            meta["thin"] = True  # an old day that stays thin is stored as it is, and marked
         archive.store(
             DAILY_SOURCE,
             day_name(day),
@@ -178,29 +244,35 @@ def run_days(
             run=run,
             compress=True,
             dedup=False,
-            info={
-                "url": address,
-                "status": resp.status,
-                "headers": resp.headers,
-                "meta": {"day": day.isoformat(), "shares": count},
-            },
+            info={"url": address, "status": resp.status, "headers": resp.headers, "meta": meta},
         )
         stored += 1
-        new_days.append(day.isoformat())
+        if stored_now is not None:
+            stored_now.append(day)
     left = len(todo) - asked
-    return {
+    summary = {
         "from": start.isoformat(),
         "to": end.isoformat(),
         "asked": asked,
         "stored": stored,
-        "new_days": new_days,
-        "market_closed": closed,
-        "no_prices_yet": empty,
+        "no_prices": empty,
+        "too_few_shares_asked_again_later": thin,
         "outside_history": outside,
         "had_already": len([d for d in _working_days(start, end) if d in have]),
         "left": left,
-        "complete": left == 0,
+        # Complete: every working day in the range is stored or settled as a day without trading.
+        "complete": left == 0 and not failed and thin == 0 and not _open_days(archive.records, start, end, today),
     }
+    if failed:
+        raise SourceError(
+            f"wrong answer for {len(failed)} day(s): {', '.join(failed[:5])}; the rest went on: {summary}"
+        )
+    return summary
+
+
+def _open_days(records: list[dict[str, Any]], start: date, end: date, today: date) -> list[date]:
+    settled = stored_days(records) | closed_days(records, today) | set(_noted_days(records, "outside_history"))
+    return [d for d in _working_days(start, end) if d not in settled]
 
 
 def check_splits(body: bytes) -> tuple[int, str | None]:
@@ -236,7 +308,8 @@ def run_splits(
         page += 1
         if page > MAX_SPLIT_PAGES:
             raise SourceError(f"the split list did not end after {MAX_SPLIT_PAGES} pages")
-        if "apikey" in address.lower():
+        secrets = [v.split()[-1] for v in fetcher.headers.values() if v.split()]
+        if "apikey" in address.lower() or any(secret in address for secret in secrets):
             raise SourceError("the address of the next page carries a key; not fetched and not stored")
         resp = _get(fetcher, address, pause)
         count, next_url = check_splits(resp.body)

@@ -11,7 +11,7 @@ from bobby_hedgefund.archive import cli as archive_cli
 from bobby_hedgefund.archive.fetch import FetchError
 from bobby_hedgefund.archive.sources import SourceError
 from bobby_hedgefund.archive.store import Archive
-from bobby_hedgefund.prices import check, cli, massive, purge, read
+from bobby_hedgefund.prices import check, cli, holidays, massive, purge, read
 from bobby_hedgefund.universe.inputs import InputError, Inputs
 
 # All tickers and prices here are made up. KEY is a made-up key; tests check that it is stored and shown nowhere.
@@ -53,7 +53,9 @@ def manifest(root: Path) -> list[dict]:
 
 @pytest.fixture
 def key_fetcher(waits):
-    return massive.massive_fetcher(KEY, allowed_hosts=LOCAL, timeout=5, backoff=(), sleep=waits.append)
+    return massive.massive_fetcher(
+        KEY, allowed_hosts=LOCAL, https_only=False, timeout=5, backoff=(), sleep=waits.append
+    )
 
 
 @pytest.fixture
@@ -76,9 +78,10 @@ def test_stores_each_missing_day_as_received_with_a_pause_before_every_request(
     price_site, tmp_path: Path, key_fetcher, waits
 ) -> None:
     with Archive(tmp_path) as archive:
-        summary = run_days(archive, key_fetcher, price_site)
+        new: list[date] = []
+        summary = run_days(archive, key_fetcher, price_site, stored_now=new)
         again = run_days(archive, key_fetcher, price_site, "r2")
-    assert summary["stored"] == 2 and summary["complete"] and summary["new_days"] == ["2026-11-16", "2026-11-17"]
+    assert summary["stored"] == 2 and summary["complete"] and new == [MON, TUE]
     assert again["asked"] == 0 and again["had_already"] == 2  # nothing is fetched twice
     assert waits == [13.0, 13.0] and len(price_site.hits) == 2
     rows = manifest(tmp_path)
@@ -144,23 +147,82 @@ def test_limit_and_keep_going_stop_before_the_next_request(price_site, tmp_path:
     assert none["asked"] == 0 and len(price_site.hits) == 1
 
 
-def test_a_recent_day_without_prices_is_asked_again_and_an_old_one_counts_as_a_holiday(
+def test_a_day_without_prices_is_settled_only_when_it_is_old_and_a_holiday_or_empty_twice(
     price_site, tmp_path: Path, key_fetcher
 ) -> None:
-    old = date(2026, 11, 11)
-    price_site.add("/day/2026-11-11", {"body": day_body(old, {})})
-    price_site.add("/day/2026-11-17", {"body": day_body(TUE, {})}, {"body": day_body(TUE)})
-    for day in (12, 13):
-        price_site.add(f"/day/2026-11-{day}", {"body": day_body(date(2026, 11, day))})
+    holiday, odd = date(2026, 9, 7), date(2026, 9, 9)  # Labor Day, and an ordinary Wednesday
+    for day in (holiday, odd, TUE):
+        price_site.add(f"/day/{day.isoformat()}", {"body": day_body(day, {})})
+    price_site.add("/day/2026-09-08", {"body": day_body(date(2026, 9, 8))})
     with Archive(tmp_path) as archive:
-        a = run_days(archive, key_fetcher, price_site, start=old, end=old)
-        b = run_days(archive, key_fetcher, price_site, "r2", start=TUE, end=TUE)
-        c = run_days(archive, key_fetcher, price_site, "r3", start=old, end=TUE, limit=5)
-    assert a["market_closed"] == 1 and b["no_prices_yet"] == 1 and b["stored"] == 0
-    assert massive.closed_days(manifest(tmp_path)) == {old}
-    # the holiday is not asked again; the recent day is, and now has prices (11-12, 13 and 16 are asked too)
-    assert "/day/2026-11-11?adjusted=false" not in price_site.hits[2:]
-    assert TUE in massive.stored_days(manifest(tmp_path)) and c["stored"] >= 1
+        first = run_days(archive, key_fetcher, price_site, start=holiday, end=holiday)
+        assert first["no_prices"] == 1 and first["complete"]  # a regular holiday: one empty answer settles it
+        one = run_days(archive, key_fetcher, price_site, "r2", start=odd, end=odd)
+        assert one["no_prices"] == 1 and not one["complete"]  # could be a hiccup of the service: asked once more
+        two = run_days(archive, key_fetcher, price_site, "r3", start=odd, end=odd)
+        assert two["asked"] == 1 and two["complete"]
+        assert run_days(archive, key_fetcher, price_site, "r4", start=holiday, end=odd)["asked"] == 1  # the 8th
+        recent = run_days(archive, key_fetcher, price_site, "r5", start=TUE, end=TUE)
+        again = run_days(archive, key_fetcher, price_site, "r6", start=TUE, end=TUE)
+        assert not recent["complete"] and again["asked"] == 1 and not again["complete"]  # yesterday: never settled
+        records = archive.records
+    assert massive.closed_days(records, TODAY) == {holiday, odd}
+    assert massive.unexpected_closed_days(records, TODAY) == [odd]
+    assert massive.closed_days(records, date(2026, 9, 10)) == set()  # too fresh to be settled
+
+
+def test_the_regular_market_holidays_are_worked_out_by_rule() -> None:
+    assert sorted(d.isoformat() for d in holidays.regular_holidays(2026)) == [
+        "2026-01-01",
+        "2026-01-19",
+        "2026-02-16",
+        "2026-04-03",
+        "2026-05-25",
+        "2026-06-19",
+        "2026-07-03",  # the 4th of July is a Saturday
+        "2026-09-07",
+        "2026-11-26",
+        "2026-12-25",
+    ]
+    assert date(2027, 12, 24) in holidays.regular_holidays(2027)  # Christmas on a Saturday
+    assert date(2021, 12, 31) not in holidays.regular_holidays(2022)  # New Year on a Saturday is not made up for
+    assert date(2023, 1, 2) in holidays.regular_holidays(2023)  # New Year on a Sunday
+
+
+def test_a_wrong_answer_for_one_day_does_not_block_the_days_after_it(price_site, tmp_path: Path, key_fetcher) -> None:
+    price_site.add("/day/2026-11-16", {"body": b"<html>odd</html>"})
+    price_site.add("/day/2026-11-13", {"status": 404, "body": b"gone"})
+    new: list[date] = []
+    with Archive(tmp_path) as archive:
+        with pytest.raises(SourceError, match="wrong answer for 2 day"):
+            run_days(archive, key_fetcher, price_site, start=date(2026, 11, 13), end=TUE, stored_now=new)
+        assert new == [TUE]  # the later day was stored, and the caller knows it although the run failed
+        notes = [r["meta"]["failed_day"] for r in archive.records if "failed_day" in (r.get("meta") or {})]
+    assert notes == ["2026-11-13", "2026-11-16"]
+
+
+def test_a_recent_day_with_far_too_few_shares_is_asked_again_and_an_old_one_is_stored_and_marked(
+    price_site, tmp_path: Path, key_fetcher
+) -> None:
+    full = {f"T{i:02d}": 5.0 for i in range(10)}
+    days = [date(2026, 11, d) for d in (9, 10, 11, 12, 13)]
+    for day in days:
+        price_site.add(f"/day/{day.isoformat()}", {"body": day_body(day, full)})
+    price_site.add("/day/2026-11-16", {"body": day_body(MON, {"T00": 5.0, "T01": 5.0})})
+    price_site.add(
+        "/day/2026-11-17", {"body": day_body(TUE, dict(list(full.items())[:7]))}, {"body": day_body(TUE, full)}
+    )
+    with Archive(tmp_path) as archive:
+        first = run_days(archive, key_fetcher, price_site, start=days[0], end=TUE)
+        assert first["stored"] == 5 and first["too_few_shares_asked_again_later"] == 2 and not first["complete"]
+        later = date(2026, 11, 25)  # MON is old by now: stored as it is, marked; TUE has filled up meanwhile
+        second = massive.run_days(
+            archive, key_fetcher, "r2", start=days[0], end=TUE, today=later, url=price_site.day_url
+        )
+        assert second["stored"] == 2 and second["complete"]
+        metas = {r["meta"]["day"]: r["meta"] for r in archive.records if r.get("kind") == "file"}
+    assert metas["2026-11-16"] == {"day": "2026-11-16", "shares": 2, "thin": True}
+    assert metas["2026-11-17"] == {"day": "2026-11-17", "shares": 10}
 
 
 def test_a_refusal_at_the_old_edge_of_the_history_is_noted_and_not_asked_again(
@@ -189,7 +251,7 @@ def test_a_refusal_at_the_old_edge_of_the_history_is_noted_and_not_asked_again(
 def test_a_wrong_answer_is_never_stored(price_site, tmp_path: Path, key_fetcher, body: bytes) -> None:
     price_site.add("/day/2026-11-16", {"body": body})
     with Archive(tmp_path) as archive, pytest.raises(SourceError):
-        run_days(archive, key_fetcher, price_site)
+        run_days(archive, key_fetcher, price_site, start=MON, end=MON)
     assert not (tmp_path / "raw").exists()
 
 
@@ -215,11 +277,29 @@ def test_a_next_page_on_another_host_or_with_a_key_in_it_is_not_fetched(
     price_site, tmp_path: Path, key_fetcher
 ) -> None:
     elsewhere = price_site.base.replace("127.0.0.1", "localhost")
-    for bad in (elsewhere + "/splits2", price_site.base + "/splits2?apiKey=x"):
+    for bad in (elsewhere + "/splits2", price_site.base + "/splits2?apiKey=x", price_site.base + f"/splits2?t={KEY}"):
         price_site.add("/splits", {"body": splits_body([], bad)})
         with Archive(tmp_path) as archive, pytest.raises((FetchError, SourceError)):
             massive.run_splits(archive, key_fetcher, "r1", start=MON, url=price_site.splits_url)
     assert all(h.startswith("/splits?") for h in price_site.hits)
+
+
+def test_the_real_fetcher_only_asks_encrypted_addresses(waits) -> None:
+    real = massive.massive_fetcher(KEY, sleep=waits.append)
+    assert real.https_only and real.allowed_hosts == {"api.massive.com"}
+    with pytest.raises(FetchError, match="encrypted"):
+        real.get("http://api.massive.com/stocks/v1/splits")  # refused before anything is sent
+
+
+def test_an_unchanged_split_list_is_read_from_the_lines_that_point_to_the_stored_pages(
+    price_site, tmp_path: Path, key_fetcher
+) -> None:
+    with Archive(tmp_path) as archive:
+        for run in ("r1", "r2"):
+            summary = massive.run_splits(archive, key_fetcher, run, start=MON, url=price_site.splits_url)
+            archive.record_run(massive.SPLITS_SOURCE, run, "ok", meta=summary)
+        assert sum(r["kind"] == "file" for r in archive.records) == 1  # the second run stored nothing new
+    assert [s.ticker for s in read.load_splits(Inputs(tmp_path))] == ["CCC"]
 
 
 @pytest.mark.parametrize("body", [b"[]", b'{"status":"OK","results":[{"ticker":"A"}]}', b'{"status":"OK","results":7}'])
@@ -285,10 +365,42 @@ def test_daily_command_stores_days_and_splits_and_writes_the_jump_list(command: 
     assert oct((command / "prices").stat().st_mode & 0o777) == "0o700"
 
 
-def test_backfill_with_a_limit_and_a_failing_day_reports_failure(command: Path, price_site, capsys) -> None:
+def test_daily_reports_failure_when_the_service_fails_but_still_checks_the_days_it_stored(
+    command: Path, price_site, capsys
+) -> None:
     price_site.add("/day/2026-11-17", {"status": 500, "body": b"oops"})
     assert cli.main(["daily"]) == 1
-    assert "FAILED  massive-daily" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "FAILED  massive-daily" in out and "ok      massive-splits" in out
+    assert "check: no day to compare" in out  # the one day that was stored went to the check
+    price_site.add("/day/2026-11-17", {"body": day_body(TUE, {"AAA": 11.0, "BBB": 1.0})})
+    assert cli.main(["daily"]) == 0
+    assert "1 day(s) compared, 1 closing prices moved" in capsys.readouterr().out
+
+
+def test_a_day_stored_late_also_gets_the_day_after_it_compared_again(command: Path, price_site, capsys) -> None:
+    price_site.add("/day/2026-11-16", {"status": 404}, {"body": day_body(MON)})
+    price_site.add("/day/2026-11-13", {"body": day_body(date(2026, 11, 13), {"AAA": 10.0, "BBB": 1.0})})
+    assert cli.main(["daily"]) == 1  # Friday and Tuesday stored, Monday failed
+    assert "1 day(s) compared, 0 closing" in capsys.readouterr().out  # Tuesday against Friday
+    assert cli.main(["daily"]) == 0  # Monday arrives: Monday and Tuesday are both compared
+    assert "2 day(s) compared, 2 closing" in capsys.readouterr().out
+
+
+def test_backfill_with_a_limit_stops_early_and_fetches_no_splits(command: Path, price_site, capsys) -> None:
+    price_site.add("/day/2024-11-18", {"body": day_body(date(2024, 11, 18))})
+    assert cli.main(["backfill", "--limit", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "'asked': 1" in out and "massive-splits" not in out
+
+
+def test_status_names_what_is_missing_and_check_takes_a_number_of_days(command: Path, price_site, capsys) -> None:
+    price_site.add("/day/2026-11-16", {"status": 404})
+    assert cli.main(["daily"]) == 1 and cli.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "days stored: 1, from 2026-11-17 to 2026-11-17" in out
+    assert cli.main(["check", "--days", "3"]) == 0
+    assert "no day to compare" in capsys.readouterr().out
 
 
 def test_without_a_key_no_request_is_sent(command: Path, price_site, monkeypatch, tmp_path: Path, capsys) -> None:
@@ -322,6 +434,24 @@ def test_purge_needs_its_flag_and_then_removes_only_the_prices_folder(command: P
     assert "raw/massive-daily/" in text and "10.0" not in text  # paths and fingerprints, no prices
     assert cli.main(["purge", "--yes-delete-everything"]) == 0
     assert "nothing to delete" in capsys.readouterr().out
+    assert [p.name for p in command.iterdir() if p.name.startswith(".prices")] == []
+
+
+def test_an_interrupted_purge_is_finished_by_running_it_again(command: Path, monkeypatch, capsys) -> None:
+    assert cli.main(["daily"]) == 0
+    real = purge.shutil.rmtree
+
+    def breaks(path, *args, **kwargs):
+        raise PermissionError("no")
+
+    monkeypatch.setattr(purge.shutil, "rmtree", breaks)
+    assert cli.main(["purge", "--yes-delete-everything"]) == 1
+    assert "run the purge again" in capsys.readouterr().out
+    assert not (command / "prices").exists()  # set aside in one step: a new download would start an empty folder
+    assert len(list(command.glob(".prices-purging-*"))) == 1
+    monkeypatch.setattr(purge.shutil, "rmtree", real)
+    assert cli.main(["purge", "--yes-delete-everything"]) == 0
+    assert list(command.glob(".prices-purging-*")) == []
 
 
 def test_purge_refuses_a_prices_folder_that_is_a_link_and_does_not_follow_links_inside(tmp_path: Path) -> None:
@@ -344,4 +474,4 @@ def test_purge_does_not_run_while_a_download_holds_the_lock(command: Path, capsy
     assert cli.main(["daily"]) == 0
     with Archive(command / "prices"):
         assert cli.main(["purge", "--yes-delete-everything"]) == 1
-    assert (command / "prices" / "manifest.jsonl").exists()
+    assert (command / "prices" / "manifest.jsonl").exists() and not (command / "purged").exists()
