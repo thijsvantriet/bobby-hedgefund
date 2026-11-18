@@ -6,7 +6,7 @@ a world index fund; docs/SPEC.md).
 
 **This is an experiment with paper money. Nothing here is investment advice, and no real money is traded.**
 
-**How far it is (2026-11):** only the research reports, the nightly data archive and the first data streams exist. There are no agents, no
+**How far it is (2026-11):** the research reports, the nightly data archive and the data streams the pilot needs exist. There are no agents, no
 portfolio and no results yet. The log below shows each step.
 
 ## Status
@@ -52,6 +52,12 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **stream 1: daily prices built** (`bobby-prices`, see "Daily prices" below; docs/decisions/0007, "Update 2026-11-18"). One request gives the whole US market for one day, with prices as they were traded; the file is stored as received, in a folder of its own with its own list of fingerprints, apart from the archive (the price service's terms require that everything can be deleted if the account ends). Also stored: the service's list of share splits. A morning timer fetches the last day, and each new day is compared with the day before. The one-time download of the two years the free plan offers was started the same day. Nothing from this folder is ever published.
 
+2026-11-18: **the price history is complete**: 501 trading days, 18 November 2024 to 17 November 2026, every file checked against its fingerprint. Found on the way: the service marks the newest day "delayed" for some hours; such a copy is stored with that mark and the final one is fetched later (docs/decisions/0007, "Update 2026-11-18").
+
+2026-11-18: **stream 0 finished up to the owner's check** (docs/decisions/0006, "Update 2026-11-18", with the counts of the first run). The SEC company files are complete (6,051 companies). Built and run: the candidate list (704 companies), the reported share counts from the SEC (`bobby-archive sec-shares`), the filter (`bobby-universe build`: **221 companies in the first universe**, the spec expected 150-250), the name matching with its review sheet (`bobby-universe match`: 311 suggested sponsor names for the owner to judge; nothing is accepted automatically), and the commands that take the owner's decisions over and build the linking table from them. **Waiting for the owner: the one-time check of the review sheet.** Six companies of the universe come in through the XBI fund only and are therefore not named publicly.
+
+2026-11-18: **stream 2: SEC filings built** (docs/decisions/0008, "Update 2026-11-18 (2)"). The nightly archive run now also fetches, for every company of the universe, its filing list and each new filing of the followed kinds since 1 September 2026, as received. A weekly cross-check against the SEC's own daily list of filings, and a reading step for the items of an event report and the lines of an insider trade. Our own small reader is used; edgartools was not tried and stays the candidate for the quarterly reports of stream 4.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -59,9 +65,11 @@ The plan is docs/SPEC.md ("Order of work"). In short:
 2. **Now:** build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
    matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
    (0007, 0008). Stream 0, parts 1 and 2 (the SEC company files, the candidate list and the sponsor
-   names) and stream 1 (daily prices) are built. Next: the candidate list on the complete SEC company files (add
-   the counts to record 0006, above all how many companies come in through the XBI fund only), then the filter,
-   the name matching, SEC filings (stream 2) and trial-record changes (stream 3).
+   names), stream 1 (daily prices), the filter, the name matching and stream 2 (SEC filings) are built.
+   **Next, for the owner:** fill in the review sheet of suggested matches (`linking/<date>_review.xlsx`, the
+   newest one; about 220 companies), then `bobby-universe decisions <sheet>` and `bobby-universe linking`
+   make the linking table. After that: the by-hand check of 20 companies for missed names, and record 0009 with
+   the agent files (step 3).
    Alongside: the historical study, limited to two weeks of work. Its AACT download is settled (0014): go ahead
    under the download rules written there; choose which monthly copies to fetch first (all of them do not fit on the disk).
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
@@ -202,7 +210,7 @@ by any of them. Downloaded so far (details and terms per source: docs/decisions/
 | [European Medicines Agency](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format) | Five data files on medicines | Reuse allowed with the source credited ([legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)) |
 | [Nasdaq Trader symbol directory](https://www.nasdaqtrader.com/Trader.aspx?id=SymbolDirDefs) | Lists of US-listed symbols | Copyright Nasdaq, Inc. One copy for personal, non-commercial use; the files are never passed on or published ([terms](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain)) |
 | [State Street, SPDR S&P Biotech ETF (XBI)](https://www.ssga.com/) | The fund's daily holdings file | Personal use only; the file is never passed on or published ([terms](https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions)) |
-| [U.S. Securities and Exchange Commission, EDGAR](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) | The ticker file and each listed company's filing list (from 2026-11-18) | Free for everyone; at most one request a second with a declared contact, as the SEC asks; the filings' own text belongs to the companies and is only summarised and linked, never republished at length (docs/decisions/0008) |
+| [U.S. Securities and Exchange Commission, EDGAR](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) | The ticker file and each listed company's filing list; reported share counts of candidate companies; filings of the universe's companies; the daily index of filings (from 2026-11-18) | Free for everyone; at most one request a second with a declared contact, as the SEC asks; the filings' own text belongs to the companies and is only summarised and linked, never republished at length (docs/decisions/0008) |
 | [Massive](https://massive.com/) (closed, commercial service; free plan) | Daily prices of all US shares, and the list of share splits (from 2026-11-18) | Personal use only. **Nothing from it is published, and nothing computed from it**: no price, no fund value, no return ([terms](https://massive.com/legal/market-data-terms-of-service); docs/decisions/0007). Everything saved is deleted within 30 days if the account ends. At most five requests a minute |
 
 Sources that were only read for the research are linked where they are used in `docs/research/`. Candidates for later

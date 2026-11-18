@@ -213,6 +213,32 @@ one wrong line refuses the whole sheet, with the line numbers. Names can never r
 fingerprint of the line before it, and a damaged file is refused, not continued. A changed decision is a new
 line with the number and fingerprint of the line it replaces.
 
+**A third share figure.** The first real run showed about ten mid-size companies falling out only because the
+service has neither share count for them (they report per share class). So a third figure is fetched: the
+average number of shares over the reported period, which nearly every company reports. It is used only when no
+count on a day is usable, and the line says so. It is an approximation: an average over a quarter, not a count.
+
+**First run, 2026-11-18** (counts only; the files are private):
+- Candidates: 704 companies of 6,051 with a stock-exchange listing. 547 through an industry code of our own,
+  150 through a code and the XBI fund, **7 through the XBI fund only**. 102 report as foreign companies and are
+  left out; none has an unknown way of reporting. Of the fund's 159 holdings, 157 were linked to a company; the 2
+  others are listed for a look by hand.
+- Universe: **221 companies**, inside the 150-250 the spec expected. How many companies fail each rule on size,
+  trading and price is in the private inputs file of the run, not here: those counts are computed from prices
+  (record 0007). Not from prices: 102 foreign filers; 25 companies without a usable share count (3 of them fail
+  on nothing else: young companies without a report yet); 19 companies run on the average figure; 7 lines carry
+  the "CHECK" note for a split between the count and its filing, and all 7 fail the filter on other rules anyway.
+- **XBI only (the open point of "Differs from the spec", 2):** 6 companies of the universe come in through the
+  XBI fund only, with yet another industry code. As decided there, they are not named publicly: the published
+  universe list and any published record must leave them out (record 0004, point 3) until the owner decides
+  otherwise.
+- Matching: 221 companies against 26,149 sponsor names gave 311 suggestions (228 strong, 22 core, 33 starts, 15
+  contains, 13 similar; 71 through a former name). 15 companies have no suggestion at all. Some of those run
+  no trials of their own (tools and services companies); for others the registry may class the sponsor as
+  something other than "industry", and then their trials are not in our archive at all. The by-hand check of
+  step 5 (`bobby-universe missed-check`) is the place to find out. The right and missed shares of step 5 are
+  added here after the owner's check.
+
 **Review.** A reviewer agent read the code before the pull request. Worked in, among others: the split rule
 above (the first version would have counted a split twice for a balance-sheet count), the completeness check,
 the ticker choice, the SEC's name tags, a stop when the share-count service answers "not found" many times in a
