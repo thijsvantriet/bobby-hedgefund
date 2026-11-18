@@ -1,0 +1,15 @@
+[Unit]
+Description=Bobby Hedgefund: daily prices at 07:30, and again at 12:30
+
+[Timer]
+# The price service has a day's prices after midnight New York time (06:00 or 07:00 here). The second run of the
+# day costs nothing when the first one got everything, and catches prices that came out late; both are before a
+# session can start its round (docs/decisions/0003: step 1 checks this download).
+OnCalendar=*-*-* 07:30:00
+OnCalendar=*-*-* 12:30:00
+RandomizedDelaySec=5min
+# Laptop off or asleep at that time: run as soon as it is back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
