@@ -230,6 +230,7 @@ from scratch each day; a half-built folder blocked the day for good; reports wer
 their day; a time without a zone crashed; a trial-change line was trusted as it stood; the list of tasks could
 be changed unnoticed.
 
+## Sources
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),
   [agent files](https://code.claude.com/docs/en/sub-agents.md), [hooks](https://code.claude.com/docs/en/hooks.md),
