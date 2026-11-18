@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 import http.client
 import time
 import urllib.error
 import urllib.request
 import zlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 # The client name sent with every request. Deliberately generic: no personal or project details (CLAUDE.md).
@@ -20,6 +21,10 @@ MAX_RETRY_AFTER = 300.0
 
 class FetchError(Exception):
     """A download failed for good (after retries, where retrying made sense)."""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status  # the HTTP status, when the publisher answered with one
 
 
 @dataclass(frozen=True)
@@ -53,21 +58,34 @@ def _gunzip_bounded(raw: bytes, limit: int) -> bytes:
 
 
 class _SafeRedirects(urllib.request.HTTPRedirectHandler):
-    """Follow redirects only to web addresses, and never from an encrypted address to an unencrypted one."""
+    """Follow redirects only to web addresses, and never from an encrypted address to an unencrypted one.
+
+    With `allowed_hosts`, a redirect to any other host is refused: the request headers travel along with a
+    redirect, and a header that declares who is asking must not reach a host it was not meant for."""
+
+    allowed_hosts: frozenset[str] | None = None
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
         old, new = urlsplit(req.full_url).scheme, urlsplit(newurl).scheme
         if new not in ("http", "https") or (old == "https" and new != "https"):
             raise urllib.error.HTTPError(newurl, code, f"refused redirect from {old} to {new}", headers, fp)
+        if self.allowed_hosts is not None and (urlsplit(newurl).hostname or "") not in self.allowed_hosts:
+            raise urllib.error.HTTPError(newurl, code, "refused redirect to another host", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-_OPENER = urllib.request.build_opener(_SafeRedirects)
+@functools.cache
+def _opener(allowed_hosts: frozenset[str] | None) -> urllib.request.OpenerDirector:
+    handler = _SafeRedirects()
+    handler.allowed_hosts = allowed_hosts
+    return urllib.request.build_opener(handler)
 
 
 @dataclass
 class Fetcher:
-    user_agent: str = DEFAULT_USER_AGENT
+    # Not shown when a fetcher is printed: for some publishers the client name carries a contact address.
+    user_agent: str = field(default=DEFAULT_USER_AGENT, repr=False)
+    allowed_hosts: frozenset[str] | None = None  # when set: only these hosts are asked, also after a redirect
     timeout: float = 120.0
     max_bytes: int = 300 * 1024 * 1024
     backoff: tuple[float, ...] = (5.0, 30.0, 90.0)  # waits before retry 1, 2, 3
@@ -78,6 +96,8 @@ class Fetcher:
         here: the caller comes back much later, because quick retries can keep a publisher's block alive."""
         if urlsplit(url).scheme not in ("http", "https"):
             raise FetchError(f"only http(s) addresses are fetched, not {url!r}")
+        if self.allowed_hosts is not None and (urlsplit(url).hostname or "") not in self.allowed_hosts:
+            raise FetchError(f"{url}: this host is not on the list this fetcher may ask")
         attempt = 0
         while True:
             try:
@@ -99,7 +119,7 @@ class Fetcher:
             url, headers={"User-Agent": self.user_agent, "Accept": "*/*", "Accept-Encoding": "gzip"}
         )
         try:
-            with _OPENER.open(request, timeout=self.timeout) as resp:
+            with _opener(self.allowed_hosts).open(request, timeout=self.timeout) as resp:
                 status = resp.status
                 headers = {k.lower(): v for k, v in resp.headers.items()}
                 final_url = resp.geturl()
@@ -108,7 +128,7 @@ class Fetcher:
             if exc.code in RETRY_STATUS:
                 waiting = _retry_after(exc.headers.get("Retry-After"))
                 raise _Retryable(f"HTTP {exc.code}", waiting, refused=exc.code == 429) from None
-            raise FetchError(f"{url}: HTTP {exc.code}") from None
+            raise FetchError(f"{url}: HTTP {exc.code}", status=exc.code) from None
         except (OSError, http.client.HTTPException) as exc:
             # OSError covers network errors, time-outs and TLS errors; HTTPException covers broken responses
             raise _Retryable(f"{type(exc).__name__}: {exc}", None) from None

@@ -1,15 +1,17 @@
-"""Command line for the day-1 archive: `bobby-archive run | baseline | verify | status`."""
+"""Command line for the archive: `bobby-archive run | baseline | sec-companies | verify | status`."""
 
 from __future__ import annotations
 
 import argparse
 import os
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import sources
+from .. import settings
+from . import sec, sources
 from .fetch import DEFAULT_USER_AGENT, Fetcher, FetchError
 from .store import Archive, ArchiveError, Busy, new_run_id, read_records
 
@@ -25,6 +27,11 @@ def archive_root() -> Path:
 
 def make_fetcher() -> Fetcher:
     return Fetcher(user_agent=os.environ.get("BOBBY_USER_AGENT") or DEFAULT_USER_AGENT)
+
+
+def make_sec_fetcher() -> Fetcher:
+    # Raises SettingsError when the contact address is missing: no request is ever sent without it (record 0008).
+    return sec.sec_fetcher(settings.sec_contact())
 
 
 def _attempt(archive: Archive, source: str, run: str, job: Callable[[], dict[str, Any]]) -> bool:
@@ -86,6 +93,52 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+# The company files take hours and hold the archive's lock. The nightly run starts at 23:30 and must get the lock:
+# no new request after this local time; the batch is then finished the next day with --resume.
+SEC_LAST_REQUEST = (22, 30)
+
+
+def _before_evening(now: Callable[[], time.struct_time] = time.localtime) -> bool:
+    return (now().tm_hour, now().tm_min) < SEC_LAST_REQUEST
+
+
+def _at_least_one(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return value
+
+
+def cmd_sec_companies(args: argparse.Namespace) -> int:
+    if not _before_evening():
+        print("NOT RUN: too close to the nightly run; start it during the day")
+        return 1
+    try:
+        fetcher = make_sec_fetcher()
+    except settings.SettingsError as exc:
+        print(f"NOT RUN: {exc}")
+        return 1
+    run = new_run_id()
+    with Archive(archive_root()) as archive:
+        ok = _attempt(
+            archive,
+            sec.SEC_SOURCE,
+            run,
+            lambda: sec.run_sec_companies(
+                archive,
+                fetcher,
+                run,
+                tickers_url=sec.SEC_TICKERS_URL,
+                submissions_url=sec.SEC_SUBMISSIONS_URL,
+                resume=args.resume,
+                new=args.new,
+                limit=args.limit,
+                keep_going=_before_evening,
+            ),
+        )
+    return 0 if ok else 1
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     with Archive(archive_root(), readonly=True) as archive:
         report = archive.verify(quick=args.quick)
@@ -110,7 +163,7 @@ def cmd_status(_: argparse.Namespace) -> int:
     stored: dict[str, int] = {}
     for rec in records:
         source = str(rec.get("source"))
-        if rec.get("kind") == "run":
+        if rec.get("kind") == "run" and rec.get("status") != "note":  # a note is a remark inside a run
             last[source] = rec
             if rec.get("status") in ("ok", "skip"):
                 last_ok[source] = str(rec.get("ts"))
@@ -147,6 +200,14 @@ def main(argv: list[str] | None = None) -> int:
     p_base = sub.add_parser("baseline", help="one-time full copy of company-linked trial records (large)")
     p_base.add_argument("--resume", action="store_true", help="continue an interrupted baseline")
     p_base.set_defaults(func=cmd_baseline)
+    p_sec = sub.add_parser(
+        "sec-companies", help="SEC ticker file and the filing list of every listed company (monthly, by hand; hours)"
+    )
+    p_sec_how = p_sec.add_mutually_exclusive_group()
+    p_sec_how.add_argument("--resume", action="store_true", help="continue an interrupted or limited batch")
+    p_sec_how.add_argument("--new", action="store_true", help="start a fresh batch although one is unfinished")
+    p_sec.add_argument("--limit", type=_at_least_one, metavar="N", help="stop after N companies (for a first try)")
+    p_sec.set_defaults(func=cmd_sec_companies)
     p_verify = sub.add_parser("verify", help="check every stored file against the manifest; writes nothing")
     p_verify.add_argument("--quick", action="store_true", help="check the manifest and file sizes only")
     p_verify.set_defaults(func=cmd_verify)
