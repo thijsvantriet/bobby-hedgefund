@@ -33,13 +33,24 @@ class Task:
     file: str  # relative to the session folder
     written: str
     run: int | None = None
+    # Only for a try-out in the session that has just created the agent files (Claude Code loads a new agents
+    # folder after a restart): the general agent, model and effort the task must then be started with. The
+    # task file then also holds the role's instructions.
+    stand_in: dict[str, str] | None = None
 
     def prompt(self, session_dir: Path) -> str:
         """The one sentence the agent is started with. Nothing else may be added to it."""
         return f"Read the file {session_dir / self.file} and do exactly what it says."
 
 
-def write(session_dir: Path, task: str, agent: str, text: str, run: int | None = None) -> Task:
+def write(
+    session_dir: Path,
+    task: str,
+    agent: str,
+    text: str,
+    run: int | None = None,
+    stand_in: dict[str, str] | None = None,
+) -> Task:
     """Write one task file (never over an existing one) and note its fingerprint in the index."""
     if not _SAFE.match(task) or not _SAFE.match(agent):
         raise TaskError(f"not a usable task or agent name: {task!r}, {agent!r}")
@@ -47,7 +58,8 @@ def write(session_dir: Path, task: str, agent: str, text: str, run: int | None =
     path = folder / f"{task}.md"
     body = text if text.endswith("\n") else text + "\n"
     write_new(path, body)  # read-only once written
-    made = Task(task, agent, sha256_hex(body.encode("utf-8")), f"{FOLDER}/{task}.md", iso(utcnow()), run)
+    digest = sha256_hex(body.encode("utf-8"))
+    made = Task(task, agent, digest, f"{FOLDER}/{task}.md", iso(utcnow()), run, stand_in)
     line = json.dumps(made.__dict__, sort_keys=True) + "\n"
     with open(folder / INDEX, "a", encoding="utf-8") as fh:
         fh.write(line)
