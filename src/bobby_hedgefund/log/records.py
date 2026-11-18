@@ -138,6 +138,12 @@ def exactly(wanted: tuple[str, ...]) -> Check:
     return check
 
 
+def link(value: Any, where: str) -> None:
+    """A link to a public page: https, no spaces, and nothing after a question mark (that is where keys sit)."""
+    if not isinstance(value, str) or not re.match(r"^https://[^\s?#]{4,480}$", value):
+        _fail(where, "must be a plain https link, without a question mark")
+
+
 def maybe(inner: Check) -> Check:
     def check(value: Any, where: str) -> None:
         if value is not None:
@@ -210,7 +216,7 @@ def sealable(inner: Check) -> Check:
 COMPANY = fields({"cik": whole(1), "name": text(200)}, {"ticker": text(12)})
 SOURCE = fields(
     {"n": whole(1), "source": text(200), "summary": text(600)},
-    {"date": maybe(day), "link": maybe(text(500))},
+    {"date": maybe(day), "link": maybe(link)},
 )
 AGENT = fields(
     {
@@ -223,7 +229,12 @@ AGENT = fields(
     },
     {"file_model": text(80), "file_effort": text(20), "substituted": yes_no, "run": whole(1), "stand_in": yes_no},
 )
-NUMBER = fields({"label": text(200), "value": sealable(text(200))}, {"source": maybe(whole(1))})
+# A number in a thesis is filled in by a script, which says where it comes from. One that comes from prices must
+# be sealed; a forgotten seal is refused (docs/decisions/0007, point 6).
+NUMBER_BASIS = ("filing", "trial registry", "our count", "price")
+NUMBER = fields(
+    {"label": text(200), "value": sealable(text(200)), "basis": one_of(*NUMBER_BASIS)}, {"source": maybe(whole(1))}
+)
 THESIS = fields(
     {
         "claim": text(1500),
@@ -241,7 +252,11 @@ RUN = fields(
     {"action": one_of(*ACTIONS), "size_pct": maybe(pct), "model": text(80)},
 )
 CODE = fields({"commit": text(64), "claude_code": text(40)}, {"branch": text(200)})
-COMMON = {"dry_run": text(300), "note": text(2000), "removed": many(sealed("quote", "money", "price", "secret"))}
+COMMON = {
+    "dry_run": text(300),
+    "note": text(2000),
+    "removed": many(sealed("quote", "money", "price", "secret", "other")),
+}
 
 
 def _kind(required: dict[str, Check], optional: dict[str, Check] | None = None) -> Check:
@@ -358,7 +373,7 @@ KINDS: dict[str, Check] = {
             "summary": text(1000),
             "sources": many(SOURCE, 0, 20),
         },
-        {"agent": AGENT, "brier": text(12)},
+        {"agent": AGENT},
     ),
     "correction": _kind({"ref": whole(1), "text": text(3000)}),
     "restart": _kind({"session_day": day, "first_start": moment, "reason": text(600)}),
@@ -366,7 +381,7 @@ KINDS: dict[str, Check] = {
     "refusal": _kind({"when": moment, "reason": text(600)}),
     "company_event": _kind(
         {"company": COMPANY, "event": one_of(*COMPANY_EVENTS), "effective": day, "checked_against_filing": yes_no},
-        {"filing": maybe(text(500)), "terms": sealed("price", "other"), "booked": sealed("price")},
+        {"filing": maybe(link), "terms": sealed("price", "other"), "booked": sealed("price")},
     ),
     "dice_seed": _kind({"seed": hex64, "rule_version": text(40), "funds": whole(1), "per_fund": whole(1)}),
     "dice_draw": _kind(
@@ -400,8 +415,42 @@ def _decision_rules(body: dict[str, Any]) -> None:
         if action in ("reduce", "sell") and "reason" not in body and "thesis" not in body:
             _fail("decision", f"'{action}' must say why")
 
+    for i, number in enumerate((body.get("thesis") or {}).get("numbers") or []):
+        if (
+            number["basis"] == "price"
+            and not isinstance(number["value"], Sealed)
+            and not is_sealed_form(number["value"])
+        ):
+            _fail(f"decision/thesis/numbers/{i}", "a number that comes from prices must be sealed")
+
 
 RULES: dict[str, Callable[[dict[str, Any]], None]] = {"decision": _decision_rules}
+
+# A field that points to an earlier record, and the kinds that record may have (None: any kind).
+REFERENCES: dict[str, tuple[tuple[str, tuple[str, ...] | None], ...]] = {
+    "outcome": (("ref", ("forecast",)),),
+    "fill": (("ref", ("decision",)),),
+    "order_refused": (("ref", ("decision",)),),
+    "order_reduced": (("ref", ("decision",)),),
+    "order_closed": (("ref", ("decision",)), ("by", ("decision",))),
+    "correction": (("ref", None),),
+    "decision": (("draw", ("dice_draw", "rules_draw")),),
+    "dice_draw": (("seed_ref", ("dice_seed",)),),
+}
+
+
+def check_references(kind: str, body: dict[str, Any], kinds: dict[int, str]) -> None:
+    """Every pointer to an earlier record must point to a record that exists and is of the right kind. `kinds`:
+    the kind of every record written so far, by its number. A wrong pointer could never be put right afterwards."""
+    for name, allowed in REFERENCES.get(kind, ()):
+        ref = body.get(name)
+        if ref is None:
+            continue
+        found = kinds.get(ref)
+        if found is None:
+            _fail(f"{kind}/{name}", f"points to record {ref}, which does not exist (yet)")
+        elif allowed is not None and found not in allowed:
+            _fail(f"{kind}/{name}", f"points to record {ref}, which is a {found}, not a {' or '.join(allowed)}")
 
 
 def validate(kind: str, body: Any) -> None:

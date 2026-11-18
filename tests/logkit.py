@@ -57,8 +57,8 @@ def thesis() -> dict[str, Any]:
         "catalyst_date": "2027-05-01",
         "probability": "60%",
         "numbers": [
-            {"label": "months of cash", "value": "22"},
-            {"label": "market value against cash", "value": Sealed("1.8", "price")},
+            {"label": "months of cash", "value": "22", "basis": "filing"},
+            {"label": "market value against cash", "value": Sealed("1.8", "price"), "basis": "price"},
         ],
         "risks": "The patient group is small.",
         "sell_if": "The main goal is missed, or the result is delayed past June.",

@@ -17,21 +17,21 @@ of that commit then stands in for the time GitHub received the publication.
 
 from __future__ import annotations
 
+import fcntl
 import os
-import re
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 from .. import paths
-from .store import HEAD, LOG, Log
+from .private import PrivateNames
+from .store import HEAD, LOCK, LOG, Log
 
 TRACK = "track-record"
 GROWS = ("forecasts.csv",)
 COMMIT_PREFIX = "Track record: "
 PILOT_REPO = "track-record-repo"
-PRIVATE_NAMES = "private-names.tsv"
 
 
 class PublishError(Exception):
@@ -42,13 +42,6 @@ class PublishError(Exception):
 class Change:
     path: str  # relative to track-record/
     kind: str  # "new", "grown", "head" or "same"
-
-
-@dataclass(frozen=True)
-class PrivateCompany:
-    cik: int
-    ticker: str
-    name: str
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
@@ -105,63 +98,14 @@ def plan(staging: Path, target: Path) -> list[Change]:
     return changes
 
 
-def load_private_names(path: Path) -> list[PrivateCompany]:
-    """The companies that may not be named in public: one line each, SEC number, ticker and name with tabs
-    between. The file is private and is written by the session preparation."""
-    if not path.exists():
-        raise PublishError(
-            f"the private list {path.name} is missing: without it nothing that names a company is published"
-        )
-    out: list[PrivateCompany] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip() or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) != 3 or not parts[0].isdigit():
-            raise PublishError(f"{path.name}: a line that is not 'number, ticker, name'")
-        out.append(PrivateCompany(int(parts[0]), parts[1].strip(), parts[2].strip()))
-    return out
-
-
-_SUFFIX = re.compile(
-    r"[\s,]+(?:inc|corp|corporation|co|company|ltd|limited|plc|llc|lp|sa|nv|ag|holdings?|group)\.?$", re.IGNORECASE
-)
-
-
-def named(text: str, companies: list[PrivateCompany]) -> list[int]:
-    """The numbers (1, 2, ...) of the private companies that `text` names: by SEC number, by ticker as a word of
-    capitals, or by name (also without an ending such as Inc or Corp)."""
-    hits: list[int] = []
-    for n, company in enumerate(companies, start=1):
-        patterns: list[tuple[str, int]] = [
-            (rf'"cik":\s*{company.cik}\b', 0),
-            (rf"\bCIK\s*0*{company.cik}\b", re.IGNORECASE),
-            (rf"(?<!\d){company.cik:010d}(?!\d)", 0),
-        ]
-        if company.ticker:
-            patterns.append((rf"(?<![A-Za-z0-9.]){re.escape(company.ticker)}(?![A-Za-z0-9])", 0))
-        name = company.name
-        for _ in range(3):  # "X Holdings, Inc." is also named by "X Holdings" and by "X"
-            shorter = _SUFFIX.sub("", name)
-            if shorter == name:
-                break
-            name = shorter
-        if len(name) >= 4:
-            words = r"[\s,.\-]+".join(re.escape(w) for w in name.split())
-            patterns.append((rf"(?<![A-Za-z0-9]){words}(?![A-Za-z0-9])", re.IGNORECASE))
-        if any(re.search(pattern, text, flags) for pattern, flags in patterns):
-            hits.append(n)
-    return hits
-
-
-def _check_private(staging: Path, target: Path, changes: list[Change], companies: list[PrivateCompany]) -> None:
+def _check_private(staging: Path, target: Path, changes: list[Change], companies: PrivateNames) -> None:
     for change in changes:
         if change.kind == "same":
             continue
         fresh = (staging / change.path).read_bytes()
         if change.kind == "grown":
             fresh = fresh[len((target / change.path).read_bytes()) :]
-        hits = named(fresh.decode("utf-8", errors="replace"), companies)
+        hits = companies.named(fresh.decode("utf-8", errors="replace"))
         if hits:
             raise PublishError(
                 f"{change.path} names a company that may not be named in public (number {hits[0]} of the private "
@@ -245,19 +189,37 @@ def publish(
     mode: str,
     day: date,
     *,
-    private_names: list[PrivateCompany],
+    private_names: PrivateNames,
     push: bool = False,
 ) -> tuple[str | None, list[Change]]:
     """Place the prepared files in `track-record/` and make the day's one commit. Returns the commit (None when
-    there was nothing new) and what changed. On any refusal `track-record/` is left as it was."""
+    there was nothing new) and what changed. On any refusal `track-record/` is left as it was. The log's lock is
+    held meanwhile, so nothing can be added between the check and the copy."""
     if push and mode != paths.LIVE:
         raise PublishError("the pilot is never sent to GitHub")
+    staging.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lock = os.open(staging / LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise PublishError("another program is writing the log right now; nothing was published") from None
+        return _publish(staging, repo, mode, day, private_names, push)
+    finally:
+        os.close(lock)
+
+
+def _publish(
+    staging: Path, repo: Path, mode: str, day: date, private_names: PrivateNames, push: bool
+) -> tuple[str | None, list[Change]]:
     report = Log(staging, None, mode).verify(check_private=False)
     if report.problems:
         raise PublishError(f"the prepared log does not pass its check ({report.problems[0]}); nothing was published")
     top = _git(repo, "rev-parse", "--show-toplevel").strip()
     if Path(top).resolve() != repo.resolve():
-        raise PublishError(f"{repo} is not the top folder of a git repository")
+        raise PublishError("the folder to publish in is not the top folder of a git repository")
+    if push:
+        unsent(repo)  # raises when main holds a commit that is not a publication: that must never be sent along
     branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
     born = _git(repo, "rev-parse", "--verify", "-q", "HEAD", check=False).strip() != ""
     if born and branch != "main":
@@ -288,9 +250,11 @@ def publish(
             if allowed.get(name) == "grown" and removed != "0":
                 raise PublishError(f"{name}: a published line would be removed; nothing was published")
         _git(repo, "commit", "-q", "-m", f"{COMMIT_PREFIX}{day.isoformat()}")
-    except PublishError:
+    except Exception as exc:  # also a full disk in the middle of the copy: track-record/ goes back as it was
         tidy(repo)
-        raise
+        if isinstance(exc, PublishError):
+            raise
+        raise PublishError(f"publishing failed half-way ({type(exc).__name__}); track-record/ was put back") from exc
     commit = _git(repo, "rev-parse", "HEAD").strip()
     if push:
         send(repo)

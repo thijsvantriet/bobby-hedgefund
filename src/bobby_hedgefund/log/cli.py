@@ -8,13 +8,22 @@ from datetime import date
 from pathlib import Path
 
 from .. import paths
-from . import canon, publish
+from . import canon, private, publish
 from .seal import sealed_fields
 from .store import HEAD, START, Log, LogError, _write_head, day_files, read_entries
 
 
 def _mode(args: argparse.Namespace) -> str:
     return paths.check_mode(paths.LIVE if args.live else paths.PILOT)
+
+
+def _shown(path: Path) -> str:
+    """A path as it is printed: from the data folder on, so that the home folder never ends up in a message that
+    is pasted somewhere."""
+    try:
+        return "<data folder>/" + path.resolve().relative_to(paths.data_dir().resolve()).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _log_of_copy(folder: Path) -> Log:
@@ -33,7 +42,7 @@ def _log_of_copy(folder: Path) -> Log:
 def cmd_verify(args: argparse.Namespace) -> int:
     log = _log_of_copy(Path(args.dir)) if args.dir else Log.for_mode(_mode(args))
     report = log.verify(check_private=not args.dir)
-    print(f"log: {log.staging} ({log.mode})")
+    print(f"log: {_shown(log.staging)} ({log.mode})")
     print(f"records: {report.records} in {report.files} day file(s)")
     if report.head:
         print(f"newest fingerprint: {report.head}")
@@ -82,7 +91,7 @@ def cmd_head(args: argparse.Namespace) -> int:
     print(f"records: {len(entries)}\nnewest fingerprint: {newest}")
     if args.rewrite:
         _write_head(log.staging, len(entries), newest)
-        print(f"written: {log.staging / HEAD} (from the chain as it stands)")
+        print(f"written: {_shown(log.staging / HEAD)} (from the chain as it stands)")
     return 0
 
 
@@ -107,7 +116,7 @@ def _repo(mode: str) -> Path:
 def cmd_day(args: argparse.Namespace) -> int:
     mode = _mode(args)
     root = paths.mode_root(mode)
-    names = publish.load_private_names(root / publish.PRIVATE_NAMES)
+    names = private.PrivateNames(private.load(root / private.FILE))
     day = date.fromisoformat(args.day)
     repo = _repo(mode)
     commit, changes = publish.publish(
@@ -116,7 +125,7 @@ def cmd_day(args: argparse.Namespace) -> int:
     if commit is None:
         print("nothing new to publish")
         return 0
-    print(f"published: {sum(c.kind != 'same' for c in changes)} file(s), commit {commit[:12]} in {repo}")
+    print(f"published: {sum(c.kind != 'same' for c in changes)} file(s), commit {commit[:12]} in {_shown(repo)}")
     if mode == paths.PILOT:
         print("pilot: committed on this machine only, nothing was sent")
         print(f"commit time (stands in for the time GitHub received it): {publish.commit_time(repo).isoformat()}")
@@ -164,8 +173,11 @@ def _run(parser: argparse.ArgumentParser, argv: list[str] | None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.func(args))
-    except (LogError, publish.PublishError, paths.ModeError, canon.CanonError, OSError, ValueError) as exc:
+    except (LogError, publish.PublishError, private.PrivateError, paths.ModeError, canon.CanonError, ValueError) as exc:
         print(f"NOT DONE: {exc}")
+        return 1
+    except OSError as exc:  # its own text can hold a full path, with the home folder in it
+        print(f"NOT DONE: a file could not be read or written ({type(exc).__name__})")
         return 1
 
 

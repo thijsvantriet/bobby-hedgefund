@@ -197,17 +197,27 @@ Commands: `bobby-log verify | show | head`, `bobby-publish plan | day` (README, 
   fixed form; one random value per field. The private file is safely on disk before the public line is written.
   A private file left by a crash before its line was written is set aside under another name, not used again.
 - **A written line is final.** After a crash the next writer adds lines. `HEAD` can then be one record behind,
-  which `verify` reports as harmless and the next writer repairs; anything else (`HEAD` ahead, further behind,
-  missing, or not matching) is reported as damage and stops writing.
+  which `verify` reports as harmless and the next writer repairs (a missing `HEAD` counts as that only while the
+  log has a single record); anything else (`HEAD` ahead, further behind, missing, or not matching) is reported as
+  damage and stops writing. Writing a record either fails before the public line exists, or succeeds: once the
+  line is on disk nothing can make the writer report a failure, so trying again can never write a decision twice.
+  The first line of a new day is written under another name and gets its real name in one step.
+- **Pointers are checked when a record is written**, and again by `verify`: an outcome must point to a forecast,
+  a fill or a closed order to a decision, a draw to the starting number. A wrong pointer could never be put
+  right afterwards.
 - **Record kinds**, each with a checked form (`src/bobby_hedgefund/log/records.py`): start of the funds, session
   start, forecast, decision, no decision, refused order, reduced order, fill, closed order (lapsed, replaced,
   cancelled by the brake, too small), outcome, correction, restart, stop file, refused start, company event, the
   Dice starting number, a Dice draw, a Rules draw. A "reveal" record (point 2) is not built: after the price
   service's answer (record 0007) nothing may be revealed.
-- **Checks on written text** before a line is written, with the limits of record 0009, point 5: a long quote and a
-  key, an e-mail address or a path of the home folder become "[removed]"; a sentence about a price or worked out
-  from one, and an amount of money that no filing among the session's inputs states, become "[sealed]". Keys and
-  addresses are kept nowhere. The patterns can miss an unusual wording.
+- **Checks on written text**, done by the writer itself for every record, so that no script can forget them,
+  with the limits of record 0009, point 5: a long quote, a key, an e-mail address, a path of the home folder and
+  the name of a company from the private list of record 0006 become "[removed]"; a sentence about a price, an
+  index fund or something worked out from a price, and an amount of money that no filing among the session's
+  inputs states (within 5%, so that a rounded figure counts), become "[sealed]". Keys and addresses are kept
+  nowhere. Where such content sits in a field that is not free text it cannot be cut out, and the record is
+  refused. A number in a thesis says where it comes from, and one that comes from prices is refused unless it is
+  sealed. A link must be a plain https link without a question mark. The patterns can miss an unusual wording.
 - **Publishing** refuses: anything outside `track-record/`, a changed or shortened published file, a link, a
   repository with uncommitted changes or on another branch, a prepared log that fails its own check, and any new
   content that names a company from the private list of record 0006 (reported by its number in that list, never
@@ -218,9 +228,16 @@ Commands: `bobby-log verify | show | head`, `bobby-publish plan | day` (README, 
 - **Known snag before the first real publication:** the check the owner's machine runs on every commit treats
   `.jsonl` and `.csv` files as data files; it needs an exception for `track-record/`.
 - The deletion command for prices (record 0007, point 4) now also removes the private half of the log, the fund
-  books, the session folders, the reports and the saved conversations, and leaves a marker for `verify`.
+  books, the session folders, the reports and the saved conversations, and leaves a marker for `verify`. The
+  marker names the newest record at that moment: private content that goes missing later is damage again.
 
-**Review.** A reviewer agent read the code before the pull request; its findings are listed in the pull request.
+**Review.** A reviewer agent (Opus) read the code before the pull request and said "fix first". Worked in: a
+failed write of `HEAD` after the line could make a caller write a decision twice; a failed first write of a day
+left an empty file that blocked the log; pointers were not checked; the check for company names missed the short
+forms people use ("X" for "X Therapeutics, Inc.") and took common abbreviations for tickers; the text check
+missed wordings such as "shares have run 60%", "3x upside", "the market is pricing in" and index funds, split
+sentences at "approx.", and was not called by the writer itself; publishing for real could have sent an
+unrelated commit on `main` along; messages could show a value or a path of the home folder.
 
 ## Sources
 Read on 2026-11-17.
