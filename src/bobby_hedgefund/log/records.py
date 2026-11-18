@@ -328,6 +328,8 @@ KINDS: dict[str, Check] = {
             "runs": many(RUN, 0, 3),
             "agreed": yes_no,
             "from_run": whole(1),
+            # what the three runs said about companies that got no order today
+            "not_taken": many(fields({"company": COMPANY, "runs": many(RUN, 0, 3)}), 0, 60),
             "code": CODE,
             "draw": whole(1),  # Rules and Dice: the record of the draw this order follows from
         },

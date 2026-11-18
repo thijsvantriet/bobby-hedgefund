@@ -246,7 +246,30 @@ Commands: `/bobbyhedgefund-day` and `bobby-session` (README, "The daily round").
   next one; the fingerprint of the complete copy goes into that round's first record.
 - **Not built in this step:** the real round (it refuses: only the pilot runs), reading GitHub's receipt time,
   the weekly summary, the monthly letter and the monthly re-run of the universe. The weekly check on the
-  screening has its agent file but no step yet.
+  screening has its agent file but no step yet. The model fallback of record 0009 (one new start on the next
+  model down) has its check but no command that allows it yet: when a model cannot be used, that task has no
+  answer, which for a portfolio manager means "no decision today".
+
+**Review.** A reviewer agent (Opus) tried the code with made-up cases and said "fix first". Worked in, each
+with a test:
+- a round that was published but whose last step never ran (terminal closed, the marker run out) no longer
+  stops the books of the next day: the next round reads the publication itself, and `bobby-session end` ends
+  such a round also without its marker;
+- the day's records are written once: a second `decide` after a failure halfway is refused, because a record
+  in the log is final; and nothing is decided while a manager's answer may still come;
+- a message sent to a running agent is now counted in the two forms Claude Code really stores it in (the test
+  used a third form that does not occur);
+- after the one restart no task is handed out twice: tasks of the session that broke off get the result "broke
+  off", and a step that is asked again names the same tasks;
+- a debate ends when one side gave no readable case;
+- a start that stopped before the session folder was made is carried on with its first times and does not use
+  up the restart; every refusal is noted, whatever caused it; the day's first record is written on a restart
+  when the first start never wrote it;
+- a second session cannot take a round over while the first one's records changed in the last two minutes;
+- a finished copy of a conversation is never made again, and the session that broke off is copied too;
+- the usage per role counts every agent run of the session, also late ones;
+- the leading session no longer waits by itself: the collecting command waits, and stops at the step's time;
+- the log now also holds what each of the three runs said about a company that got no order.
 
 ## Sources
 Read on 2026-11-17 unless noted.

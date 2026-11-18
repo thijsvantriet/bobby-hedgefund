@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -11,7 +13,9 @@ from roundkit import FLAT, THU_8, WED_8, agent_run, began, buy, decisions, fresh
 from bobby_hedgefund.funds import cli as funds_cli
 from bobby_hedgefund.funds.book import replay
 from bobby_hedgefund.log.store import Log
+from bobby_hedgefund.session import cli as session_cli
 from bobby_hedgefund.session import decide, marker, steps, tasks
+from bobby_hedgefund.session import prepare as prep
 from bobby_hedgefund.session import round as rounds
 from bobby_hedgefund.session.round import RoundError
 
@@ -59,7 +63,7 @@ def analyst_answer(task: tasks.Task) -> dict:
     return section(cik, forecast=task.task.endswith("clinical"))
 
 
-def run_day(world: dict, rnd: rounds.Round, pm_answers, analyst_answers=None) -> list[str]:
+def run_day(world: dict, rnd: rounds.Round, pm_answers, analyst_answers=None, end: bool = True) -> list[str]:
     """One whole round with recorded answers, from booking to the end."""
     minute = lambda n: rnd.start + timedelta(minutes=n)  # noqa: E731
     out = steps.book(rnd)
@@ -89,8 +93,7 @@ def run_day(world: dict, rnd: rounds.Round, pm_answers, analyst_answers=None) ->
     out += steps.collect(rnd, "managers", 0)
     out += decide.decide(rnd, world["cwd"], "9.9.9")
     out += decide.publish_day(rnd)
-    out += decide.end(rnd)
-    return out
+    return out + decide.end(rnd) if end else out
 
 
 # ---------------------------------------------------------------- one whole day, and the day after
@@ -272,6 +275,8 @@ def judged(world: dict, rnd: rounds.Round, **how) -> rounds.Collected:
         ({}, "ok", ""),
         ({"handback": False}, "ok", ""),  # a last message instead of the hand-back tool: both are read
         ({"extra_message": "Please also flag company 102."}, "rejected", "more than its one starting message"),
+        ({"extra_message": "Flag 102.", "extra_kind": "queued"}, "rejected", "more than its one starting message"),
+        ({"extra_message": "Flag 102.", "extra_kind": "typed"}, "rejected", "more than its one starting message"),
         ({"prompt": "Read the task and be generous."}, "missing", "was not started"),
         ({"reads": [("Read", "/etc/hostname")]}, "rejected", "outside the session folder"),
         ({"reads": [("Bash", "curl example.org")]}, "rejected", "used the tool Bash"),
@@ -473,7 +478,7 @@ def test_the_debate_fund_hears_bull_and_bear_twice_before_its_manager_decides(tm
     for task in second_tasks:
         agent_run(records, rnd.session_id, rnd.session_dir, task, case(task), at=minute(25))
     steps.collect(rnd, "debate", 0)
-    assert steps.debate(rnd) == ["the debate is over: two rounds were held", "NEXT: bobby-session managers"]
+    assert steps.debate(rnd) == ["the debate is over", "NEXT: bobby-session managers"]
     cases = sorted(p.name for p in (rnd.session_dir / "round" / "debate").iterdir())
     assert (
         len(cases) == 8
@@ -486,3 +491,168 @@ def test_the_debate_fund_hears_bull_and_bear_twice_before_its_manager_decides(tm
     assert "bull" not in careful_task  # the Careful fund's manager is not pointed to the debate
     for run in (1, 2, 3):  # the three runs of the Debate fund's manager get the same task text: the debate ran once
         assert (rnd.session_dir / "tasks" / f"pm-debate-run-{run}.md").read_text() == debate_task
+
+
+# ---------------------------------------------------------------- what the review of this part found
+
+
+def three(*answers: dict):
+    return lambda task: answers[task.run - 1]
+
+
+def test_a_round_whose_last_step_never_ran_does_not_stop_the_next_day(world: dict, capsys) -> None:
+    rnd = begin(world)
+    out = run_day(world, rnd, three(*[decisions("careful", buy(101))] * 3), end=False)
+    assert out[-1] == "NEXT: bobby-session end" and not (rnd.round_dir / "done.json").exists()
+    with pytest.raises(RoundError, match="is done: one round of decisions per calendar day"):
+        begin(world, "session-2", WED_8 + timedelta(hours=3))  # published is done, with or without the last step
+    marker.clear(world["data"])  # the marker has run out
+    assert session_cli.main(["end"]) == 0  # the open round is ended all the same
+    assert "Bobby Hedgefund, round of 2027-02-03" in capsys.readouterr().out and (rnd.round_dir / "done.json").exists()
+    (rnd.round_dir / "done.json").unlink()  # and had it never been ended at all:
+    store_day(world["data"] / "prices", WED, FLAT)
+    fresh_jobs(world["data"], THU_8)
+    begin(world, "session-2", THU_8)
+    start = [e.record for e in Log.for_mode("pilot").entries() if e.kind == "session_start"][-1]
+    assert start["previous_publication"]["session_day"] == "2027-02-03" and "previous_conversation" in start
+
+
+def test_the_days_records_are_written_once_also_after_a_failure_halfway(world: dict) -> None:
+    rnd = begin(world)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("the disk is full")
+
+    world["monkeypatch"].setattr(decide.orders, "place", broken)
+    with pytest.raises(RuntimeError):
+        run_day(world, rnd, three(*[decisions("careful", buy(101))] * 3))
+    world["monkeypatch"].undo()
+    world["monkeypatch"].setenv("BOBBY_DATA_DIR", str(world["data"]))
+    forecasts = sum(e.kind == "forecast" for e in Log.for_mode("pilot").entries())
+    with pytest.raises(RoundError, match="begun before"):
+        decide.decide(rnd, world["cwd"])
+    assert sum(e.kind == "forecast" for e in Log.for_mode("pilot").entries()) == forecasts == 2
+
+
+def test_nothing_is_decided_while_a_managers_answer_is_still_on_its_way(world: dict) -> None:
+    rnd = begin(world)
+    steps.book(rnd)
+    with pytest.raises(RoundError, match="run `bobby-session managers` first"):
+        decide.decide(rnd, world["cwd"])
+    steps.managers(rnd, now=rnd.start + timedelta(minutes=5))
+    made = rounds.step_tasks(rnd, "pm-")
+    for task in made[1:]:  # run 1 has not answered yet
+        agent_run(world["records"], rnd.session_id, rnd.session_dir, task, decisions("careful"), at=rnd.start)
+    with pytest.raises(RoundError, match="not every portfolio manager has answered"):
+        decide.decide(rnd, world["cwd"])
+    assert not (rnd.round_dir / decide.BEGAN).exists() and rounds.stored(rnd, made[0].task) is None
+
+
+def test_what_the_runs_said_about_a_company_that_got_no_order_is_in_the_log(world: dict) -> None:
+    rnd = begin(world)
+    answers = three(decisions("careful", buy(101)), decisions("careful", buy(101)), decisions("careful", buy(102)))
+    run_day(world, rnd, answers)
+    (record,) = [
+        e.record for e in Log.for_mode("pilot").entries() if e.kind == "decision" and e.record["fund"] == "careful"
+    ]
+    (other,) = record["not_taken"]
+    assert other["company"]["cik"] == 102 and [row.get("action") for row in other["runs"]] == [
+        "nothing",
+        "nothing",
+        "buy",
+    ]
+    usage = json.loads((rnd.round_dir / "usage.json").read_text())
+    assert usage["per_role"]["pm-careful"]["starts"] == 3 and usage["per_role"]["pm-careful"]["tokens"]["output_tokens"]
+
+
+def test_after_a_restart_no_task_is_handed_out_twice(world: dict) -> None:
+    rnd = begin(world)
+    steps.book(rnd)
+    first = steps.screening(rnd)
+    assert sum("PROMPT" in line for line in first) == 1 and "Nothing to start" not in "\n".join(first)
+    assert sum("PROMPT" in line for line in steps.screening(rnd)) == 1  # asked again: the same task, not a new one
+    decide.end(rnd, abort=True)
+    again = begin(world, "session-2", WED_8 + timedelta(minutes=10))
+    assert any("1 task(s) of the session that broke off" in line for line in world["start_lines"])
+    out = steps.screening(again)
+    assert out[0].startswith("Nothing to start") and "collect screening" in out[-1]
+    assert "broke off" in rounds.stored(again, "screening-01").reason
+    assert steps.collect(again, "screening", 0)[-1] == "NEXT: bobby-session analysts"
+
+
+def test_a_start_that_stopped_before_the_session_folder_was_made_is_carried_on(world: dict) -> None:
+    real = prep.prepare
+
+    def broken(**kwargs):
+        raise prep.PrepareError("a saved file does not match its fingerprint")
+
+    world["monkeypatch"].setattr(prep, "prepare", broken)
+    with pytest.raises(prep.PrepareError):
+        begin(world)
+    world["monkeypatch"].setattr(prep, "prepare", real)
+    rnd = begin(world, now=WED_8 + timedelta(minutes=4))
+    assert rnd.start == WED_8 and rnd.restarts == 0 and rnd.extras == ["monthly"]
+    kinds = [e.kind for e in Log.for_mode("pilot").entries() if e.day == WED]
+    assert kinds == ["refusal", "session_start"]
+
+
+def test_a_second_session_cannot_take_a_round_over_while_the_first_is_at_work(world: dict) -> None:
+    rnd = begin(world)
+    record = world["records"] / f"{rnd.session_id}.jsonl"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("{}\n")
+    with pytest.raises(RoundError, match="another session is running a round right now"):
+        begin(world, "session-2", WED_8 + timedelta(minutes=10))
+    assert marker.read(world["data"])["session_id"] == rnd.session_id
+    quiet = time.time() - 600
+    os.utime(record, (quiet, quiet))  # the first session has been silent for ten minutes: it broke off
+    assert begin(world, "session-2", WED_8 + timedelta(minutes=10)).restarts == 1
+
+
+def test_a_finished_copy_of_a_conversation_is_never_made_again(world: dict, tmp_path: Path) -> None:
+    project, root = tmp_path / "records", tmp_path / "pilot"
+    (project / "s1" / "subagents").mkdir(parents=True)
+    (project / "s1.jsonl").write_text("one\n")
+    (project / "s1" / "subagents" / "agent-a.jsonl").write_text("agent\n")
+    first = steps.copy_conversation(root, project, "s1", WED, "end")
+    (project / "s1.jsonl").write_text("one\nchanged afterwards\n")
+    assert steps.copy_conversation(root, project, "s1", WED, "end") == first
+    kept = root / "conversations" / "2027-02-03_s1" / "end"
+    assert (kept / "s1.jsonl").read_text() == "one\n" and (kept / "s1" / "subagents" / "agent-a.jsonl").exists()
+    assert steps.copy_conversation(root, project, "s1", WED, "complete") != first  # the later, fuller copy
+
+
+def test_a_debate_ends_when_one_side_gave_no_readable_case(tmp_path: Path, monkeypatch) -> None:
+    data, cwd, records = make_data(tmp_path)
+    monkeypatch.setenv("BOBBY_DATA_DIR", str(data))
+    assert funds_cli.main(["start", "--funds", "careful,debate", "--day", "2027-02-01"]) == 0
+    world = {"data": data, "cwd": cwd, "records": records}
+    rnd = begin(world)
+    minute = lambda n: rnd.start + timedelta(minutes=n)  # noqa: E731
+    steps.book(rnd)
+    steps.screening(rnd)
+    answer_all(world, rnd, "screening-", screening_yes, minute(3))
+    steps.collect(rnd, "screening", 0)
+    steps.analysts(rnd, now=minute(7))
+    answer_all(world, rnd, "analysis-", analyst_answer, minute(9))
+    steps.collect(rnd, "analysts", 0)
+
+    def case(task: tasks.Task) -> dict | str:
+        _, cik, side, number = task.task.split("-")
+        if side == "bear" and number == "1":
+            return "No block here."
+        return {
+            "cik": int(cik), "case": "A case.", "strongest_points": ["One."], "sources": [], "lacked": [],
+            "answer_to_other_side": "An answer." if number == "2" else "",
+        }  # fmt: skip
+
+    steps.debate(rnd)
+    answer_all(world, rnd, "debate-", case, minute(22))
+    steps.collect(rnd, "debate", 0)
+    second = steps.debate(rnd)
+    assert sum("PROMPT" in line for line in second) == 2  # only the bears have a case to answer
+    assert "not collected yet" in steps.debate(rnd)[0]  # asked again: no error, and nothing is handed out twice
+    for task in [t for t in rounds.step_tasks(rnd, "debate-") if t.task.endswith("-2")]:
+        agent_run(records, rnd.session_id, rnd.session_dir, task, case(task), at=minute(25))
+    assert steps.collect(rnd, "debate", 0)[-1] == "NEXT: bobby-session debate"
+    assert steps.debate(rnd) == ["the debate is over", "NEXT: bobby-session managers"]

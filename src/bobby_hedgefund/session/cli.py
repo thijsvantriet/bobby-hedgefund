@@ -134,8 +134,14 @@ def cmd_end(args: argparse.Namespace) -> int:
     mode = paths.check_mode(paths.LIVE if args.live else paths.PILOT)
     active = marker.read(paths.data_dir())
     if active is None:
-        print("no round is active: nothing to end")
-        return 0
+        # The marker has gone (it lasts 90 minutes): a round that was published and not ended is ended all the same.
+        folder = paths.mode_root(mode) / "rounds"
+        open_ones = [p.parent for p in sorted(folder.glob("*/published.json")) if not (p.parent / "done.json").exists()]
+        if not open_ones or args.abort:
+            print("no round is active: nothing to end")
+            return 0
+        rnd = rounds.load(mode, date.fromisoformat(open_ones[-1].name))
+        return _show(decide.end(rnd))
     rnd = rounds.load(mode, date.fromisoformat(Path(active["session_dir"]).name))
     return _show(decide.end(rnd, abort=args.abort))
 

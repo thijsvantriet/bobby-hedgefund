@@ -9,6 +9,7 @@ selling, not for buying. The log records what each run said.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import asdict
 from datetime import date
@@ -33,6 +34,7 @@ from . import round as rounds
 from .round import Collected, Round, RoundError
 
 RUNS = (1, 2, 3)
+BEGAN = "decide-began.json"
 
 
 def is_new(fund: Fund, cik: int) -> bool:
@@ -177,10 +179,26 @@ def decide(rnd: Round, cwd: Path, claude_code: str = "") -> list[str]:
     """Step 6: the limits and the day's records. From here the day's decisions are final."""
     if (rnd.round_dir / "decided.json").exists():
         raise RoundError("the day's records were written already: a round decides once")
-    rnd.note_step(6, "begin")
+    if (rnd.round_dir / BEGAN).exists():
+        raise RoundError(
+            "the day's records were begun before and that run did not finish. A record in the log is final, so "
+            "this step is not run twice: what was written stays, and the day has no further decisions "
+            "(end the round with `bobby-session end --abort`)"
+        )
     log = Log.for_mode(rnd.mode)
     entries = log.entries()
     books = replay(log)
+    # Every manager's run must have its result (an answer, or "late") before anything is decided: a run that is
+    # still on its way may not be passed over.
+    pm_tasks = [t for f in records.AI_FUNDS if f in books.funds for t in rounds.step_tasks(rnd, f"pm-{f}-run-")]
+    in_time = rnd.relaxed_clock or rnd.minutes() <= rounds.DECISIONS_UNTIL
+    if any(f in books.funds for f in records.AI_FUNDS) and not pm_tasks and in_time:
+        raise RoundError("the portfolio managers have no tasks yet: run `bobby-session managers` first")
+    taken = rounds.collect(rnd, pm_tasks, rnd.deadline(rounds.DECISIONS_UNTIL))
+    if any(got.status == "missing" for got in taken):
+        raise RoundError("not every portfolio manager has answered: run `bobby-session collect managers` first")
+    rnd.note_step(6, "begin")
+    write_new(rnd.round_dir / BEGAN, json.dumps({"time": iso(utcnow())}) + "\n")
     universe = steps.session_universe(rnd)
     can_buy = steps.buyable(rnd, universe)
     covered = covered_list(rnd.root / "reports") & can_buy
@@ -253,10 +271,27 @@ def decide(rnd: Round, cwd: Path, claude_code: str = "") -> list[str]:
                 size = canon.pct_fraction(d["size_pct"]) if d.get("size_pct") else None
                 proposals.append(orders.Proposal(d["action"], cik, company_name, ticker, size, more))
             if not proposals:
-                nothing: dict[str, Any] = {"agents": pm_agents, "code": code, **mark}
+                rows = [{"run": n, "readable": (got := runs.get(n)) is not None and got.status == "ok"} for n in RUNS]
+                nothing: dict[str, Any] = {"agents": pm_agents, "runs": rows, "code": code, **mark}
+                if readable:
+                    nothing["from_run"] = min(got.run or 0 for got in readable)
                 if fund_note:
                     nothing["note"] = fund_note
                 proposals.append(orders.Proposal("nothing", more=nothing))
+            # What the runs said about a company that gets no order today (one buyer only, or a run that was not
+            # followed) goes into the fund's first record of the day: the log holds all three answers.
+            passed = []
+            for cik in sorted(set(table) - {d["cik"] for d in chosen}):
+                if cik not in can_buy and cik not in fund.positions:
+                    notes.append(f"{name}: a run named a company the fund cannot buy; left out of the record")
+                    continue
+                listed = universe.companies.get(cik)
+                about = {"cik": cik, "name": listed.name if listed else f"company {cik}"}
+                if listed:
+                    about["ticker"] = listed.ticker
+                passed.append({"company": about, "runs": table[cik]})
+            if passed:
+                proposals[0].more["not_taken"] = passed
             verdicts = orders.check(fund, value, price_of, proposals, buyable=can_buy, covered=covered, risky=risky)
             orders.place(writer, fund, rnd.day, verdicts, fill_rule=fill_rule, cutoff=iso(rnd.cutoff))
             wanted = [v for v in verdicts if v.proposal.action != "nothing"]
@@ -354,6 +389,25 @@ def measure(rnd: Round) -> dict[str, Any]:
             role["seconds"] += (rounds._time(got.ended) - rounds._time(got.started)).total_seconds()
         if got.lacked:
             lacked.append({"task": got.task, "lacked": got.lacked})
+    # Tokens are counted from every agent run of the session, also one that answered late, was never collected
+    # or was started outside a task ("other"): what was used is what counts against the limits.
+    for role in by_role.values():
+        role["tokens"], role["model_calls"], role["starts"] = {}, 0, 0
+    by_prompt = {t.prompt(rnd.session_dir): t for t in rounds.step_tasks(rnd, "")}
+    seen_sessions = {rnd.session_id, rnd.first_session_id or rnd.session_id}
+    for session in sorted(seen_sessions):
+        for run in transcripts.agent_runs(Path(rnd.project), session):
+            if run.started < iso(rnd.start)[:19]:
+                continue
+            task = by_prompt.get(run.prompt)
+            name = task.agent.removeprefix("bobby-") if task else "other"
+            role = by_role.setdefault(
+                name, {"runs": 0, "ok": 0, "model_calls": 0, "models": [], "efforts": [], "seconds": 0.0, "tokens": {}}
+            )
+            role["starts"] = role.get("starts", 0) + 1
+            role["model_calls"] += run.answers
+            for kind, count in run.tokens.items():
+                role["tokens"][kind] = role["tokens"].get(kind, 0) + count
     steps_seen: dict[str, dict[str, float]] = {}
     for line in steps._read_lines(rnd.round_dir / "steps.jsonl"):
         entry = steps_seen.setdefault(f"{line['step']} {line['name']}", {})
@@ -402,6 +456,8 @@ def end(rnd: Round, *, abort: bool = False) -> list[str]:
     """Step 9, or, with `abort`, only switching the round's checks off after a round that broke off."""
     if abort:
         marker.clear(paths.data_dir())
+        with contextlib.suppress(OSError):  # the records of a round that broke off are kept as well
+            steps.copy_conversation(rnd.root, Path(rnd.project), rnd.session_id, rnd.day, "broke-off")
         _append_note(rnd, f"{iso(utcnow())}: the round was broken off by hand; the day may be started once more")
         return [
             f"the round of {rnd.day} is broken off; its checks are switched off",

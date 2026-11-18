@@ -42,19 +42,20 @@ Rules, and Claude Code itself refuses most of what breaks them while the round i
 Each command ends with a line `NEXT:` that names the next command. Follow those lines; the order is:
 
 1. `uv run bobby-session book` (step 2: fills, company events and values since the last session)
-2. `uv run bobby-session screening` (step 3). It prints the agents to start. Start them all at once, wait until
-   every one has finished, then `uv run bobby-session collect screening`.
-3. `uv run bobby-session analysts` (step 4), start what it prints, wait, `uv run bobby-session collect analysts`.
-4. `uv run bobby-session debate` (only does something when the Debate fund runs), start what it prints, wait,
+2. `uv run bobby-session screening` (step 3). It prints the agents to start. Start them all at once, in the
+   background, and then run `uv run bobby-session collect screening` right away: that command does the waiting.
+3. `uv run bobby-session analysts` (step 4), start what it prints, then `uv run bobby-session collect analysts`.
+4. `uv run bobby-session debate` (only does something when the Debate fund runs), start what it prints, then
    `uv run bobby-session collect debate`; repeat `debate` until it says `NEXT: bobby-session managers`.
-5. `uv run bobby-session managers` (step 5), start what it prints, wait, `uv run bobby-session collect managers`.
+5. `uv run bobby-session managers` (step 5), start what it prints, then `uv run bobby-session collect managers`.
 6. `uv run bobby-session decide` (step 6: from here the day's records are final)
 7. `uv run bobby-session publish` (steps 7 and 8)
 8. `uv run bobby-session end` (step 9)
 
-When a `collect` says that answers may still come, wait a moment and run the same `collect` again. Do not wait
-for an agent longer than its step allows: `uv run bobby-session clock` shows the minute of the round. The hard
-stop is minute 45.
+Never wait for agents by yourself. A `collect` waits up to a minute and a half; when it says that answers may
+still come, run the same `collect` again, and keep doing that until it prints `NEXT:`. When the time for a step
+is over it stops waiting by itself and counts what is missing as late, so an agent that hangs cannot hold the
+round. `uv run bobby-session clock` shows the minute of the round. The hard stop is minute 45.
 
 ## At the end
 

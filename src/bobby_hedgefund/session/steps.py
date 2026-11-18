@@ -38,6 +38,9 @@ from .round import Collected, Round, RoundError
 JOBS_FRESH_HOURS = 30
 FIRST_LOOK_BACK = timedelta(days=7)
 FRESH_SOURCES = ("startup", "clear")
+LIVE_SECONDS = 120  # a session whose records changed this short ago is taken to be still at work
+# The leading session never waits by itself: the collecting command does the waiting, up to the step's time.
+THEN = "Then, right away: bobby-session collect {step} (it waits for the answers; repeat it until it prints NEXT)"
 
 
 def _append(path: Path, line: dict[str, Any]) -> None:
@@ -130,11 +133,24 @@ def jobs_state(now: datetime) -> list[str]:
 
 
 def previous_round(root: Path, day: date) -> tuple[date, dict[str, Any]] | None:
+    """The last round before `day` that was published: its day, and what is known of it. A round whose last
+    step never ran (the terminal was closed, the step failed) counts just the same: its publication is a fact,
+    and the books need the time of it."""
     folder = root / "rounds"
-    done = sorted(p for p in folder.glob("*/done.json") if p.parent.name < day.isoformat()) if folder.is_dir() else []
-    if not done:
+    found = (
+        sorted(p for p in folder.glob("*/published.json") if p.parent.name < day.isoformat()) if folder.is_dir() else []
+    )
+    if not found:
         return None
-    return date.fromisoformat(done[-1].parent.name), json.loads(done[-1].read_text(encoding="utf-8"))
+    known = json.loads(found[-1].read_text(encoding="utf-8"))
+    try:
+        state = json.loads((found[-1].parent / "state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    for key in ("session_id", "first_session_id", "project"):
+        if state.get(key):
+            known[key] = state[key]
+    return date.fromisoformat(found[-1].parent.name), known
 
 
 def copy_conversation(rnd_root: Path, project: Path, session_id: str, day: date, label: str) -> str:
@@ -143,6 +159,11 @@ def copy_conversation(rnd_root: Path, project: Path, session_id: str, day: date,
     copies after a while, and writes them with a delay: so there is a copy at the end of the session ("end") and
     a complete one at the start of the next ("complete")."""
     target = rnd_root / "conversations" / f"{day.isoformat()}_{session_id}" / label
+    listed = target.parent / f"{label}.sha256"
+    if listed.exists():
+        # A copy that was finished stays as it is: its fingerprint may be in the log already.
+        return sha256_hex(listed.read_bytes())
+    final, target = target, target.with_name(f".{label}-partial")
     if target.exists():
         shutil.rmtree(target)  # a copy that an interrupted run left half-made
     listing: list[str] = []
@@ -159,8 +180,27 @@ def copy_conversation(rnd_root: Path, project: Path, session_id: str, day: date,
         dest.chmod(0o400)
         listing.append(f"{sha256_hex(data)}  {rel}")
     text = "\n".join(listing) + "\n"
-    (target.parent / f"{label}.sha256").write_text(text, encoding="utf-8")
+    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if final.exists():
+        shutil.rmtree(final)  # without its list: never finished
+    target.rename(final)
+    tmp = listed.with_name(f".{label}.sha256-partial")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(listed)
     return sha256_hex(text.encode("utf-8"))
+
+
+def session_is_live(project: Path, session_id: str, now: float | None = None) -> bool:
+    """Did Claude Code write to this session's records in the last two minutes?"""
+    import time
+
+    now = time.time() if now is None else now
+    main = project / f"{session_id}.jsonl"
+    found = ([main] if main.exists() else []) + list((project / session_id).rglob("*.jsonl"))
+    try:
+        return any(now - p.stat().st_mtime < LIVE_SECONDS for p in found)
+    except OSError:
+        return True
 
 
 def working_days_between(earlier: date, later: date) -> int:
@@ -189,8 +229,10 @@ def start(
     root = paths.mode_root(mode)
     try:
         return _start(mode, root, session_id, cwd, dry_run, relaxed_clock, stand_ins, now, project, claude_code)
-    except RoundError as exc:
-        _note_pending(root, "refusal", {"when": iso(now), "reason": str(exc)[:500]})
+    except Exception as exc:
+        # Whatever stopped the start, the next round's log says that a start was refused, and why.
+        said = str(exc) if isinstance(exc, RoundError | prep.PrepareError) else type(exc).__name__
+        _note_pending(root, "refusal", {"when": iso(now), "reason": said[:500] or "no reason given"})
         raise
 
 
@@ -229,17 +271,32 @@ def _start(
         mode, session_id, project, now, dry_run=dry_run, relaxed_clock=relaxed_clock, stand_ins=stand_ins
     )
     restart_of: Round | None = None
-    if (rnd.round_dir / "done.json").exists():
+    if any((rnd.round_dir / name).exists() for name in ("done.json", "published.json")):
         raise RoundError(f"the round of {rnd.day} is done: one round of decisions per calendar day")
+    active = marker.read(paths.data_dir())
+    other = active is not None and active.get("session_id") != session_id
+    if active and other and session_is_live(Path(str(active.get("project") or project)), str(active["session_id"])):
+        raise RoundError(
+            "another session is running a round right now (its records changed in the last two minutes); "
+            "two sessions never run a round together"
+        )
+    never_prepared = False
     if (rnd.round_dir / "state.json").exists():
         earlier = rounds.load(mode, rnd.day)
-        if earlier.restarts >= 1:
-            raise RoundError(f"the round of {rnd.day} broke off twice: this day is a skipped day")
-        restart_of = earlier
-        # The one restart keeps the first start time and data cut-off, so that the fill day cannot move and no
-        # newer data comes in (record 0003, point 2).
-        rnd.start, rnd.cutoff, rnd.restarts = earlier.start, earlier.cutoff, 1
-        rnd.first_session_id, rnd.extras = earlier.first_session_id, earlier.extras
+        never_prepared = not earlier.session_dir.exists()
+        # A later start of the same day keeps the first start time and data cut-off, so that the fill day cannot
+        # move and no newer data comes in (record 0003, point 2).
+        rnd.start, rnd.cutoff = earlier.start, earlier.cutoff
+        rnd.first_session_id, rnd.extras, rnd.restarts = earlier.first_session_id, earlier.extras, earlier.restarts
+        if never_prepared:
+            # The first start stopped before the session folder was there (a failure, a time-out): no agent
+            # ever ran, so this is the same start carried on, not the one restart.
+            out.append("note: an earlier start of today stopped before the session folder was made; carried on")
+        else:
+            if earlier.restarts >= 1:
+                raise RoundError(f"the round of {rnd.day} broke off twice: this day is a skipped day")
+            restart_of = earlier
+            rnd.restarts = 1
     problems = jobs_state(now)
     log = Log.for_mode(mode)
     report = log.verify()
@@ -269,18 +326,23 @@ def _start(
         if done.get("session_id") and done.get("project"):
             digest = copy_conversation(root, Path(done["project"]), done["session_id"], last_day, "complete")
             first["previous_conversation"] = {"session_day": last_day.isoformat(), "sha256": digest}
+            broke = done.get("first_session_id")
+            if broke and broke != done["session_id"]:  # that day had a restart: keep its first session too
+                copy_conversation(root, Path(done["project"]), broke, last_day, "complete")
         usage_file = root / "rounds" / last_day.isoformat() / "usage.json"
         if usage_file.exists():
             usage = json.loads(usage_file.read_text(encoding="utf-8"))
             first["usage"] = {"session_day": last_day.isoformat(), **usage.get("for_the_log", {})}
         first["skipped_working_days"] = working_days_between(last_day, rnd.day)
-    if restart_of is None:
+    if restart_of is None and not never_prepared:
         this_week = f"{rnd.day.isocalendar().year}-W{rnd.day.isocalendar().week:02d}"
         weeks = {f"{d.isocalendar().year}-W{d.isocalendar().week:02d}" for d in map(date.fromisoformat, earlier_days)}
         rnd.extras = (["weekly"] if earlier_days and this_week not in weeks else []) + (
             ["monthly"] if not any(d.startswith(f"{rnd.day:%Y-%m}") for d in earlier_days) else []
         )
-        starts = [e for e in entries if e.kind == "session_start"]
+    if restart_of is None:
+        rnd.save()  # before the slow part: a start that stops halfway is carried on with the same times
+        starts = [e for e in entries if e.kind == "session_start" and e.record["session_day"] != rnd.day.isoformat()]
         since = rounds._time(starts[-1].record["cutoff"]) if starts else rnd.cutoff - FIRST_LOOK_BACK
         held = {cik for fund in replay(log).funds.values() for cik in fund.positions}
         done_prep = prep.prepare(
@@ -297,6 +359,15 @@ def _start(
         raise RoundError("the session folder holds a link; an agent's search could follow it out of the folder")
     stored = rounds.session_json(rnd)
     rnd.save()
+    if restart_of is not None:
+        broke = rounds.break_off(rnd)
+        if broke:
+            out.append(f"note: {broke} task(s) of the session that broke off have no answer; they are not run again")
+        if restart_of.session_id != session_id:
+            try:  # the records of the session that broke off, before Claude Code tidies them away
+                copy_conversation(root, Path(restart_of.project), restart_of.session_id, rnd.day, "broke-off")
+            except OSError:
+                out.append("note: the records of the session that broke off could not be copied")
     _append(
         root / "rounds" / "sessions.jsonl", {"session_id": session_id, "day": rnd.day.isoformat(), "time": iso(now)}
     )
@@ -307,7 +378,8 @@ def _start(
             writer.add(line["kind"], {**line["body"], **mark})
         if pending_file.exists():
             pending_file.rename(pending_file.with_name(f"pending-written-{now:%Y%m%dT%H%M%SZ}.jsonl"))
-        if restart_of is not None:
+        has_start = any(e.kind == "session_start" and e.record["session_day"] == rnd.day.isoformat() for e in entries)
+        if restart_of is not None and has_start:
             body = {"session_day": rnd.day.isoformat(), "first_start": iso(rnd.start), "reason": "the round broke off"}
             writer.add("restart", {**body, **mark})
         else:
@@ -331,6 +403,7 @@ def _start(
         round_dir=rnd.round_dir,
         mode=mode,
         stand_ins=stand_ins,
+        project=str(project),
     )
     rnd.note_step(1, "done", restart=restart_of is not None)
     counts = stored["counts"]
@@ -381,7 +454,7 @@ def screening(rnd: Round) -> list[str]:
         made.append(rounds.write_task(rnd, f"screening-{number}", "bobby-screening", lines))
     if not made:
         return ["no company has news today: nothing to screen", "NEXT: bobby-session analysts"]
-    return [*rounds.start_lines(rnd, made), "When they have all finished: bobby-session collect screening"]
+    return [*rounds.start_lines(rnd, made), THEN.format(step="screening")]
 
 
 def flagged(rnd: Round) -> tuple[list[int], int, int]:
@@ -463,6 +536,8 @@ def analysts(rnd: Round, now: datetime | None = None) -> list[str]:
             f"Company: {company.name} ({company.ticker}), SEC company number {cik}.",
             f"Its files are in {folder}: company.md (what is new), numbers.md (private), trials.md, the folder "
             "filings/ (the new filings as plain text) and report.md (our own last report, if there is one).",
+            "Every file in that folder, by its full path (you do not need to search for them):",
+            *[f"- {path}" for path in sorted(folder.rglob("*")) if path.is_file()],
             f"The numbered list of sources is {rnd.session_dir / 'inputs.jsonl'}.",
             f"Why it is analysed today: {why}.",
         ]
@@ -482,7 +557,7 @@ def analysts(rnd: Round, now: datetime | None = None) -> list[str]:
     if not made:
         return [*out, "no deep analysis today", "NEXT: bobby-session debate"]
     out.append(f"deep analysis of {len(chosen)} companies")
-    return [*out, *rounds.start_lines(rnd, made), "When they have all finished: bobby-session collect analysts"]
+    return [*out, *rounds.start_lines(rnd, made), THEN.format(step="analysts")]
 
 
 def join_reports(rnd: Round) -> list[str]:
@@ -633,7 +708,7 @@ def managers(rnd: Round, now: datetime | None = None) -> list[str]:
     out = [f"decisions for: {', '.join(funds)} (each three times, independently)"]
     if rnd.minutes(now) > rounds.DECISIONS_UNTIL and not rnd.relaxed_clock:
         out.append(f"minute {rnd.minutes(now):.0f}: past the time for decisions; they will count as out of time")
-    return [*out, *rounds.start_lines(rnd, made), "When they have all finished: bobby-session collect managers"]
+    return [*out, *rounds.start_lines(rnd, made), THEN.format(step="managers")]
 
 
 # ---------------------------------------------------------------- the Debate fund's bull and bear
@@ -651,12 +726,22 @@ def debate(rnd: Round) -> list[str]:
         return [f"no debate: {why}", "NEXT: bobby-session managers"]
     done = {t.task for t in rounds.step_tasks(rnd, "debate-")}
     first = {f"debate-{cik}-{side}-1" for cik in todays for side in ("bull", "bear")}
-    second = {name[:-1] + "2" for name in first}
-    if first <= done and second <= done:
-        return ["the debate is over: two rounds were held", "NEXT: bobby-session managers"]
     number = 2 if first <= done else 1
     if number == 2 and any(rounds.stored(rnd, name) is None for name in first):
         return ["the first round of the debate is not collected yet: bobby-session collect debate"]
+    if number == 2:
+        # A second round answers a case; a side whose opponent gave no readable case has nothing to answer.
+        cases = rnd.session_dir / "round" / "debate"
+        second = {
+            f"debate-{cik}-{side}-2"
+            for cik in todays
+            for side, other in (("bull", "bear"), ("bear", "bull"))
+            if (cases / f"{cik}-{other}-1.md").exists()
+        }
+        if second <= done:
+            if all(rounds.stored(rnd, name) is not None for name in second):
+                return ["the debate is over", "NEXT: bobby-session managers"]
+            return ["the second round of the debate is not collected yet: bobby-session collect debate"]
     made = []
     for cik in todays:
         for side, other in (("bull", "bear"), ("bear", "bull")):
@@ -675,7 +760,7 @@ def debate(rnd: Round) -> list[str]:
             made.append(rounds.write_task(rnd, f"debate-{cik}-{side}-{number}", f"bobby-{side}", lines))
     if not made:
         return ["no case to answer in a second round", "NEXT: bobby-session managers"]
-    return [*rounds.start_lines(rnd, made), "When they have all finished: bobby-session collect debate"]
+    return [*rounds.start_lines(rnd, made), THEN.format(step="debate")]
 
 
 def write_cases(rnd: Round) -> list[str]:
@@ -751,7 +836,7 @@ def canary(rnd: Round) -> list[str]:
         '"the read outside the folder was refused" or "the read outside the folder was NOT refused".',
     ]
     made = [rounds.write_task(rnd, "canary-fence", "bobby-screening", lines)]
-    return [*rounds.start_lines(rnd, made), "When it has finished: bobby-session collect canary"]
+    return [*rounds.start_lines(rnd, made), THEN.format(step="canary")]
 
 
 def canary_result(rnd: Round) -> list[str]:

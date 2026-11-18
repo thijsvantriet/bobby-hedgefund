@@ -22,6 +22,7 @@ READ_TOOLS = ("Read", "Grep", "Glob")
 # How an agent made from a file hands its report back in this version of Claude Code: not as a last text, but as
 # the `message` of a call to this tool. It reads nothing and reaches nothing; it is the answer itself.
 HANDBACK = "SubagentHandback"
+QUEUED = "queued_command"
 TOKEN_KINDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 
 
@@ -105,7 +106,14 @@ def read_run(path: Path) -> AgentRun:
     users = [ln for ln in lines if ln.get("type") == "user" and isinstance(ln.get("message"), dict)]
     # Messages Claude Code adds by itself (a reminder of how to hand the report back) are marked as such and
     # do not count as something that was said to the agent.
-    typed = [ln for ln in users if not _is_tool_result(ln["message"].get("content")) and not ln.get("isMeta")]
+    # A message somebody sent to the running agent is stored differently: from the leading session as a marked
+    # line that names where it came from ("origin"), from another agent as a queued command. Both count.
+    said = [ln for ln in users if not _is_tool_result(ln["message"].get("content"))]
+    typed = [ln for ln in said if not ln.get("isMeta")]
+    sent = [ln for ln in said if ln.get("isMeta") and ln.get("origin")]
+    queued = [
+        ln for ln in lines if ln.get("type") == "attachment" and _dict(ln.get("attachment")).get("type") == QUEUED
+    ]
     if not typed:
         raise RecordError("the agent's record holds no starting message")
     run = AgentRun(
@@ -113,7 +121,7 @@ def read_run(path: Path) -> AgentRun:
         agent_type=agent_type,
         path=path,
         prompt=_text(typed[0]["message"].get("content")),
-        incoming=len(typed),
+        incoming=len(typed) + len(sent) + len(queued),
         started=str(typed[0].get("timestamp") or ""),
     )
     # One answer of the model is spread over several lines that share its id; its counts are on each of them.

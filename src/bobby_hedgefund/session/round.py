@@ -149,6 +149,9 @@ def task_text(rnd: Round, role: roles.Role, lines: list[str]) -> str:
 
 def write_task(rnd: Round, name: str, role_name: str, lines: list[str], run: int | None = None) -> Task:
     role = roles.BY_NAME[role_name]
+    existing = tasks.load(rnd.session_dir).get(name)
+    if existing is not None:
+        return existing  # a step that is run again hands out nothing twice: the task stays as first written
     stand_in = None
     if rnd.stand_ins:
         stand_in = {"subagent_type": "general-purpose", "model": roles.ALIAS[role.model], "effort": role.effort}
@@ -156,7 +159,11 @@ def write_task(rnd: Round, name: str, role_name: str, lines: list[str], run: int
 
 
 def start_lines(rnd: Round, made: list[Task]) -> list[str]:
-    """What the leading session is told: which agents to start, each with one fixed sentence."""
+    """What the leading session is told: which agents to start, each with one fixed sentence. A task that has
+    its result already (also "broke off") is not named again: a task is started once."""
+    made = [t for t in made if stored(rnd, t.task) is None]
+    if not made:
+        return ["Nothing to start: every task of this step has its result already."]
     out = [f"Start these {len(made)} agents, all at once, in the background. Use each sentence exactly as it stands:"]
     for t in made:
         if t.stand_in:
@@ -286,6 +293,22 @@ def collect(rnd: Round, wanted: list[Task], deadline: datetime | None, wait_seco
         if stored(rnd, result.task) is None:
             write_new(answers_dir(rnd) / f"{result.task}.json", json.dumps(asdict(result), sort_keys=True) + "\n")
     return results
+
+
+def break_off(rnd: Round) -> int:
+    """After a round broke off: every task that was handed out and has no stored result gets one now. Its agent
+    ran in the session that broke off (or never ran); a task is started once, so it is not run again."""
+    answers_dir(rnd).mkdir(parents=True, exist_ok=True, mode=0o700)
+    count = 0
+    for name, task in tasks.load(rnd.session_dir).items():
+        if stored(rnd, name) is None:
+            got = Collected(
+                name, task.agent, "rejected", "the round broke off before this answer was taken", run=task.run,
+                task_sha256=task.sha256, stand_in=bool(task.stand_in),
+            )  # fmt: skip
+            write_new(answers_dir(rnd) / f"{name}.json", json.dumps(asdict(got), sort_keys=True) + "\n")
+            count += 1
+    return count
 
 
 def step_tasks(rnd: Round, prefix: str) -> list[Task]:

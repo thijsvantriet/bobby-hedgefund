@@ -87,6 +87,7 @@ def agent_run(
     agent_type: str | None = None,
     reads: list[tuple[str, str]] | None = None,
     extra_message: str | None = None,
+    extra_kind: str = "coordinator",
     prompt: str | None = None,
     handback: bool = True,
     finished: bool = True,
@@ -158,10 +159,14 @@ def agent_run(
         lines.append(
             {**common, "type": "user", "message": {"role": "user", "content": result}, "timestamp": stamp(1 + i)}
         )
-    if extra_message:
-        lines.append(
-            {**common, "type": "user", "message": {"role": "user", "content": extra_message}, "timestamp": stamp(5)}
-        )
+    if extra_message and extra_kind == "queued":  # from another agent: Claude Code stores it as a queued command
+        attached = {"type": "queued_command", "prompt": extra_message}
+        lines.append({**common, "type": "attachment", "attachment": attached, "timestamp": stamp(5)})
+    elif extra_message:
+        said = {**common, "type": "user", "message": {"role": "user", "content": extra_message}, "timestamp": stamp(5)}
+        if extra_kind == "coordinator":  # from the leading session: a marked line that names where it came from
+            said |= {"isMeta": True, "origin": {"kind": "coordinator"}}
+        lines.append(said)
     text = answer if isinstance(answer, str) and "```" in answer else block(answer)
     if finished and handback:
         call = {"type": "tool_use", "id": "hb", "name": "SubagentHandback", "input": {"message": text}}
