@@ -86,6 +86,9 @@ class Fetcher:
     # Not shown when a fetcher is printed: for some publishers the client name carries a contact address.
     user_agent: str = field(default=DEFAULT_USER_AGENT, repr=False)
     allowed_hosts: frozenset[str] | None = None  # when set: only these hosts are asked, also after a redirect
+    # Extra request headers, for example a key. Never shown when a fetcher is printed, and never part of an error
+    # message or a stored line. Give `allowed_hosts` along with a key: headers travel with a redirect.
+    headers: dict[str, str] = field(default_factory=dict, repr=False)
     timeout: float = 120.0
     max_bytes: int = 300 * 1024 * 1024
     backoff: tuple[float, ...] = (5.0, 30.0, 90.0)  # waits before retry 1, 2, 3
@@ -116,7 +119,7 @@ class Fetcher:
 
     def _get_once(self, url: str) -> Response:
         request = urllib.request.Request(
-            url, headers={"User-Agent": self.user_agent, "Accept": "*/*", "Accept-Encoding": "gzip"}
+            url, headers={**self.headers, "User-Agent": self.user_agent, "Accept": "*/*", "Accept-Encoding": "gzip"}
         )
         try:
             with _opener(self.allowed_hosts).open(request, timeout=self.timeout) as resp:

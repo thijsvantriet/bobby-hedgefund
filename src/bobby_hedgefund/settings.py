@@ -58,3 +58,12 @@ def sec_contact() -> str:
     if any(ch.isspace() or ord(ch) < 33 or ord(ch) > 126 for ch in value) or value.count("@") != 1:
         raise SettingsError("the setting SEC_CONTACT_EMAIL is not one plain e-mail address")
     return value
+
+
+def massive_key() -> str:
+    """The key of the price service (docs/decisions/0007). Never log it; it is sent as a request header only."""
+    value = get("MASSIVE_API_KEY")
+    # One plain word: anything else could smuggle a second header into the request.
+    if any(ch.isspace() or ord(ch) < 33 or ord(ch) > 126 for ch in value):
+        raise SettingsError("the setting MASSIVE_API_KEY is not one plain key")
+    return value
