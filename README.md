@@ -6,7 +6,7 @@ a world index fund; docs/SPEC.md).
 
 **This is an experiment with paper money. Nothing here is investment advice, and no real money is traded.**
 
-**How far it is (2026-11):** only the research reports and the nightly data archive exist. There are no agents, no
+**How far it is (2026-11):** only the research reports, the nightly data archive and the first data streams exist. There are no agents, no
 portfolio and no results yet. The log below shows each step.
 
 ## Status
@@ -50,6 +50,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the owner wants the pilot at the end of November 2026**, not in January. The order of work stays; see "Next step" for what must exist by then.
 
+2026-11-18: **stream 1: daily prices built** (`bobby-prices`, see "Daily prices" below; docs/decisions/0007, "Update 2026-11-18"). One request gives the whole US market for one day, with prices as they were traded; the file is stored as received, in a folder of its own with its own list of fingerprints, apart from the archive (the price service's terms require that everything can be deleted if the account ends). Also stored: the service's list of share splits. A morning timer fetches the last day, and each new day is compared with the day before. The one-time download of the two years the free plan offers was started the same day. Nothing from this folder is ever published.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -57,10 +59,9 @@ The plan is docs/SPEC.md ("Order of work"). In short:
 2. **Now:** build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
    matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
    (0007, 0008). Stream 0, parts 1 and 2 (the SEC company files, the candidate list and the sponsor
-   names) are built. **First thing next session:** check that the fetch of the SEC company files is complete, run
-   `bobby-universe candidates`, look up five well-known companies in the result by hand, and add the counts to
-   record 0006 as an update (above all: how many companies come in through the XBI fund only). Then daily prices
-   (stream 1, record 0007; start in plan mode), then the filter and the name matching.
+   names) and stream 1 (daily prices) are built. Next: the candidate list on the complete SEC company files (add
+   the counts to record 0006, above all how many companies come in through the XBI fund only), then the filter,
+   the name matching, SEC filings (stream 2) and trial-record changes (stream 3).
    Alongside: the historical study, limited to two weeks of work. Its AACT download is settled (0014): go ahead
    under the download rules written there; choose which monthly copies to fetch first (all of them do not fit on the disk).
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
@@ -96,6 +97,27 @@ cd ~/projects/bobby-hedgefund
 uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest
 systemd/install.sh                 # installs the snapshot and the timer; refuses uncommitted or failing code
 ```
+
+## Daily prices (stream 1)
+Design: docs/decisions/0007. Stored in `~/bobby-hedgefund-data/prices/` (never in git, **never published**: the
+price service's terms forbid it), with its own list of fingerprints. A timer runs `bobby-prices daily` at 07:30 and
+12:30; a failure sends a phone message "Bobby prices".
+
+```
+bobby-prices status                # last run, and which days are stored
+bobby-prices verify                # re-reads every file and checks it against its fingerprint; writes nothing
+bobby-prices daily                 # the morning download by hand: missing days of the last two weeks, the splits
+bobby-prices backfill              # one-time: two years of history (about 2 hours; run it again to continue)
+bobby-prices check --days 5        # list closing prices that moved by more than half without a share split
+bobby-prices purge                 # deletes every saved price; only for the day the account with the service ends
+```
+
+- One file per trading day: opening, highest, lowest and closing price and the volume of every US share, as they
+  were traded on that day (not recalculated afterwards for share splits). Plus the service's list of share splits.
+- There is no second price source. Instead `check` compares each day with the day before and writes
+  `prices/checks/<date>_jumps.csv`: a list to look at, not a list of errors (a trial result can halve a share).
+- A working day without prices counts as "market closed" only when it is more than four days old and is a regular
+  US market holiday, or when the service said so twice. A recent day that looks half-filled is asked again.
 
 ## Universe and linking table (stream 0, in progress)
 Design: docs/decisions/0006. Two commands read the archive and write dated files next to it; they download nothing
@@ -144,6 +166,7 @@ by any of them. Downloaded so far (details and terms per source: docs/decisions/
 | [Nasdaq Trader symbol directory](https://www.nasdaqtrader.com/Trader.aspx?id=SymbolDirDefs) | Lists of US-listed symbols | Copyright Nasdaq, Inc. One copy for personal, non-commercial use; the files are never passed on or published ([terms](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain)) |
 | [State Street, SPDR S&P Biotech ETF (XBI)](https://www.ssga.com/) | The fund's daily holdings file | Personal use only; the file is never passed on or published ([terms](https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions)) |
 | [U.S. Securities and Exchange Commission, EDGAR](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) | The ticker file and each listed company's filing list (from 2026-11-18) | Free for everyone; at most one request a second with a declared contact, as the SEC asks; the filings' own text belongs to the companies and is only summarised and linked, never republished at length (docs/decisions/0008) |
+| [Massive](https://massive.com/) (closed, commercial service; free plan) | Daily prices of all US shares, and the list of share splits (from 2026-11-18) | Personal use only. **Nothing from it is published, and nothing computed from it**: no price, no fund value, no return ([terms](https://massive.com/legal/market-data-terms-of-service); docs/decisions/0007). Everything saved is deleted within 30 days if the account ends. At most five requests a minute |
 
 Sources that were only read for the research are linked where they are used in `docs/research/`. Candidates for later
 streams, with their terms: docs/research/DATA-SOURCES.md.

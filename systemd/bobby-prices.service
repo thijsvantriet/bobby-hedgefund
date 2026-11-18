@@ -1,0 +1,18 @@
+[Unit]
+Description=Bobby Hedgefund: morning download of daily prices (~/projects/bobby-hedgefund)
+OnFailure=bobby-prices-alert.service
+
+[Service]
+Type=oneshot
+# After a power cut the catch-up run (Persistent=) can start before the network is up: wait up to ~5 min.
+ExecStartPre=/usr/bin/curl -fsS -o /dev/null --max-time 5 --retry 30 --retry-delay 10 --retry-all-errors https://www.google.com/generate_204
+# Runs the copy of the program that systemd/install.sh installed (a snapshot, not the project folder).
+ExecStart=%h/.local/bin/bobby-prices daily
+# The prices are private: new files and folders are readable by the owner only.
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=1G
+MemoryMax=2G
+# A normal run takes under a minute. Worst case: 3 hours waiting for another prices command, then a few minutes.
+TimeoutStartSec=4h

@@ -23,6 +23,7 @@ class FakeSite:
         self.routes: dict[str, list[dict]] = {}
         self.hits: list[str] = []
         self.user_agents: list[str] = []
+        self.authorizations: list[str] = []
         # fake trial registry
         self.studies: list[dict] = []
         self.data_timestamp = "2026-11-13T10:00:06"
@@ -44,6 +45,7 @@ def _handler(site: FakeSite) -> type[BaseHTTPRequestHandler]:
             parts = urlsplit(self.path)
             site.hits.append(self.path)
             site.user_agents.append(self.headers.get("User-Agent", ""))
+            site.authorizations.append(self.headers.get("Authorization", ""))
             if parts.path == "/api/v2/version":
                 self._send({"body": json.dumps({"apiVersion": "2.0.5", "dataTimestamp": site.data_timestamp}).encode()})
             elif parts.path == "/api/v2/studies":

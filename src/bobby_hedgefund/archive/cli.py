@@ -139,10 +139,11 @@ def cmd_sec_companies(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
-def cmd_verify(args: argparse.Namespace) -> int:
-    with Archive(archive_root(), readonly=True) as archive:
-        report = archive.verify(quick=args.quick)
-    how = "sizes only" if args.quick else "every file re-read and re-hashed"
+def print_verify(root: Path, *, quick: bool) -> int:
+    """Check one store of files (the archive, or the prices folder) and print the outcome."""
+    with Archive(root, readonly=True) as archive:
+        report = archive.verify(quick=quick)
+    how = "sizes only" if quick else "every file re-read and re-hashed"
     print(f"manifest lines: {report.lines}; files: {report.files} ({how}); unchanged notes: {report.unchanged}")
     print(f"stored: {report.stored_bytes / 1e6:.1f} MB")
     for note in report.notes:
@@ -155,9 +156,17 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    return print_verify(archive_root(), quick=args.quick)
+
+
 def cmd_status(_: argparse.Namespace) -> int:
-    records = read_records(archive_root())
-    print(f"archive: {archive_root()}")
+    return print_status(archive_root(), "archive")
+
+
+def print_status(root: Path, what: str) -> int:
+    records = read_records(root)
+    print(f"{what}: {root}")
     last: dict[str, dict[str, Any]] = {}
     last_ok: dict[str, str] = {}
     stored: dict[str, int] = {}
