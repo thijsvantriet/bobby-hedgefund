@@ -162,6 +162,48 @@ cash dividend is added to cash on its payment day.
 Revisit: by 2027-02, or before the owner's go for the start of the funds: the trading costs must have been checked
 against a year of prices and fixed in an update to this record.
 
+## Update 2026-11-18: how it is built
+Commands: `bobby-funds start | book | draw | check | status | event` (README, "Fund books").
+- **Facts in the log.** Besides fills: a record per closed order (lapsed, replaced, cancelled by the brake, too
+  small, nothing to sell, company left), a record per company event with what it did to each fund, and one record
+  per booked trading day with the values at the close. Everything that comes from prices in them is sealed. The
+  day record also says which days are booked, so that no day is booked twice and none is skipped.
+- **Booking order on a day:** share splits, takeovers, then per fund sells and buys, then the values. A split is
+  booked before the day's orders, so a share bought on the day of its split is bought at the new price and is not
+  split again.
+- **The fund's value for sizing** is its cash plus every position at the last closing price before the fill day.
+  A share without a price that day keeps its last one for at most 30 stored days; without any it counts as zero.
+- **When cash is short** every buy of the day is cut by the same proportion and rounded down; if the rounded-up
+  costs still leave a few cents short, one share at a time is taken off the largest buy. What a cut buy leaves
+  unused is not handed to the other buys.
+- **Waiting.** An order without an opening price can still be filled on each of the five trading days after its
+  fill day; on the fifth without a price it lapses.
+- **Trading cost** by the company's market value in the universe file the session uses (monthly); a company
+  without a known size pays the highest rate.
+- **Limits** (point 2) are checked in this order: sells first, then per buy: the brake, in the universe, on the
+  covered list, 25 positions, the make-or-break limit, the smallest trade, the per-stock limit. A buy above the
+  per-stock limit is cut down to the room that is left; if that room is below 0.5% it is refused.
+- **Company events built:** share split, takeover for cash, takeover for shares (the buyer's shares are sold at
+  its opening price that day unless the buyer is covered; without a price it waits five trading days and then
+  keeps the shares). **Not built, and refused with a message:** mixed deal, spin-off, removal from the exchange,
+  right to a later payment, cash dividend. None is expected in the pilot week; each must be built before it can
+  be booked.
+- **Dice.** The draw is a ranking of fingerprints (README, "Fund books"), so it needs no library's random
+  function. With fewer than 20 covered companies a fund holds them all at 5% each: **provisional until record
+  0010.** A new draw replaces orders that were still waiting. The thousand funds' orders and each day's fills and
+  values are private files; the log holds their fingerprints, sealed.
+- **Rules.** The selection is built and tested on made-up inputs. Its inputs (months of cash, catalysts) do not
+  exist before streams 4 and 5, so the fund holds nothing and its monthly record says so. **Exact rules: record
+  0010.**
+- **The trading calendar** is the hand-made list of record 0003 for 2026 and 2027, compared in a test with the
+  holidays worked out by rule and with the library `exchange_calendars` (502 trading days, the same in all three).
+- **Still to do before the funds start** (unchanged): the check of the trading costs against a year of prices
+  (point 3).
+- **Found on the way:** the price history was downloaded in one go, so every one of its files was stored long
+  after its day. A session with a data cut-off in the past would see none of them: the cut-off works as meant.
+  The first run on the real saved prices used made-up orders and today's cut-off: 75 trading days booked, 23
+  fills, one real share split, 1,000 Dice funds, and a recomputation equal to the cent.
+
 ## Sources
 Read on 2026-11-17 unless noted.
 - Martin Fowler, [Event Sourcing](https://martinfowler.com/eaaDev/EventSourcing.html)

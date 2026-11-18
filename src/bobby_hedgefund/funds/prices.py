@@ -31,12 +31,14 @@ class PriceBook:
         final = massive.stored_days(records, final_only=True)
         self._records = {day: rec for day, rec in read.day_records(self.inputs).items() if day in final}
         self.closed = massive.closed_days(records, today or massive.market_today(cutoff))
+        self._days = sorted(self._records)
         self._bars: dict[date, dict[str, read.Bar]] = {}
+        self._last: dict[tuple[str, date], tuple[Fraction, date] | None] = {}
         self._splits: list[read.Split] | None = None
 
     def days(self) -> list[date]:
         """The days with a final price file stored before the cut-off, oldest first."""
-        return sorted(self._records)
+        return self._days
 
     def has(self, day: date) -> bool:
         return day in self._records
@@ -51,22 +53,34 @@ class PriceBook:
                 self._bars.pop(min(self._bars))
         return self._bars[day]
 
+    def _bar(self, ticker: str, day: date) -> read.Bar | None:
+        """Only the same ticker counts: the SEC writes a share class with a dash (AB-C), the price files with a
+        point (AB.C)."""
+        bars = self.bars(day)
+        return bars.get(ticker) or bars.get(ticker.replace("-", "."))
+
     def opening(self, ticker: str, day: date) -> Fraction | None:
-        bar = self.bars(day).get(ticker)
+        bar = self._bar(ticker, day)
         return exact(bar.open) if bar is not None else None
 
     def close(self, ticker: str, day: date) -> Fraction | None:
-        bar = self.bars(day).get(ticker)
+        bar = self._bar(ticker, day)
         return exact(bar.close) if bar is not None else None
 
     def last_close(self, ticker: str, upto: date) -> tuple[Fraction, date] | None:
         """The newest closing price on or before `upto`, and its day; None when the last weeks hold none."""
-        days = [d for d in self.days() if d <= upto][-LOOK_BACK_DAYS:]
-        for day in reversed(days):
-            price = self.close(ticker, day)
-            if price is not None:
-                return price, day
-        return None
+        key = (ticker, upto)
+        if key not in self._last:
+            found = None
+            for day in reversed([d for d in self._days if d <= upto][-LOOK_BACK_DAYS:]):
+                price = self.close(ticker, day)
+                if price is not None:
+                    found = (price, day)
+                    break
+            if len(self._last) > 200_000:
+                self._last.clear()
+            self._last[key] = found
+        return self._last[key]
 
     def splits(self) -> list[read.Split]:
         if self._splits is None:
