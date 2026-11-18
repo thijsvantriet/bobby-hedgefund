@@ -70,6 +70,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the fund books built** (`bobby-funds`; docs/decisions/0005, "Update 2026-11-18"; see "Fund books" below). The books are recomputed from the decision log: a fill is a logged fact and is never worked out again. Booking walks through every trading day since the last one booked and follows the rules of record 0005 to the cent (whole shares, sells before buys, buys cut in proportion, the 0.5% minimum, the five-day wait, the 30% brake). The risk limits are checked in code when a decision is made, and a refused or reduced order is logged. Share splits and takeovers for cash and for shares are booked; the rarer events are refused until built. The Dice fund is complete (a draw anyone can repeat from fingerprints, 1,000 funds in private files); the Rules fund has its selection rule but holds nothing until streams 4 and 5 give it its inputs. Tried on the real saved prices with made-up orders: 75 trading days, 23 fills, one real share split, 1,000 Dice funds, and a full recomputation equal to the cent. No broker, no real order: paper money only.
 
+2026-11-18: **the session preparation built** (`bobby-session prepare`; docs/decisions/0003, "Update 2026-11-18"; see "Session preparation" below). At a data cut-off it builds the folder the agents may read: per company what is new since the last session (SEC filings as plain text, changes in trial records, numbers worked out from saved prices), a screening list in batches, and a numbered list of every source with its fingerprint and the time it was saved. Only files saved before the cut-off are used; a file our own jobs made is admitted only when all of its inputs were saved before it. The companies that may not be named in public get no folder at all. Trial changes are linked to a company once the linking table exists; until the owner's check they are counted and left out. Tried on today's real data: 215 companies, 637 new filings, 47 seconds.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -220,6 +222,36 @@ bobby-trials changes               # by hand; a few minutes; writes only changes
 - Shown this way is what the registry *posted*; a change is seen on the night its record was archived.
 - An archived page or record that cannot be read is counted and reported once (phone message "Bobby trials"),
   not every night.
+
+## Session preparation
+Design: docs/decisions/0003 (point 1) and 0009. The first thing a daily round does, before any model has read
+anything.
+
+```
+bobby-session prepare              # build today's session folder at the data cut-off (now)
+```
+
+- **Where:** `~/bobby-hedgefund-data/pilot/sessions/<date>/` (never in git; it holds numbers from prices and text
+  from filings). Made once per day and never changed; its files are read-only.
+- **Only what was saved before the data cut-off.** A saved file counts by the time in its line of the saved-files
+  list, never by a date of the file system. A file our own jobs made (the universe, the linking table) is used
+  only when every file in its own list of inputs was saved before the cut-off.
+- **Per company** (`companies/<SEC number>/`): `company.md` (who it is, what is new since the last session),
+  `numbers.md` (worked out by script from saved prices; private), `trials.md`, the new filings as plain text
+  (the form itself and its press releases), and our own newest report on it.
+- **`inputs.jsonl`**: one numbered line per source with its fingerprint, the time it was saved and its link. The
+  agents name their sources by these numbers; the session's first log record carries the fingerprint of this list.
+- **Screening:** `screening/batch-NN.md` with a short digest per company that has news, 25 a file. Companies
+  without any new item are listed in `no-news.txt` by the script and are sent to no model.
+- **What counts as new:** saved after the last session's cut-off. A filing that was filed more than three days
+  before that and only fetched now is left out (and counted). A move of the share of 15% or more since the last
+  session counts as an item by itself.
+- **Not in the folder at all:** the companies that are in the universe through the XBI fund only (record 0009,
+  open point 2). Their names go to a private list that the log and the publish script use as a last check.
+- **Trials** are linked through the linking table once the owner's check has made one; until then each company's
+  trial file says "not linked yet" and the changes are only counted.
+- **Who gets a deep analysis** (`session/select.py`, the order of the spec): holdings with news, then what the
+  screening flagged, then a catalyst within 60 days, then the rest in a fixed rotation.
 
 ## Decision log
 Design: docs/decisions/0004 and 0009. Until the funds start only the **pilot** log exists, in

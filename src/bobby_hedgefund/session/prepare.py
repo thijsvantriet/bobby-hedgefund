@@ -31,7 +31,7 @@ import io
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -50,6 +50,9 @@ from . import plaintext, sources
 BATCH = 25  # companies per screening file
 MAX_FILING_TEXT = 2_000_000  # characters of one filing that are copied; the saved file itself is never cut
 BIG_MOVE = Fraction(15, 100)  # a move of the share since the last session that counts as an item by itself
+# A filing saved since the last session is news only when it was also filed around then. One that was filed long
+# before and fetched late (the first big download, a gap that was filled) is not: it stays in the archive.
+LATE_FILING_DAYS = 3
 TEXT_EXHIBITS = ("EX-99",)  # press releases and presentations; other exhibits stay in the saved file
 SKIPPED_TYPES = ("GRAPHIC", "ZIP", "EXCEL", "XML", "JSON", "PDF")
 CHANGE_FIELDS = {
@@ -129,7 +132,11 @@ def filing_text(body: bytes, head: filings.Header) -> str:
         out.append("Items: " + "; ".join(head.items))
     out.append("")
     if head.form.split("/")[0] == "4":
-        trades = filings.insider_trades(body)
+        try:
+            trades = filings.insider_trades(body)
+        except filings.FilingError:
+            out.append("The lines of this insider filing could not be read; see the filing itself.")
+            return "\n".join(out) + "\n"
         out.append("Insider trades reported (who, role, what, day, code, shares, price, shares held afterwards):")
         for t in trades:
             what = "acquired" if t.acquired else "disposed of" if t.acquired is False else "?"
@@ -261,12 +268,17 @@ def prepare(
 
     # 1. new SEC filings
     seen: set[str] = set()
+    old = 0
+    earliest_filed = (since.date() - timedelta(days=LATE_FILING_DAYS)).isoformat()
     for rec in archive.files(FILINGS_SOURCE):
         meta = sources.record_meta(rec)
         accession, cik = meta.get("accession"), meta.get("cik")
         if not accession or cik not in wanted or accession in seen or str(rec.get("ts", "")) <= lower:
             continue
         seen.add(accession)
+        if str(meta.get("filed") or "9999") < earliest_filed:
+            old += 1
+            continue
         try:
             body = archive.read(rec)
             head = filings.header(body)
@@ -293,7 +305,8 @@ def prepare(
         items[cik].append(
             Item(n, kind, f"[{n}] {head.form} filed {head.filed.isoformat()}{about}", announces_results(head))
         )
-    done.counts["filings"] = len(seen)
+    done.counts["filings"] = len(seen) - old
+    done.counts["filings_saved_late_and_left_out"] = old
 
     # 2. changes in trial records, through the linking table once the owner's check has made one
     linking_path, passed = sources.newest_admitted(

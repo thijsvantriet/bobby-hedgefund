@@ -178,7 +178,28 @@ Revisit: by 2027-03, or when Anthropic changes its consumer terms or the usage r
 Claude Code version changes how sessions or agent files work, or when the pilot shows that a fresh session cannot be
 told apart reliably.
 
-## Sources
+## Update 2026-11-18: how the session folder is built
+Command: `bobby-session prepare` (README, "Session preparation").
+- **The cut-off in practice.** A saved file is taken when the time in its line of the saved-files list lies
+  before the cut-off; every file is re-checked against its fingerprint when it is read. A file our own jobs made
+  has no such line: it is taken only when its own list of inputs says it was made before the cut-off and every
+  file in that list was saved before it. The newest usable file is chosen by the date in its name, never by a
+  date of the file system.
+- **The list of inputs** (`inputs.jsonl`) numbers every source: the universe file, each new filing, each trial
+  record behind a change, the price file the numbers come from. The session's first log record carries the
+  fingerprint of this list (record 0004), so it can be shown later what a session could read.
+- **What an agent can read about a company:** who it is, what is new, the new filings as plain text, the changes
+  in its trial records, numbers from saved prices marked private, and our own last report. Nothing else: the
+  saved-files lists, the price files and the universe file themselves are not in the folder.
+- **Left out in one place:** companies in the universe through the XBI fund only (record 0009, open point 2).
+- **Found on the way.** (1) The first big download of filings was saved in one go, so everything in it looked
+  new; a filing counts as news only when it was also filed around the last session (three days of margin). (2)
+  The price service marks the newest day "delayed" until the next morning's download, and the books use final
+  copies only: on a morning session the numbers are from two trading days before, and a fill is booked one
+  session later than the calendar alone would allow. No rule is broken by that; the pilot shows whether it
+  matters. (3) The first run on real data: 215 companies, 637 new filings, 37 MB, 47 seconds. A normal day will
+  have a few dozen filings.
+
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),
   [agent files](https://code.claude.com/docs/en/sub-agents.md), [hooks](https://code.claude.com/docs/en/hooks.md),
