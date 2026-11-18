@@ -21,7 +21,12 @@ FIRST_LOOK_BACK = timedelta(days=7)  # what counts as "new" in the very first se
 
 
 def _when(text: str | None) -> datetime | None:
-    return datetime.fromisoformat(text.replace("Z", "+00:00")) if text else None
+    if not text:
+        return None
+    when = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if when.tzinfo is None:
+        raise ValueError("a time must carry its time zone, for example 2026-11-30T08:00:00Z")
+    return when
 
 
 def last_cutoff(log: Log) -> datetime | None:

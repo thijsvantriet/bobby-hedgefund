@@ -8,6 +8,7 @@ record must show that sentence, and the task file must still have its fingerprin
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,6 +51,8 @@ def write(session_dir: Path, task: str, agent: str, text: str, run: int | None =
     line = json.dumps(made.__dict__, sort_keys=True) + "\n"
     with open(folder / INDEX, "a", encoding="utf-8") as fh:
         fh.write(line)
+        fh.flush()
+        os.fsync(fh.fileno())
     return made
 
 
@@ -62,6 +65,8 @@ def load(session_dir: Path) -> dict[str, Task]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             made = Task(**json.loads(line))
+            if made.task in out:
+                raise TaskError(f"the list of tasks names {made.task} twice: it was changed after the script wrote it")
             out[made.task] = made
     return out
 

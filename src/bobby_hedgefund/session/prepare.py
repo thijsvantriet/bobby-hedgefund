@@ -30,8 +30,9 @@ import csv
 import io
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -44,7 +45,7 @@ from ..funds.universe import Universe
 from ..funds.universe import load as load_universe
 from ..log import private
 from ..universe.inputs import InputError
-from ..universe.output import plain_cell, write_new, write_new_bytes
+from ..universe.output import plain_cell, write_new
 from . import plaintext, sources
 
 BATCH = 25  # companies per screening file
@@ -53,6 +54,13 @@ BIG_MOVE = Fraction(15, 100)  # a move of the share since the last session that 
 # A filing saved since the last session is news only when it was also filed around then. One that was filed long
 # before and fetched late (the first big download, a gap that was filled) is not: it stays in the archive.
 LATE_FILING_DAYS = 3
+HOLDER_FORMS = ("3", "4", "5", "SC 13D", "SC 13G", "SCHEDULE 13D", "SCHEDULE 13G")  # filed by an owner of shares
+HOLDER_NOTE = (
+    "NOTE: this company filed this as a holder of ANOTHER company's shares. It says nothing about this company's "
+    "own shares or insiders."
+)
+NOT_NAMED = "[a company that is not named]"
+MAX_VALUE = 300  # characters of one value of a trial record in a digest line
 TEXT_EXHIBITS = ("EX-99",)  # press releases and presentations; other exhibits stay in the saved file
 SKIPPED_TYPES = ("GRAPHIC", "ZIP", "EXCEL", "XML", "JSON", "PDF")
 CHANGE_FIELDS = {
@@ -121,13 +129,17 @@ def trial_link(nct: str) -> str:
     return f"https://clinicaltrials.gov/study/{nct}"
 
 
-def filing_text(body: bytes, head: filings.Header) -> str:
+def filing_text(body: bytes, head: filings.Header, holder: bool = False) -> str:
     """The readable part of a filing: the form itself and its press releases, as plain text."""
     out = [
         f"SEC filing {head.accession}",
         f"Kind: {head.form}    Filed: {head.filed.isoformat()}"
         + (f"    Period: {head.period.isoformat()}" if head.period else ""),
     ]
+    if head.names:
+        out.append("Parties: " + "; ".join(f"{role}: {name}" for role, name in head.names))
+    if holder:
+        out.append(HOLDER_NOTE)
     if head.items:
         out.append("Items: " + "; ".join(head.items))
     out.append("")
@@ -168,6 +180,23 @@ def filing_text(body: bytes, head: filings.Header) -> str:
     return "\n".join(out) + "\n"
 
 
+def _plain(name: str) -> str:
+    return "".join(c for c in name.lower() if c.isalnum())
+
+
+def is_holder_filing(head: filings.Header, company_name: str) -> bool:
+    """A company's own list of filings also holds what it files as an owner of ANOTHER company's shares (an
+    insider trade, a holding above 5%). Such a filing says nothing about the company itself."""
+    form = head.form.upper().split("/")[0]
+    if form not in HOLDER_FORMS:
+        return False
+    about = [name for role, name in head.names if role in ("issuer", "subject company")]
+    ours = _plain(company_name)
+    return bool(about) and not any(
+        _plain(name) == ours or ours in _plain(name) or _plain(name) in ours for name in about
+    )
+
+
 def announces_results(head: filings.Header) -> bool:
     """An event report with a press release or a "Regulation FD" or "other events" item: where trial results
     are announced. The results reader decides whether it really is one."""
@@ -191,20 +220,23 @@ def read_linking(path: Path) -> dict[str, list[int]]:
 
 def _value(value: Any) -> str:
     if isinstance(value, dict) and "date" in value:
-        return f"{value['date']} ({str(value.get('type', '')).lower() or 'no type'})"
-    if isinstance(value, list):
-        return "; ".join(_value(v) for v in value) or "none"
-    if isinstance(value, dict):
-        return ", ".join(f"{k}: {v}" for k, v in value.items())
-    return "none" if value is None else str(value)
+        text = f"{value['date']} ({str(value.get('type', '')).lower() or 'no type'})"
+    elif isinstance(value, list):
+        text = "; ".join(_value(v) for v in value) or "none"
+    elif isinstance(value, dict):
+        text = ", ".join(f"{k}: {v}" for k, v in value.items())
+    else:
+        text = "none" if value is None else str(value)
+    # Text from a registry record: on one line, and without square brackets, which here mean "source number".
+    text = " ".join(text.split()).replace("[", "(").replace("]", ")")
+    return text if len(text) <= MAX_VALUE else text[:MAX_VALUE] + " ..."
 
 
 def change_line(change: dict[str, Any]) -> str:
-    name = CHANGE_FIELDS.get(str(change.get("field")), str(change.get("field")))
-    moved = f" (moved {change['moved_days']} days)" if change.get("moved_days") is not None else ""
-    return (
-        f"trial {change['nct']}: {name} changed from {_value(change.get('old'))} to {_value(change.get('new'))}{moved}"
-    )
+    name = CHANGE_FIELDS.get(str(change.get("field")), _value(change.get("field")))
+    moved = f" (moved {change['moved_days']} days)" if isinstance(change.get("moved_days"), int) else ""
+    old, new = _value(change.get("old")), _value(change.get("new"))
+    return f"trial {_value(change.get('nct'))}: {name} changed from {old} to {new}{moved}"
 
 
 def pct(change: Fraction) -> str:
@@ -212,17 +244,54 @@ def pct(change: Fraction) -> str:
     return f"{sign}{abs(float(change)) * 100:.1f}%"
 
 
-def _replace(path: Path, text: str) -> None:
-    """Write a private file that is made anew every session (the private list of names)."""
+def write_private_names(path: Path, hidden: list[Any]) -> int:
+    """The private list of companies that may not be named in public. It only ever grows: a company that was on
+    it stays on it, and names that were added by hand (a fourth column) are kept. Returns how many it holds."""
+    known: dict[int, private.PrivateCompany] = {}
+    if path.exists():
+        known = {c.cik: c for c in private.load(path)}
+    for company in hidden:
+        earlier = known.get(company.cik)
+        known[company.cik] = private.PrivateCompany(
+            company.cik, company.ticker, company.name, earlier.aliases if earlier else ()
+        )
+    lines = [
+        "# Companies that may not be named in public (docs/decisions/0006). Written by the session preparation;",
+        "# it only grows. A fourth column, added by hand, may give more names of a company, separated by |.",
+    ]
+    for cik in sorted(known):
+        c = known[cik]
+        lines.append("\t".join([str(c.cik), c.ticker, c.name, *(["|".join(c.aliases)] if c.aliases else [])]))
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = path.with_name(f".{path.name}-{os.getpid()}")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        os.write(fd, text.encode("utf-8"))
+        os.write(fd, ("\n".join(lines) + "\n").encode("utf-8"))
         os.fsync(fd)
     finally:
         os.close(fd)
     tmp.replace(path)
+    return len(known)
+
+
+def shown_before(sessions: Path, session_day: date) -> set[tuple[str, ...]]:
+    """What earlier sessions were shown already: every filing and every change in a trial record in their lists
+    of inputs. What is "new" is what no earlier session saw, not what happens to carry a later time."""
+    seen: set[tuple[str, ...]] = set()
+    for folder in sorted(sessions.iterdir()) if sessions.is_dir() else []:
+        if (
+            folder.name.startswith(".")
+            or folder.name >= session_day.isoformat()
+            or not (folder / "session.json").exists()
+        ):
+            continue
+        for raw in (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines():
+            line = json.loads(raw)
+            if line.get("kind") == "sec filing":
+                seen.add(("filing", str(line.get("accession"))))
+            elif line.get("kind") == "trial record":
+                seen.add(("trial", str(line.get("nct")), str(line.get("field")), str(line.get("archive_path"))))
+    return seen
 
 
 def prepare(
@@ -235,12 +304,27 @@ def prepare(
     since: datetime,
     held: set[int] | None = None,
 ) -> Prepared:
-    """Build the session folder. Refuses when it exists already: a session folder is made once."""
-    folder = mode_root / "sessions" / session_day.isoformat()
-    if folder.exists():
+    """Build the session folder. Refuses when it exists already: a session folder is made once. It is built
+    under another name and gets its own name in one step at the very end, so a half-built folder never counts."""
+    for when in (start_time, cutoff, since):
+        if when.tzinfo is None:
+            raise PrepareError("a time without a time zone cannot be used as a cut-off")
+    if since >= cutoff:
+        raise PrepareError("the last session's cut-off must lie before this one's")
+    sessions = mode_root / "sessions"
+    final = sessions / session_day.isoformat()
+    if final.exists():
         raise PrepareError(f"the session folder of {session_day} exists already; it is made once and never changed")
+    for left in sorted(sessions.glob(f".{session_day.isoformat()}.partial-*")) if sessions.is_dir() else []:
+        if left.is_dir() and not left.is_symlink():
+            shutil.rmtree(left)  # left by a preparation that stopped half-way; nothing ever read it
+    folder = sessions / f".{session_day.isoformat()}.partial-{os.getpid()}"
     archive_root, prices_root = data_dir / "archive", data_dir / "prices"
     times = sources.stored_times(archive_root, prices_root)
+    first_stored: dict[str, str] = {}
+    for (path_, _sha), ts in times.items():
+        if path_ not in first_stored or ts < first_stored[path_]:
+            first_stored[path_] = ts
     notes: list[str] = []
     universe_path, passed = sources.newest_admitted(
         data_dir / "universe", "universe.csv", "universe-inputs.txt", times, cutoff
@@ -250,13 +334,15 @@ def prepare(
         raise PrepareError("no universe file may be used at this cut-off: " + ("; ".join(passed) or "there is none"))
     universe = load_universe(universe_path)
     hidden = sorted((c for c in universe.companies.values() if c.xbi_only), key=lambda c: c.cik)
-    _replace(
-        mode_root / private.FILE,
-        "# Companies that may not be named in public (docs/decisions/0006). Made anew by every session preparation.\n"
-        + "".join(f"{c.cik}\t{c.ticker}\t{c.name}\n" for c in hidden),
-    )
-    companies = sorted(universe.buyable())
-    done = Prepared(folder, session_day, cutoff, since, universe, companies)
+    if not hidden:
+        notes.append(
+            "this universe file marks no company as in through the XBI fund only; check its 'door' column before "
+            "anything is published"
+        )
+    listed = write_private_names(mode_root / private.FILE, hidden)
+    names = private.PrivateNames(private.load(mode_root / private.FILE))
+    companies = sorted(universe.buyable() - {c.cik for c in names.companies})
+    done = Prepared(final, session_day, cutoff, since, universe, companies)
     done.notes = notes
     inputs = Inputs()
     inputs.add(kind="universe", file=universe.file, sha256=universe.sha256, made_before_cutoff=True)
@@ -264,16 +350,32 @@ def prepare(
     items: dict[int, list[Item]] = {cik: [] for cik in companies}
     files: dict[int, list[tuple[str, str]]] = {cik: [] for cik in companies}  # (file name, text)
     wanted = set(companies)
-    lower = iso(since)
+    earlier = shown_before(sessions, session_day)
+    veiled = 0
 
-    # 1. new SEC filings
+    def veil(text: str) -> str:
+        """Take the names of companies that may not be named out of a text the agents will read."""
+        nonlocal veiled
+        spans = names.spans(text)
+        if not spans:
+            return text
+        out, at = [], 0
+        for start, end, _ in spans:
+            if start < at:
+                continue
+            out += [text[at:start], NOT_NAMED]
+            at = end
+            veiled += 1
+        return "".join(out) + text[at:]
+
+    # 1. new SEC filings: saved before the cut-off, filed around the last session, and shown to no earlier one
     seen: set[str] = set()
-    old = 0
+    old = unreadable = 0
     earliest_filed = (since.date() - timedelta(days=LATE_FILING_DAYS)).isoformat()
     for rec in archive.files(FILINGS_SOURCE):
         meta = sources.record_meta(rec)
         accession, cik = meta.get("accession"), meta.get("cik")
-        if not accession or cik not in wanted or accession in seen or str(rec.get("ts", "")) <= lower:
+        if not accession or cik not in wanted or accession in seen or ("filing", str(accession)) in earlier:
             continue
         seen.add(accession)
         if str(meta.get("filed") or "9999") < earliest_filed:
@@ -282,30 +384,37 @@ def prepare(
         try:
             body = archive.read(rec)
             head = filings.header(body)
-            text = filing_text(body, head)
+            holder = is_holder_filing(head, universe.companies[cik].name)
+            text = veil(filing_text(body, head, holder))
         except (InputError, filings.FilingError) as exc:
+            unreadable += 1
             done.notes.append(f"a filing of company {cik} could not be read ({type(exc).__name__}); left out")
             continue
-        form = head.form.replace("/", "-").replace(" ", "")
+        form = "".join(c if c.isalnum() else "-" for c in head.form)[:20]
         n = inputs.add(
             kind="sec filing",
             cik=cik,
+            accession=head.accession,
             form=head.form,
             date=head.filed.isoformat(),
             link=filing_link(cik, head.accession),
             source="SEC filing " + head.form,
             archive_path=rec["path"],
             sha256=rec["sha256"],
-            stored=rec["ts"],
+            stored=first_stored.get(str(rec["path"]), rec["ts"]),
             file=f"companies/{cik}/filings/{len(inputs.lines) + 1:04d}-{form}.txt",
         )
         files[cik].append((f"filings/{n:04d}-{form}.txt", text))
+        if holder:
+            line = f"[{n}] {head.form} filed {head.filed.isoformat()}: filed by this company as a holder of another"
+            items[cik].append(Item(n, "holder filing", line))
+            continue
         about = f"; items: {'; '.join(head.items)}" if head.items else ""
         kind = "insider trades" if head.form.split("/")[0] == "4" else "filing"
         items[cik].append(
             Item(n, kind, f"[{n}] {head.form} filed {head.filed.isoformat()}{about}", announces_results(head))
         )
-    done.counts["filings"] = len(seen) - old
+    done.counts["filings"] = len(seen) - old - unreadable
     done.counts["filings_saved_late_and_left_out"] = old
 
     # 2. changes in trial records, through the linking table once the owner's check has made one
@@ -317,21 +426,28 @@ def prepare(
     if linking_path is not None:
         inputs.add(kind="linking table", file=linking_path.name, sha256=sha256_hex(linking_path.read_bytes()))
     upper = iso(cutoff)
-    changes = unlinked = 0
-    paths = {path: sha for (path, sha) in times}
+    earliest_change = iso(since - timedelta(days=LATE_FILING_DAYS))
+    changes = unlinked = distrusted = 0
+    sha_of = {path_: sha for (path_, sha) in times}
     folder_changes = data_dir / "trial-changes"
     for path in sorted(folder_changes.glob("*_changes.jsonl")) if folder_changes.is_dir() else []:
         for raw in path.read_text(encoding="utf-8").splitlines():
             try:
                 change = json.loads(raw)
-                saved = str(change["new_saved"])
+                saved, new_file = str(change["new_saved"]), str(change["new_file"])
+                nct, field_ = str(change["nct"]), str(change["field"])
             except (ValueError, KeyError, TypeError):
                 done.notes.append(f"a line of {path.name} could not be read; left out")
                 continue
-            if not (lower < saved < upper):
+            if not (earliest_change < saved < upper) or ("trial", nct, field_, new_file) in earlier:
+                continue
+            # The line's own time is not taken on trust: the page it names must be in the saved-files list,
+            # saved at that time, before the cut-off.
+            if first_stored.get(new_file) != saved:
+                distrusted += 1
                 continue
             changes += 1
-            owners = [c for c in (linking or {}).get(str(change.get("nct")), []) if c in wanted]
+            owners = [c for c in (linking or {}).get(nct, []) if c in wanted]
             if not owners:
                 unlinked += 1
                 continue
@@ -339,20 +455,22 @@ def prepare(
                 n = inputs.add(
                     kind="trial record",
                     cik=cik,
-                    nct=change["nct"],
+                    nct=nct,
+                    field=field_,
                     date=change.get("new_posted"),
-                    link=trial_link(change["nct"]),
-                    source="ClinicalTrials.gov record " + change["nct"],
-                    archive_path=change.get("new_file"),
-                    sha256=paths.get(str(change.get("new_file")), ""),
+                    link=trial_link(nct),
+                    source="ClinicalTrials.gov record " + nct,
+                    archive_path=new_file,
+                    sha256=sha_of.get(new_file, ""),
                     stored=saved,
                 )
-                items[cik].append(Item(n, "trial change", f"[{n}] {change_line(change)}"))
-    done.counts |= {
-        "trial_changes": changes,
-        "trial_changes_not_linked": unlinked,
-        "linking_table": linking is not None,
-    }
+                items[cik].append(Item(n, "trial change", veil(f"[{n}] {change_line(change)}")))
+    done.counts |= {"trial_changes": changes, "trial_changes_not_linked": unlinked}
+    done.counts["linking_table"] = linking is not None
+    if distrusted:
+        done.notes.append(
+            f"{distrusted} trial change(s) name a page that the saved-files list does not confirm; left out"
+        )
 
     # 3. numbers from saved prices (private)
     numbers: dict[int, list[str]] = {}
@@ -360,20 +478,32 @@ def prepare(
     days = prices.days()
     if days:
         last = days[-1]
-        n_last = inputs.add(
-            kind="prices",
-            day=last.isoformat(),
-            sha256=prices.sha256(last),
-            copy="final",
-            source="our own numbers from saved prices (private)",
-        )
-        before_since = [d for d in days if datetime.combine(d, datetime.max.time(), tzinfo=UTC) < since]
+        # "Since the last session": against the newest price day that session could see, not against the
+        # calendar. The final copy of a day arrives a day or two later, so the two differ.
+        then_days = PriceBook(prices_root, since).days()
+        seen_then = then_days if then_days and then_days[-1] < last else []  # no newer price day: nothing moved
         refs = {"1 trading day": 1, "5 trading days": 5, "20 trading days": 20, "60 trading days": 60}
+        used_days = {
+            last,
+            *([seen_then[-1]] if seen_then else []),
+            *(days[-1 - b] for b in refs.values() if len(days) > b),
+        }
+        number_of = {
+            d: inputs.add(
+                kind="prices",
+                day=d.isoformat(),
+                sha256=prices.sha256(d),
+                copy="final",
+                source="our own numbers from saved prices (private)",
+            )
+            for d in sorted(used_days, reverse=True)
+        }
+        n_last = number_of[last]
         for cik in companies:
             company = universe.companies[cik]
             now = prices.close(company.ticker, last)
             lines = [f"Numbers worked out by script from saved prices, as of the close of {last} [{n_last}]."]
-            lines.append("PRIVATE: none of these may be written into a report section, a forecast or a thesis.")
+            lines.append("PRIVATE: none of these may be written into a forecast, a thesis or a reason.")
             if now is None:
                 lines.append(f"No closing price on {last}.")
                 numbers[cik] = lines
@@ -386,15 +516,14 @@ def prepare(
                     then = prices.close(company.ticker, days[-1 - back])
                     if then:
                         lines.append(f"Change over {label}: {pct(now / then - 1)}")
-            if before_since:
-                then = prices.close(company.ticker, before_since[-1])
+            if seen_then:
+                then = prices.close(company.ticker, seen_then[-1])
                 if then:
                     move = now / then - 1
-                    lines.append(f"Change since the last session ({before_since[-1]}): {pct(move)}")
+                    lines.append(f"Change since the prices the last session saw ({seen_then[-1]}): {pct(move)}")
                     if abs(move) >= BIG_MOVE:
-                        items[cik].append(
-                            Item(n_last, "price move", f"[{n_last}] the share moved {pct(move)} since the last session")
-                        )
+                        line = f"[{n_last}] the share moved {pct(move)} since the prices the last session saw"
+                        items[cik].append(Item(n_last, "price move", line))
             numbers[cik] = lines
         done.counts["price_day"] = last.isoformat()
     else:
@@ -420,19 +549,19 @@ def prepare(
         if linking is None:
             trials = "Its trials are not linked yet: the linking table waits for the owner's one-time check.\n"
         elif trial_items:
-            trials = "Changes in its trial records since the last session:\n" + "".join(
-                f"- {i.line}\n" for i in trial_items
-            )
+            listed_changes = "".join(f"- {i.line}\n" for i in trial_items)
+            trials = "Changes in its trial records since the last session:\n" + listed_changes
         else:
             trials = "No change in its linked trial records since the last session.\n"
         write_new(base / "trials.md", trials)
         for name, text in files[cik]:
             write_new(base / name, text)
-        folder_reports = reports / str(cik)
-        earlier = sorted(p for p in folder_reports.glob("*.md")) if folder_reports.is_dir() else []
-        if earlier:
-            write_new_bytes(base / "report.md", earlier[-1].read_bytes())
-    with_news = [cik for cik in companies if items[cik]]
+        report = newest_report(reports / str(cik), session_day)
+        if report is not None:
+            write_new(base / "report.md", veil(report.read_text(encoding="utf-8")))
+    # Who is "news": a filing a company made as a holder of another company is in its folder, but does not by
+    # itself send the company to the screening.
+    with_news = [cik for cik in companies if any(item.kind != "holder filing" for item in items[cik])]
     for number, at in enumerate(range(0, len(with_news), BATCH), start=1):
         part = [f"# Screening, batch {number}", ""]
         for cik in with_news[at : at + BATCH]:
@@ -443,7 +572,7 @@ def prepare(
             part.append(f"Files: companies/{cik}/")
             part.append("")
         write_new(folder / "screening" / f"batch-{number:02d}.md", "\n".join(part))
-    quiet = [cik for cik in companies if not items[cik]]
+    quiet = [cik for cik in companies if cik not in set(with_news)]
     write_new(folder / "screening" / "no-news.txt", "".join(f"{cik}\n" for cik in quiet))
     text = inputs.text()
     write_new(folder / "inputs.jsonl", text)
@@ -451,7 +580,9 @@ def prepare(
     done.items = items
     done.counts |= {
         "companies": len(companies),
-        "left_out_as_private": len(hidden),
+        "left_out_as_private": len(universe.companies) - len(companies),
+        "on_the_private_list": listed,
+        "private_names_taken_out_of_texts": veiled,
         "companies_with_news": len(with_news),
         "companies_without_news": len(quiet),
         "screening_batches": (len(with_news) + BATCH - 1) // BATCH,
@@ -469,5 +600,22 @@ def prepare(
         "counts": done.counts,
         "notes": done.notes,
     }
-    write_new(folder / "session.json", json.dumps(session, indent=1, sort_keys=True) + "\n")
+    write_new(folder / "session.json", json.dumps(session, indent=1, sort_keys=True) + "\n")  # the last file
+    folder.rename(final)  # one step: from here on the session folder exists, and it is complete
     return done
+
+
+def newest_report(folder: Path, session_day: date) -> Path | None:
+    """Our own newest report on a company from an EARLIER session day (a report is named after its day). A link
+    is not followed, and a report of today or later is never taken: it could come from a later round."""
+    if not folder.is_dir() or folder.is_symlink():
+        return None
+    found = []
+    for path in folder.glob("*.md"):
+        try:
+            day = date.fromisoformat(path.stem)
+        except ValueError:
+            continue
+        if day < session_day and path.is_file() and not path.is_symlink():
+            found.append((day, path))
+    return max(found)[1] if found else None

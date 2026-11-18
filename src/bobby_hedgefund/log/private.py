@@ -220,14 +220,39 @@ class PrivateNames:
     def __init__(self, companies: list[PrivateCompany]) -> None:
         self.companies = companies
         self._patterns = [_patterns(c) for c in companies]
+        # Plain pieces of text one of which every mention must hold (the number, the ticker, the first word of
+        # a name). A long text is searched for these first, which is fast; only a text that holds one is then
+        # looked at closely with the patterns.
+        needles: set[str] = set()
+        for c in companies:
+            needles.add(str(c.cik))
+            if c.ticker:
+                needles.add(c.ticker.lower())
+            for form in [*short_names(c.name), *c.aliases]:
+                words = [w for w in re.split(r"[\s,.\-]+", form) if w]
+                if words:
+                    needles.add(words[0].lower())
+        self._needles = sorted(needles)
 
     def spans(self, text: str) -> list[tuple[int, int, int]]:
-        """(start, end, number in the list) of every mention in `text`."""
+        """(start, end, number in the list) of every mention in `text`, none overlapping another."""
         found: list[tuple[int, int, int]] = []
+        lowered = text.lower()
+        if not any(needle in lowered for needle in self._needles):
+            return found
         for n, patterns in enumerate(self._patterns, start=1):
             for pattern in patterns:
                 found += [(m.start(), m.end(), n) for m in pattern.finditer(text)]
-        return sorted(found)
+        # A name is found in several of its forms at once ("X Devices" inside "X Devices Inc"): pieces that
+        # touch or overlap become one mention, so that nothing of the longest form is left standing.
+        merged: list[tuple[int, int, int]] = []
+        for start, end, n in sorted(found, key=lambda s: (s[0], -s[1])):
+            if merged and start <= merged[-1][1]:
+                last = merged[-1]
+                merged[-1] = (last[0], max(last[1], end), last[2])
+            else:
+                merged.append((start, end, n))
+        return merged
 
     def named(self, text: str) -> list[int]:
         """The numbers (1, 2, ...) of the companies of the list that `text` names."""
