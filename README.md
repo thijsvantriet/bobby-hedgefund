@@ -46,6 +46,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **stream 0, part 2: candidate list and sponsor names built** (`bobby-universe`, see "Universe and linking table" below). Reading code only, on files the archive already holds; every file read is checked against its fingerprint. First result: 26,149 distinct company-like sponsor names in 170,192 trial records. A reviewer agent found that a look-alike ticker (AB-C next to ABC) could link a fund holding to the wrong company; fixed and tested before the merge. The candidate list is written once the SEC company files are complete; its counts (among them: how many companies come in through the XBI fund only) then go into docs/decisions/0006 as an update.
 
+2026-11-18: parts 1 and 2 merged into `main` (PRs #12 and #13) and installed for the nightly job. The one-time fetch of the SEC company files was started the same morning as a background service of its own (about 1,000 of 6,051 companies done at the merge). Check it with `bobby-archive status` (the line `sec`) or `systemctl --user status bobby-sec-companies`; if it stopped early, `bobby-archive sec-companies --resume` continues it.
+
 2026-11-18: **the owner wants the pilot at the end of November 2026**, not in January. The order of work stays; see "Next step" for what must exist by then.
 
 ## Next step
@@ -55,7 +57,10 @@ The plan is docs/SPEC.md ("Order of work"). In short:
 2. **Now:** build data streams 0-3 on top of the archive: the linking table (with the owner's one-time check of about 200
    matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
    (0007, 0008). Stream 0, parts 1 and 2 (the SEC company files, the candidate list and the sponsor
-   names) are built; next is daily prices (stream 1, record 0007), then the filter and the name matching.
+   names) are built. **First thing next session:** check that the fetch of the SEC company files is complete, run
+   `bobby-universe candidates`, look up five well-known companies in the result by hand, and add the counts to
+   record 0006 as an update (above all: how many companies come in through the XBI fund only). Then daily prices
+   (stream 1, record 0007; start in plan mode), then the filter and the name matching.
    Alongside: the historical study, limited to two weeks of work. Its AACT download is settled (0014): go ahead
    under the download rules written there; choose which monthly copies to fetch first (all of them do not fit on the disk).
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
