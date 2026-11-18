@@ -17,7 +17,8 @@ from . import names
 from .read_trials import SponsorName
 
 KINDS = ("strong", "core", "starts", "similar")
-SIMILAR_FROM = 90.0  # of 100
+SIMILAR_FROM = 90.0  # of 100, for the whole cleaned name
+CORE_SIMILAR_FROM = 85.0  # and for the name without its sector words
 MIN_CORE_LENGTH = 4  # a shorter core ("bio", "ab") fits too many names to be a suggestion by itself
 MAX_PER_COMPANY = 25  # for "starts" and "similar" together; "strong" and "core" are never left out
 
@@ -78,8 +79,14 @@ class SponsorIndex:
                 if other.startswith(prefix):
                     add(i, "starts", fuzz.ratio(cleaned, other))
         for _, score, i in process.extract(
-            cleaned, self.cleaned, scorer=fuzz.ratio, score_cutoff=SIMILAR_FROM, limit=MAX_PER_COMPANY
+            cleaned, self.cleaned, scorer=fuzz.ratio, score_cutoff=SIMILAR_FROM, limit=200
         ):
+            # Two names that share a long sector word are alike as a whole ("Phio Pharmaceuticals", "Vion
+            # Pharmaceuticals"). So the part that tells the company apart must be nearly the same too.
+            other_core = names.core(self.cleaned[i])
+            same_first_word = cleaned.split()[:1] == self.cleaned[i].split()[:1]  # a misspelt sector word
+            if core and other_core and not same_first_word and fuzz.ratio(core, other_core) < CORE_SIMILAR_FROM:
+                continue
             add(i, "similar", score)
         return found
 

@@ -62,6 +62,9 @@ def test_the_four_kinds_of_suggestion_and_what_is_not_suggested() -> None:
         sponsor("Alpha Theraputics"),  # a spelling variant
         sponsor("Omega Old Name"),  # the former name
         sponsor("Alphabet Health"),  # another company whose name starts with the same letters
+        sponsor("Alpho Therapeutics"),  # one letter off in a short name: more often another company
+        sponsor("Aloha Therapeutics"),
+        sponsor("Delta Therapeutics"),  # alike as a whole only through the long shared word
         sponsor("Beta Therapeutics"),  # the same sector word only
         sponsor("Alpha"),
     )

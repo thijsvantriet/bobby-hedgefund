@@ -46,6 +46,8 @@ SECTOR_WORDS = frozenset(
         "pharmaceutical",
         "pharma",
         "biopharma",
+        "biotherapeutics",
+        "biomedical",
         "biopharmaceuticals",
         "biopharmaceutical",
         "biosciences",
