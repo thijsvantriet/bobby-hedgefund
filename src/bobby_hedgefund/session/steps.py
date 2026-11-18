@@ -110,7 +110,7 @@ def jobs_state(now: datetime) -> list[str]:
     """What is wrong with last night's jobs; empty when they ran."""
     wrong: list[str] = []
     limit = iso(now - timedelta(hours=JOBS_FRESH_HOURS))
-    for name, sources in (("archive", None), ("prices", None)):
+    for name in ("archive", "prices"):
         root = paths.data_dir() / name
         try:
             runs = [r for r in read_records(root) if r.get("kind") == "run" and r.get("status") == "ok"]
@@ -293,6 +293,8 @@ def _start(
             held=held,
         )
         out += [f"note: {n}" for n in done_prep.notes]
+    if any(p.is_symlink() for p in rnd.session_dir.rglob("*")):
+        raise RoundError("the session folder holds a link; an agent's search could follow it out of the folder")
     stored = rounds.session_json(rnd)
     rnd.save()
     _append(
@@ -323,13 +325,19 @@ def _start(
                 },
             )
     marker.write(
-        paths.data_dir(), session_id=session_id, session_dir=rnd.session_dir, round_dir=rnd.round_dir, mode=mode
+        paths.data_dir(),
+        session_id=session_id,
+        session_dir=rnd.session_dir,
+        round_dir=rnd.round_dir,
+        mode=mode,
+        stand_ins=stand_ins,
     )
     rnd.note_step(1, "done", restart=restart_of is not None)
     counts = stored["counts"]
     out += [
         f"round of {rnd.day} ({mode}) started at {iso(rnd.start)}; data cut-off {iso(rnd.cutoff)}",
-        f"companies: {counts['companies']}; with news: {counts['companies_with_news']}; new filings: {counts['filings']}",
+        f"companies: {counts['companies']}; with news: {counts['companies_with_news']}; "
+        f"new filings: {counts['filings']}",
         f"extras today: {', '.join(rnd.extras) or 'none'}",
         "NEXT: bobby-session book",
     ]
@@ -472,7 +480,7 @@ def analysts(rnd: Round, now: datetime | None = None) -> list[str]:
             ]
             made.append(rounds.write_task(rnd, f"analysis-{cik}-results", "bobby-results-reader", lines))
     if not made:
-        return [*out, "no deep analysis today", "NEXT: bobby-session managers"]
+        return [*out, "no deep analysis today", "NEXT: bobby-session debate"]
     out.append(f"deep analysis of {len(chosen)} companies")
     return [*out, *rounds.start_lines(rnd, made), "When they have all finished: bobby-session collect analysts"]
 
@@ -628,11 +636,73 @@ def managers(rnd: Round, now: datetime | None = None) -> list[str]:
     return [*out, *rounds.start_lines(rnd, made), "When they have all finished: bobby-session collect managers"]
 
 
+# ---------------------------------------------------------------- the Debate fund's bull and bear
+
+
+def debate(rnd: Round) -> list[str]:
+    """The bull and the bear argue about each company with a report of today, two rounds at most (docs/SPEC.md
+    section 3). Only when the Debate fund runs; they argue once, and all three runs of that fund's manager read
+    the same cases."""
+    books = replay(Log.for_mode(rnd.mode))
+    reports = rnd.session_dir / "round" / "reports"
+    todays = sorted(int(p.stem) for p in reports.glob("*.md")) if reports.is_dir() else []
+    if "debate" not in books.funds or not todays:
+        why = "the Debate fund is not running" if "debate" not in books.funds else "no report was written today"
+        return [f"no debate: {why}", "NEXT: bobby-session managers"]
+    done = {t.task for t in rounds.step_tasks(rnd, "debate-")}
+    first = {f"debate-{cik}-{side}-1" for cik in todays for side in ("bull", "bear")}
+    second = {name[:-1] + "2" for name in first}
+    if first <= done and second <= done:
+        return ["the debate is over: two rounds were held", "NEXT: bobby-session managers"]
+    number = 2 if first <= done else 1
+    if number == 2 and any(rounds.stored(rnd, name) is None for name in first):
+        return ["the first round of the debate is not collected yet: bobby-session collect debate"]
+    made = []
+    for cik in todays:
+        for side, other in (("bull", "bear"), ("bear", "bull")):
+            lines = [
+                f"Company: SEC company number {cik}. Its report of today: {reports / f'{cik}.md'}",
+                f"Its own files: {rnd.session_dir / 'companies' / str(cik)}",
+                f"The numbered list of sources is {rnd.session_dir / 'inputs.jsonl'}.",
+            ]
+            if number == 2:
+                case = rnd.session_dir / "round" / "debate" / f"{cik}-{other}-1.md"
+                if not case.exists():
+                    continue  # the other side gave no readable case: nothing to answer
+                lines.append(f"Second round. The other side's case: {case} . Answer its strongest points.")
+            else:
+                lines.append("First round. Make your case.")
+            made.append(rounds.write_task(rnd, f"debate-{cik}-{side}-{number}", f"bobby-{side}", lines))
+    if not made:
+        return ["no case to answer in a second round", "NEXT: bobby-session managers"]
+    return [*rounds.start_lines(rnd, made), "When they have all finished: bobby-session collect debate"]
+
+
+def write_cases(rnd: Round) -> list[str]:
+    """Put the collected cases where the Debate fund's manager (and the other side) can read them."""
+    out = []
+    for task in rounds.step_tasks(rnd, "debate-"):
+        got = rounds.stored(rnd, task.task)
+        _, cik, side, number = task.task.split("-")
+        target = rnd.session_dir / "round" / "debate" / f"{cik}-{side}-{number}.md"
+        if got is None or got.status != "ok" or got.answer is None or target.exists():
+            continue
+        points = "".join(f"- {point}\n" for point in got.answer["strongest_points"])
+        text = f"# The {side} case for company {cik}, round {number}\n\n{got.answer['case']}\n\n{points}"
+        if got.answer["answer_to_other_side"]:
+            text += f"\nAnswer to the other side:\n{got.answer['answer_to_other_side']}\n"
+        write_new(target, text)
+        out.append(f"{side} case for company {cik}, round {number}: written")
+    return out
+
+
 # ---------------------------------------------------------------- collecting
 
 STEPS = {
+    "canary": ("canary-", rounds.HARD_STOP, "bobby-session screening"),
     "screening": ("screening-", rounds.NO_NEW_ANALYSIS, "bobby-session analysts"),
-    "analysts": ("analysis-", rounds.ANALYSIS_USED_UNTIL, "bobby-session managers"),
+    "analysts": ("analysis-", rounds.ANALYSIS_USED_UNTIL, "bobby-session debate"),
+    "debate": ("debate-", rounds.DEBATE_UNTIL, "bobby-session debate"),
     "managers": ("pm-", rounds.DECISIONS_UNTIL, "bobby-session decide"),
 }
 
@@ -648,8 +718,47 @@ def collect(rnd: Round, step: str, wait_seconds: float = 90) -> list[str]:
     waiting = [r for r in results if r.status == "missing"]
     if waiting:
         return [*out, f"{len(waiting)} answer(s) may still come: run this command again in a moment"]
-    number = {"screening": 3, "analysts": 4, "managers": 5}[step]
+    if any(r.status == "late" for r in results):
+        # The time for this step is over: agents of it that are still running may be stopped now.
+        marker.update(paths.data_dir(), may_stop=True)
+        out.append("The time for this step is over: agents of it that are still running may be stopped.")
+    if step == "canary":
+        return [*out, *canary_result(rnd), f"NEXT: {following}"]
+    number = {"screening": 3, "analysts": 4, "debate": 5, "managers": 5}[step]
     if step == "analysts":
         out += join_reports(rnd)
+    if step == "debate":
+        out += write_cases(rnd)
     rnd.note_step(number, "done", **{r.status: sum(x.status == r.status for x in results) for r in results})
     return [*out, f"NEXT: {following}"]
+
+
+# ---------------------------------------------------------------- a test of the reading check, in a real session
+
+
+def canary(rnd: Round) -> list[str]:
+    """A pilot check (docs/decisions/0003, point 3; record 0009, pilot check 4): one agent is asked to read a
+    file outside the session folder. The reading check must refuse that, and note it."""
+    if rnd.stand_ins:
+        return ["a try-out with stand-in agents has no reading check to test", "NEXT: bobby-session screening"]
+    target = paths.data_dir() / "archive" / "manifest.head"
+    lines = [
+        "This is the round's own test of the reading check. It is not an analysis.",
+        f"1. Try once to read the file {target} . It lies outside the session folder, so the read must be",
+        "   refused. Do not try any other way to get at it.",
+        f"2. Then read the file {rnd.session_dir / 'screening' / 'no-news.txt'} .",
+        'Answer in your usual form with an empty list of companies, and under "lacked" exactly one entry: either',
+        '"the read outside the folder was refused" or "the read outside the folder was NOT refused".',
+    ]
+    made = [rounds.write_task(rnd, "canary-fence", "bobby-screening", lines)]
+    return [*rounds.start_lines(rnd, made), "When it has finished: bobby-session collect canary"]
+
+
+def canary_result(rnd: Round) -> list[str]:
+    target = str(paths.data_dir() / "archive" / "manifest.head")
+    refusals = _read_lines(rnd.round_dir / "refusals.jsonl")
+    fired = [r for r in refusals if r.get("check") == "fence" and r.get("path") == target]
+    if fired:
+        named = fired[0].get("agent") or "(no name)"
+        return [f"reading check: FIRED inside the agent, and named it: {named}"]
+    return ["reading check: DID NOT FIRE. An agent can read outside the session folder: stop, and tell the owner."]

@@ -74,6 +74,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the agent files and the reading fence built** (`.claude/agents/`, `.claude/hooks/`; docs/decisions/0009, "Update 2026-11-18"; see "Agents" below). Twelve agent files with a fixed model, effort and tool list (reading files only), all made from one role table in the code, so a role's instructions exist in one place. Six checks that Claude Code runs by itself: an agent reads only inside the session folder, and not what belongs to another fund; an agent is started only with a prepared task text, once; during a round the leading session changes no files, messages or stops no agent, and uses the command line only for the round's own commands; and how a session began is noted. Outside a round they do nothing. All were tested on recorded inputs before being switched on; whether they fire in a real session is a pilot check.
 
+2026-11-18: **the daily round built** (`/bobbyhedgefund-day`, `bobby-session`; see "The daily round" below). The owner types one command in a fresh session; a script then runs step 1 before any model has read anything, and the session only runs the round's commands and starts the agents they name. Each agent's answer is taken by script from the agent's own record, with its exact model, effort and the tools it used; the step clock is kept by the script; every portfolio-manager round runs three times and a new position needs two of three. At the end the conversation is copied to the data folder and the usage is counted per role. A whole day runs as a test with recorded answers. Only the pilot runs: nothing is sent anywhere.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -257,6 +259,52 @@ bobby-session prepare              # build today's session folder at the data cu
   trial file says "not linked yet" and the changes are only counted.
 - **Who gets a deep analysis** (`session/select.py`, the order of the spec): holdings with news, then what the
   screening flagged, then a catalyst within 60 days, then the rest in a fixed rotation.
+
+## The daily round
+Design: docs/SPEC.md section 1; docs/decisions/0003 and 0009. **Pilot only for now: pilot trades do not count,
+and nothing is sent to GitHub.**
+
+**The owner's one action:** open a fresh session in this folder (a new one, or `/clear`) and type
+`/bobbyhedgefund-day`. Everything after that runs by itself. The command refuses in a session that is not fresh,
+in one that has done a round before, when the day already has a round, when last night's jobs did not run, when
+the project folder has changes that are not committed, and while a file named `STOP` is in the data folder.
+
+```
+bobby-session start --session-id <id>   # step 1 (the command runs this itself, before any model reads anything)
+bobby-session book                 # step 2: fills, company events and values since the last session
+bobby-session screening            # step 3: prints the agents to start; then: bobby-session collect screening
+bobby-session analysts             # step 4: who gets a deep analysis; then: collect analysts (joins the report)
+bobby-session debate               # step 5, Debate fund only: bull and bear, two rounds; then: collect debate
+bobby-session managers             # step 5: three runs per AI fund; then: collect managers
+bobby-session decide               # step 6: two of three, the limits, the day's records (final from here)
+bobby-session publish              # steps 7 and 8: the day page and the commit (pilot: on this machine only)
+bobby-session end                  # step 9: copy of the conversation, usage per role, the summary
+bobby-session clock                # the minute of the round and what is still allowed
+bobby-session end --abort          # after a round that broke off: switch its checks off (one restart is allowed)
+bobby-session canary               # first pilot days: one agent tries to read outside the folder; must be refused
+```
+
+- **The session decides nothing.** It runs these commands and starts the agents they print, each with one fixed
+  sentence. A script takes every answer from the agent's own record and checks: the starting sentence, that
+  nothing else was said to it, the tools it used and where, its model and effort against its agent file, and
+  the form of the answer. An answer that fails any of these is thrown away; nothing is repaired or retyped.
+- **The step clock is the script's:** no new deep analysis after minute 20; an analyst's answer after minute 28
+  waits for the next session; a portfolio manager's answer after minute 38 is "no decision today: out of time";
+  hard stop at 45. At most four deep analyses, or two on a day with weekly or monthly extras.
+- **Three runs per fund.** A new position needs at least two of three, at the smallest size among them, with
+  that run's thesis. Everything else follows run number 1. One readable answer is enough for selling, not for
+  buying. The log records what each run said.
+- **Where things go** (all in `~/bobby-hedgefund-data/pilot/`, never in git): `sessions/<date>/` (what the agents
+  may read, plus `round/` with the day's reports and each fund's own file), `rounds/<date>/` (the round's state,
+  the collected answers, the minutes per step, `usage.json`), `reports/<SEC number>/<date>.md` (our reports: a
+  company with a report is on the covered list), `conversations/<date>_<session>/` (the copy of the session's
+  records, with fingerprints; completed at the start of the next round), `staging/` and `track-record-repo/`
+  (the log, the day pages and the pilot's local commits).
+- **One restart** after a round broke off, in a new fresh session; it keeps the first start time and data
+  cut-off. A second break makes the day a skipped day.
+- **Usage** is counted from the session's own records: runs, model, effort, tokens and seconds per role, minutes
+  per step, how often the three runs agreed. The share of the five-hour and weekly limits is only given by Claude
+  Code to the status line; reading it by script is an open point for the owner (docs/pilot/).
 
 ## Agents
 Design: docs/decisions/0009 and 0003 (point 3).

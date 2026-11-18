@@ -24,6 +24,7 @@ from .tasks import Task
 # The step clock of the spec, in minutes from the start of the round.
 NO_NEW_ANALYSIS = 20  # no new deep analysis starts after this
 ANALYSIS_USED_UNTIL = 28  # an analyst's answer that arrives later waits for the next session
+DEBATE_UNTIL = 33  # the bull and bear cases of the Debate fund must be in by then
 DECISIONS_UNTIL = 38  # a portfolio manager that has not answered by then: "no decision today: out of time"
 HARD_STOP = 45
 STEP_NAMES = {

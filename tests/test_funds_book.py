@@ -628,3 +628,23 @@ def test_a_price_far_back_can_be_looked_up_without_losing_the_day_just_read(tmp_
     book = PriceBook(prices, today=date(2027, 4, 1))
     assert book.last_close("OLD", days[-1]) == (F(7), days[0])  # walks back through every stored day
     assert book.last_close("AAA", days[-1]) == (F(10), days[-1]) and book.last_close("NONE", days[-1]) is None
+
+
+def test_a_fill_never_lies_before_its_decision_even_when_a_clock_says_the_publication_came_first(
+    tmp_path: Path,
+) -> None:
+    log, prices = setup(tmp_path)
+    decide(log, WED, order(101))
+    for day in (MON, TUE, WED):
+        store_day(prices, day, FLAT)
+    with log.writer(THU, clock()) as w:  # the log says Wednesday's publication was received on Monday
+        body = session(log, THU, 9)
+        body["previous_publication"] = {
+            "session_day": WED.isoformat(),
+            "received": "2027-02-01T09:00:00Z",
+            "source": "local commit (pilot)",
+        }
+        w.add("session_start", body)
+    run(log, prices, THU)
+    (fill,) = [e for e in log.entries() if e.kind == "fill"]
+    assert fill.record["fill_day"] == WED.isoformat()
