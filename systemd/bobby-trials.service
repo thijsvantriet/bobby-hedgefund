@@ -1,0 +1,15 @@
+[Unit]
+Description=Bobby Hedgefund: changes in archived trial records (~/projects/bobby-hedgefund)
+OnFailure=bobby-trials-alert.service
+
+[Service]
+Type=oneshot
+# Reads the archive only; downloads nothing. Runs the copy of the program that systemd/install.sh installed.
+ExecStart=%h/.local/bin/bobby-trials changes
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=2G
+MemoryMax=3G
+# A run takes a few minutes (it re-reads every archived trial page).
+TimeoutStartSec=1h

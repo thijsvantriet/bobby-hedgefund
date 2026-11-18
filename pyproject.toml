@@ -1,7 +1,7 @@
 [project]
 name = "bobby-hedgefund"
 version = "0.1.0"
-description = "Paper-money biotech fund run by LLM agents. So far: the archive of public files and the first reading steps for the universe."
+description = "Paper-money biotech fund run by LLM agents. So far: the archive of public files and the data streams: prices, universe, SEC filings, trial-record changes."
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
@@ -16,6 +16,7 @@ dependencies = [
 bobby-archive = "bobby_hedgefund.archive.cli:main"
 bobby-filings = "bobby_hedgefund.filings.cli:main"
 bobby-prices = "bobby_hedgefund.prices.cli:main"
+bobby-trials = "bobby_hedgefund.trials.cli:main"
 bobby-universe = "bobby_hedgefund.universe.cli:main"
 
 [build-system]

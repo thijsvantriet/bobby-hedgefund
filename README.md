@@ -58,6 +58,10 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **stream 2: SEC filings built** (docs/decisions/0008, "Update 2026-11-18 (2)"). The nightly archive run now also fetches, for every company of the universe, its filing list and each new filing of the followed kinds since 1 September 2026, as received. A weekly cross-check against the SEC's own daily list of filings, and a reading step for the items of an event report and the lines of an insider trade. Our own small reader is used; edgartools was not tried and stays the candidate for the quarterly reports of stream 4.
 
+2026-11-18: **stream 3: trial-record changes built** (`bobby-trials changes`, see "Trial-record changes" below). A nightly job reads every archived copy of every trial record and lists each change in a fixed set of fields (status, dates, phases, number of patients, primary outcomes, sponsor, results), with the two archived files the old and the new value come from. First run: 798 changes in 302 trials since the first copy of the registry of 2026-11-16; three were compared with the raw records by hand. With this, streams 0-3 are built.
+
+2026-11-18: **rules for the historical study drafted** (docs/study/RULES.md, status "proposed"): what it must deliver (base rates and the typical size of a price move), which past results are in it and how the list is made before any outcome is looked at, the measures, the time limit of six sessions. Nothing is downloaded or analysed until the owner says yes; four questions for the owner are at the end of that document.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -70,8 +74,9 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    newest one; about 220 companies), then `bobby-universe decisions <sheet>` and `bobby-universe linking`
    make the linking table. After that: the by-hand check of 20 companies for missed names, and record 0009 with
    the agent files (step 3).
-   Alongside: the historical study, limited to two weeks of work. Its AACT download is settled (0014): go ahead
-   under the download rules written there; choose which monthly copies to fetch first (all of them do not fit on the disk).
+   Stream 3 (trial-record changes) is built too.
+   Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
+   and wait for the owner's yes; its AACT download is settled (0014).
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
    usage limits a session takes.
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026. Needed before it: streams 0-3, record 0009, the agent files, the decision log with its leak check, and the fund books.
@@ -187,6 +192,27 @@ bobby-filings recent --days 7      # what was stored: the items of each event re
 Reading (`src/bobby_hedgefund/filings/`) never touches the network: it takes the kind of filing, its dates, the
 items of an event report and the transactions of an insider trade from the stored file. The filings' own text
 belongs to the companies: it is only summarised and linked, never republished at length.
+
+## Trial-record changes (stream 3)
+A timer runs `bobby-trials changes` every night at 01:15, after the archive run. It downloads nothing: it reads
+every archived copy of every trial record, oldest first, and lists each change in a fixed set of fields, with the
+old and the new value and the two archived files they were read from.
+
+```
+bobby-trials changes               # by hand; a few minutes; writes only changes no earlier run wrote
+```
+
+- Followed fields: overall status, why stopped, start date, primary completion date, completion date, phases,
+  number of patients, primary outcomes (measure and time frame), lead sponsor, has results, results first posted.
+  For a date the line also says how many days it moved. The list is fixed in
+  `src/bobby_hedgefund/trials/changes.py`: the spec's one side-hypothesis (registry edits against later price
+  moves, docs/SPEC.md section 4) is measured on it, so changing it later is a change of that measure.
+- `~/bobby-hedgefund-data/trial-changes/<date>_changes.jsonl`: one line per change. Each run writes only what
+  is new; all the dated files together are the full list since the first copy of the registry (2026-11-16). A
+  night without news writes nothing. `<date>_changes-inputs.txt` lists the archived files that were read.
+- Shown this way is what the registry *posted*; a change is seen on the night its record was archived.
+- An archived page or record that cannot be read is counted and reported once (phone message "Bobby trials"),
+  not every night.
 
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with
