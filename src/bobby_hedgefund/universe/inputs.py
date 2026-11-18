@@ -6,6 +6,7 @@ manifest, so an analysis never runs on a damaged file, and the list of inputs ca
 
 from __future__ import annotations
 
+import lzma
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,10 @@ class Inputs:
             and (name is None or r.get("name") == name)
         ]
 
+    def files_in_order(self, sources: tuple[str, ...]) -> list[dict[str, Any]]:
+        """Stored files of several sources together, in the order they were saved."""
+        return [r for r in self.records if r.get("source") in sources and r.get("kind") in ("file", "unchanged")]
+
     def newest(self, source: str, name: str) -> dict[str, Any]:
         found = self.files(source, name)
         if not found:
@@ -45,10 +50,8 @@ class Inputs:
     def read(self, rec: dict[str, Any]) -> bytes:
         try:
             body = read_stored(self.root, rec)
-        except (OSError, ValueError, ArchiveError, KeyError) as exc:
+        except (OSError, ValueError, ArchiveError, KeyError, lzma.LZMAError) as exc:
             raise InputError(f"could not read {rec.get('path')}: {type(exc).__name__}") from exc
-        except Exception as exc:  # lzma raises its own error type on damaged data
-            raise InputError(f"could not unpack {rec.get('path')}: {type(exc).__name__}") from exc
         if sha256_hex(body) != rec.get("sha256"):
             raise InputError(f"{rec.get('path')} does not match its fingerprint in the manifest")
         self.used[str(rec["path"])] = str(rec["sha256"])

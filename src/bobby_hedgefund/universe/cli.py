@@ -18,7 +18,7 @@ from .inputs import InputError, Inputs
 from .output import OutputError, csv_text, free_label, write_new
 from .read_sec import ReadError
 
-TRIAL_SOURCES = ("ctgov-baseline", "ctgov-updates")  # read in this order: an update replaces the baseline copy
+TRIAL_SOURCES = ("ctgov-baseline", "ctgov-updates")  # read together, in the order the pages were saved
 
 
 def universe_dir() -> Path:
@@ -42,11 +42,12 @@ def cmd_candidates(args: argparse.Namespace) -> int:
     folder = universe_dir()
     endings = ["candidates.csv", "inputs.txt", "xbi-unmatched.csv"]
     label = free_label(date.today(), [(folder, e) for e in endings])
-    write_new(folder / f"{label}_candidates.csv", csv_text(candidates.HEADER, (c.row() for c in result.candidates)))
+    # The list of inputs is written first: a result never exists without the record of what it was made from.
+    write_new(folder / f"{label}_inputs.txt", _inputs_text("candidate list", result.counts, inputs))
     if result.xbi_unmatched:
         text = csv_text(("name_in_holdings_file", "ticker", "why"), result.xbi_unmatched)
         write_new(folder / f"{label}_xbi-unmatched.csv", text)
-    write_new(folder / f"{label}_inputs.txt", _inputs_text("candidate list", result.counts, inputs))
+    write_new(folder / f"{label}_candidates.csv", csv_text(candidates.HEADER, (c.row() for c in result.candidates)))
     for key, value in result.counts.items():
         print(f"{key:28} {value}")
     print(f"written: {folder / f'{label}_candidates.csv'}")
@@ -57,11 +58,11 @@ def cmd_sponsor_names(_: argparse.Namespace) -> int:
     inputs = Inputs(archive_root())
     collector = read_trials.SponsorCollector()
     pages = 0
-    for source in TRIAL_SOURCES:
-        for rec in inputs.files(source):
-            if str(rec.get("name", "")).endswith(".json"):
-                collector.add_page(inputs.read(rec))
-                pages += 1
+    # Oldest page first across both sources, so the copy of a trial that was saved last is the one that counts.
+    for rec in inputs.files_in_order(TRIAL_SOURCES):
+        if str(rec.get("name", "")).endswith(".json"):
+            collector.add_page(inputs.read(rec))
+            pages += 1
     if not pages:
         raise InputError("the archive holds no trial records")
     names = collector.names()
@@ -80,8 +81,8 @@ def cmd_sponsor_names(_: argparse.Namespace) -> int:
     folder = linking_dir()
     label = free_label(date.today(), [(folder, "sponsor-names.csv"), (folder, "sponsor-names-inputs.txt")])
     facts = {"pages_read": pages, "trials": collector.n_trials, "sponsor_names": len(names)}
-    write_new(folder / f"{label}_sponsor-names.csv", csv_text(header, rows))
     write_new(folder / f"{label}_sponsor-names-inputs.txt", _inputs_text("sponsor names", facts, inputs))
+    write_new(folder / f"{label}_sponsor-names.csv", csv_text(header, rows))
     for key, value in facts.items():
         print(f"{key:28} {value}")
     print(f"written: {folder / f'{label}_sponsor-names.csv'}")

@@ -15,7 +15,7 @@ from bobby_hedgefund.archive.sec import SEC_SOURCE, TICKERS_NAME, submissions_na
 from bobby_hedgefund.archive.store import Archive
 from bobby_hedgefund.universe import candidates, cli, read_nasdaq, read_sec, read_trials, read_xbi
 from bobby_hedgefund.universe.inputs import InputError, Inputs
-from bobby_hedgefund.universe.output import OutputError, free_label, write_new
+from bobby_hedgefund.universe.output import OutputError, csv_text, free_label, plain_cell, write_new
 
 # cik, name, ticker, exchange, industry code, forms (newest first), former names
 COMPANIES = [
@@ -174,7 +174,7 @@ def test_symbols_skip_test_issues_and_the_closing_line() -> None:
     assert read_nasdaq.symbols("otherlisted.txt", OTHER) == {"GAMA", "DELT"}
     with pytest.raises(read_sec.ReadError):
         read_nasdaq.symbols("nasdaqlisted.txt", b"<html>blocked</html>")
-    assert {"ZETA-A", "ZETA.A"} <= read_nasdaq.same_symbol("ZETA-A")
+    assert read_nasdaq.dashed("ZETA.A") == "ZETA-A" and read_nasdaq.stripped("ZETA-A") == "ZETAA"
 
 
 def test_sponsor_names_newer_copy_replaces_older_and_only_company_like_names_are_kept() -> None:
@@ -229,12 +229,14 @@ def test_candidates_doors_filer_types_and_counts(root: Path) -> None:
     assert by_cik[108].filer_type == "unknown" and by_cik[108].in_version_1
     assert by_cik[101].ticker_check == "ok" and by_cik[106].ticker_check == "ok"
     assert by_cik[108].ticker_check == "not in the Nasdaq lists: THET"
+    assert by_cik[101].name_in_xbi_file == "ALPHA THERAPEUTICS INC" and by_cik[103].name_in_xbi_file == ""
     assert result.xbi_unmatched == []
     assert result.counts == {
         "sec_batch": "b1",
         "sec_batch_complete": True,
         "listed_companies": 7,
         "without_filing_list": 0,
+        "candidates_with_filing_list_from_older_batch": 0,
         "candidates": 6,
         "door_own_code": 3,
         "door_own_code_and_xbi": 2,
@@ -262,6 +264,49 @@ def test_holdings_that_cannot_be_linked_are_listed_not_dropped(root: Path) -> No
     assert result.counts["xbi_holdings"] == 5 and result.counts["xbi_matched"] == 3
 
 
+def index_of(*pairs: tuple[str, int]) -> candidates.TickerIndex:
+    index = candidates.TickerIndex()
+    for ticker, cik in pairs:
+        index.add(ticker, cik)
+    return index
+
+
+def test_a_look_alike_ticker_never_takes_another_companys_place() -> None:
+    # Company 1 has the share class AB-C, company 2 the plain ticker ABC. Whatever the order in the SEC's file,
+    # a holding written ABC is company 2 and a holding written AB.C is company 1.
+    for index in (index_of(("AB-C", 1), ("ABC", 2)), index_of(("ABC", 2), ("AB-C", 1))):
+        assert index.find("ABC") == (2, "")
+        assert index.find("AB.C") == (1, "") and index.find("AB-C") == (1, "")
+    # Without the plain ticker in the file, the form without the mark is a last resort, and only when it is unique.
+    assert index_of(("AB-C", 1)).find("ABC") == (1, "")
+    cik, why = index_of(("AB-C", 1), ("A-BC", 3)).find("ABC")
+    assert cik is None and "more than one company" in why
+    assert index_of(("AB-C", 1)).find("XYZ") == (None, "ticker not in the SEC's ticker file")
+    # One company with two share classes stays one company.
+    assert index_of(("AB-C", 1), ("AB-D", 1)).find("AB.D") == (1, "")
+
+
+def test_a_holding_whose_ticker_fits_two_companies_is_listed_as_unmatched(root: Path) -> None:
+    extra = [
+        *COMPANIES,
+        (201, "First Lookalike Inc", "LO-OK", "Nasdaq", "2834", ["10-K"], []),
+        (202, "Second Lookalike Inc", "L-OOK", "Nasdaq", "2834", ["10-K"], []),
+    ]
+    with Archive(root) as archive:
+        info = {"meta": {"batch": "b2"}}
+        archive.store(SEC_SOURCE, TICKERS_NAME, tickers_body(extra), run="b2", compress=True, dedup=False, info=info)
+        archive.record_run(SEC_SOURCE, "b2", "ok", meta={"batch": "b2", "complete": True})
+        archive.store("ssga-xbi", "holdings-xbi.xlsx", holdings_body([*HOLDINGS, ("LOOKALIKE", "LOOK")]), run="r2")
+    result = candidates.build(Inputs(root))
+    assert result.xbi_unmatched == [("LOOKALIKE", "LOOK", "ticker fits more than one company in the SEC's ticker file")]
+    assert result.counts["xbi_matched"] == 3
+
+
+def test_the_ticker_check_accepts_the_same_ticker_only() -> None:
+    assert candidates._ticker_check(("AB-C",), {"AB-C"}) == "ok"
+    assert candidates._ticker_check(("ABC",), {"AB-C"}) == "not in the Nasdaq lists: ABC"
+
+
 def test_an_incomplete_batch_is_refused_unless_asked(root: Path) -> None:
     with Archive(root) as archive:
         info = {"meta": {"batch": "b2"}}
@@ -270,6 +315,7 @@ def test_an_incomplete_batch_is_refused_unless_asked(root: Path) -> None:
         candidates.build(Inputs(root))
     result = candidates.build(Inputs(root), allow_partial=True)  # the filing lists of the older batch are used
     assert result.counts["candidates"] == 6 and result.counts["sec_batch_complete"] is False
+    assert result.counts["candidates_with_filing_list_from_older_batch"] == 6  # and that is said
 
 
 def test_a_listed_company_without_a_filing_list_is_counted(root: Path) -> None:
@@ -280,6 +326,26 @@ def test_a_listed_company_without_a_filing_list_is_counted(root: Path) -> None:
         archive.record_run(SEC_SOURCE, "b2", "ok", meta={"batch": "b2", "complete": True})
     counts = candidates.build(Inputs(root)).counts
     assert counts["listed_companies"] == 8 and counts["without_filing_list"] == 1 and counts["candidates"] == 6
+
+
+def test_a_filing_list_from_an_older_batch_is_counted(root: Path) -> None:
+    with Archive(root) as archive:
+        info = {"meta": {"batch": "b2"}}
+        archive.store(SEC_SOURCE, TICKERS_NAME, tickers_body(), run="b2", compress=True, dedup=False, info=info)
+        for cik, name, _ticker, exchange, sic, forms, former in COMPANIES:
+            if exchange != "OTC" and cik != 103:  # the new batch could not store company 103's list
+                body = filing_list_body(cik, name, sic, forms, former)
+                archive.store(
+                    SEC_SOURCE,
+                    submissions_name(cik),
+                    body,
+                    run="b2",
+                    compress=True,
+                    info={"meta": {"batch": "b2", "cik": cik}},
+                )
+        archive.record_run(SEC_SOURCE, "b2", "ok", meta={"batch": "b2", "complete": True})
+    counts = candidates.build(Inputs(root)).counts
+    assert counts["candidates"] == 6 and counts["candidates_with_filing_list_from_older_batch"] == 1
 
 
 # -- command -------------------------------------------------------------------------------------------------------
@@ -317,6 +383,25 @@ def test_sponsor_names_command(root: Path) -> None:
     listing = (folder / f"{label}_sponsor-names-inputs.txt").read_text()
     assert "# trials: 4" in listing and "ctgov-baseline" in listing and "ctgov-updates" in listing
     assert "ctgov-version" not in listing
+
+
+def test_the_copy_of_a_trial_that_was_saved_last_counts_whatever_its_source(root: Path) -> None:
+    with Archive(root) as archive:  # a second baseline, saved after the update page of the fixture
+        late = page(study("NCT003", ("Newest Sponsor Ltd", "INDUSTRY")))
+        archive.store("ctgov-baseline", "p0001.json", late, run="r3", compress=True, dedup=False)
+    assert cli.main(["sponsor-names"]) == 0
+    label = date.today().isoformat()
+    names = {r["sponsor_name"] for r in read_csv(root.parent / "linking" / f"{label}_sponsor-names.csv")}
+    assert "Newest Sponsor Ltd" in names and "New Sponsor Ltd" not in names and "Old Sponsor Ltd" not in names
+
+
+def test_text_a_spreadsheet_would_run_as_a_formula_is_marked_as_plain_text() -> None:
+    text = csv_text(("name", "n"), [("=HYPERLINK(1)", 5), ("+plus", -3), ("Plain Inc", 1), ("@x", 0)])
+    cells = [row[0] for row in csv.reader(text.splitlines())][1:]
+    assert cells == ["'=HYPERLINK(1)", "'+plus", "Plain Inc", "'@x"]
+    assert [plain_cell(c) for c in cells] == ["=HYPERLINK(1)", "+plus", "Plain Inc", "@x"]
+    assert plain_cell("'s-Hertogenbosch BV") == "'s-Hertogenbosch BV"  # a real apostrophe is left alone
+    assert ",-3" in text  # numbers are not touched
 
 
 def test_commands_report_a_missing_archive_instead_of_crashing(tmp_path: Path, monkeypatch, capsys) -> None:

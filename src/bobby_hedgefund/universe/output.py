@@ -53,9 +53,23 @@ def write_new(path: Path, text: str) -> None:
         os.close(dir_fd)
 
 
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def safe_cell(value: object) -> object:
+    """Text from outside (a sponsor name, a holding's name) that a spreadsheet would run as a formula gets an
+    apostrophe in front, the usual way to mark a cell as plain text. Readers of these files take it off again
+    with `plain_cell`."""
+    return "'" + value if isinstance(value, str) and value.startswith(FORMULA_START) else value
+
+
+def plain_cell(value: str) -> str:
+    return value[1:] if value.startswith("'") and value[1:].startswith(FORMULA_START) else value
+
+
 def csv_text(header: Sequence[str], rows: Iterable[Sequence[object]]) -> str:
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(header)
-    writer.writerows(rows)
+    writer.writerows([safe_cell(cell) for cell in row] for row in rows)
     return out.getvalue()

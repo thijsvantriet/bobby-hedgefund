@@ -10,8 +10,8 @@ from typing import Any
 # companies that report to the SEC as foreign companies (left out of version 1, docs/decisions/0006).
 DOMESTIC_YEARLY = frozenset({"10-K", "10-KT", "10-K405", "10-KSB"})
 FOREIGN_YEARLY = frozenset({"20-F", "40-F"})
-DOMESTIC_OTHER = frozenset({"10-Q", "S-1", "8-K"})
-FOREIGN_OTHER = frozenset({"6-K", "F-1"})
+DOMESTIC_OTHER = frozenset({"10-Q", "S-1", "S-3", "S-4", "8-K", "10-12B", "10-12G"})
+FOREIGN_OTHER = frozenset({"6-K", "F-1", "F-3", "F-4", "20FR12B", "20FR12G", "40FR12B", "40FR12G"})
 
 
 class ReadError(Exception):

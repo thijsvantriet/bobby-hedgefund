@@ -28,12 +28,12 @@ def symbols(name: str, body: bytes) -> set[str]:
     return found
 
 
-def same_symbol(ticker: str) -> set[str]:
-    """The ways one ticker is written: the SEC writes a share class with a dash (BRK-B), the lists with a dot."""
-    return {
-        ticker,
-        ticker.replace("-", "."),
-        ticker.replace(".", "-"),
-        ticker.replace("-", ""),
-        ticker.replace(".", ""),
-    }
+def dashed(ticker: str) -> str:
+    """One spelling for a share class: the SEC writes it with a dash (BRK-B), other files with a dot (BRK.B)."""
+    return ticker.replace(".", "-")
+
+
+def stripped(ticker: str) -> str:
+    """The ticker without the share-class mark. Two different companies can share this form (AB-C and ABC), so it
+    is only ever used as a last resort, and only when it points to exactly one company."""
+    return ticker.replace(".", "").replace("-", "")

@@ -32,6 +32,7 @@ HEADER = (
     "ticker_check",
     "former_names",
     "filing_list_saved",
+    "name_in_xbi_file",
 )
 
 
@@ -49,6 +50,7 @@ class Candidate:
     ticker_check: str
     former_names: tuple[str, ...]
     filing_list_saved: str
+    name_in_xbi_file: str = ""  # the link was made by ticker, so the fund's own name is shown next to the SEC's
 
     @property
     def in_version_1(self) -> bool:
@@ -69,6 +71,7 @@ class Candidate:
             self.ticker_check,
             " | ".join(self.former_names),
             self.filing_list_saved,
+            self.name_in_xbi_file,
         )
 
 
@@ -95,8 +98,39 @@ def sec_batch(inputs: Inputs) -> tuple[dict[str, Any], str, bool]:
 
 
 def _ticker_check(tickers: tuple[str, ...], listed_symbols: set[str]) -> str:
-    absent = [t for t in tickers if not (read_nasdaq.same_symbol(t) & listed_symbols)]
+    """`listed_symbols` are in the dashed spelling. Only the same ticker counts, never a look-alike."""
+    absent = [t for t in tickers if read_nasdaq.dashed(t) not in listed_symbols]
     return "ok" if not absent else "not in the Nasdaq lists: " + " ".join(absent)
+
+
+class TickerIndex:
+    """Find the company behind a ticker from another file. A wrong link is worse than no link: the same spelling
+    wins, then the same ticker with dot and dash treated alike, and only then the form without the share-class
+    mark. A form that points to more than one company gives no link at all."""
+
+    def __init__(self) -> None:
+        self._exact: dict[str, set[int]] = {}
+        self._dashed: dict[str, set[int]] = {}
+        self._stripped: dict[str, set[int]] = {}
+
+    def add(self, ticker: str, cik: int) -> None:
+        self._exact.setdefault(ticker, set()).add(cik)
+        self._dashed.setdefault(read_nasdaq.dashed(ticker), set()).add(cik)
+        self._stripped.setdefault(read_nasdaq.stripped(ticker), set()).add(cik)
+
+    def find(self, ticker: str) -> tuple[int | None, str]:
+        """(company number, "") or (None, why not)."""
+        steps = (
+            self._exact.get(ticker),
+            self._dashed.get(read_nasdaq.dashed(ticker)),
+            self._stripped.get(read_nasdaq.stripped(ticker)),
+        )
+        for found in steps:
+            if found:
+                if len(found) == 1:
+                    return next(iter(found)), ""
+                return None, "ticker fits more than one company in the SEC's ticker file"
+        return None, "ticker not in the SEC's ticker file"
 
 
 def build(inputs: Inputs, *, allow_partial: bool = False) -> Result:
@@ -107,7 +141,7 @@ def build(inputs: Inputs, *, allow_partial: bool = False) -> Result:
 
     tickers_of: dict[int, list[str]] = {}
     exchanges_of: dict[int, list[str]] = {}
-    cik_of_ticker: dict[str, int] = {}
+    index = TickerIndex()
     for row in rows:
         tickers_of.setdefault(row.cik, [])
         exchanges_of.setdefault(row.cik, [])
@@ -115,27 +149,30 @@ def build(inputs: Inputs, *, allow_partial: bool = False) -> Result:
             tickers_of[row.cik].append(row.ticker)
         if row.exchange and row.exchange not in exchanges_of[row.cik]:
             exchanges_of[row.cik].append(row.exchange)
-        for form in read_nasdaq.same_symbol(row.ticker) if row.ticker else ():
-            cik_of_ticker.setdefault(form, row.cik)
+        if row.ticker:
+            index.add(row.ticker, row.cik)
     listed = sorted(cik for cik, found in exchanges_of.items() if any(e not in NOT_LISTED for e in found))
+    is_listed = set(listed)
 
     result = Result()
-    xbi_ciks: set[int] = set()
+    xbi_names: dict[int, list[str]] = {}
     holdings = read_xbi.holdings(inputs.read(inputs.newest(XBI_SOURCE, XBI_NAME)))
     for holding in holdings:
-        cik = next((cik_of_ticker[f] for f in read_nasdaq.same_symbol(holding.ticker) if f in cik_of_ticker), None)
+        cik, why_not = index.find(holding.ticker)
         if cik is None:
-            result.xbi_unmatched.append((holding.name, holding.ticker, "ticker not in the SEC's ticker file"))
-        elif cik not in listed:
+            result.xbi_unmatched.append((holding.name, holding.ticker, why_not))
+        elif cik not in is_listed:
             result.xbi_unmatched.append((holding.name, holding.ticker, "no exchange listing in the SEC's ticker file"))
         else:
-            xbi_ciks.add(cik)
+            xbi_names.setdefault(cik, []).append(holding.name)
+    xbi_ciks = set(xbi_names)
 
     listed_symbols: set[str] = set()
     for name in read_nasdaq.LISTS:
-        listed_symbols |= read_nasdaq.symbols(name, inputs.read(inputs.newest(NASDAQ_SOURCE, name)))
+        found_symbols = read_nasdaq.symbols(name, inputs.read(inputs.newest(NASDAQ_SOURCE, name)))
+        listed_symbols |= {read_nasdaq.dashed(s) for s in found_symbols}
 
-    without_list = 0
+    without_list = older_batch = 0
     for cik in listed:
         found = inputs.files(SEC_SOURCE, submissions_name(cik))
         if not found:
@@ -151,6 +188,9 @@ def build(inputs: Inputs, *, allow_partial: bool = False) -> Result:
         if not (own or in_xbi):
             continue
         tickers = tuple(tickers_of[cik])
+        list_meta = found[-1].get("meta")
+        if not isinstance(list_meta, dict) or list_meta.get("batch") != batch:
+            older_batch += 1  # this batch did not store the company's list: an older copy is used
         result.candidates.append(
             Candidate(
                 cik=cik,
@@ -165,6 +205,7 @@ def build(inputs: Inputs, *, allow_partial: bool = False) -> Result:
                 ticker_check=_ticker_check(tickers, listed_symbols),
                 former_names=company.former_names,
                 filing_list_saved=str(found[-1].get("ts") or ""),
+                name_in_xbi_file=" | ".join(xbi_names.get(cik, [])),
             )
         )
 
@@ -175,6 +216,7 @@ def build(inputs: Inputs, *, allow_partial: bool = False) -> Result:
         "sec_batch_complete": complete,
         "listed_companies": len(listed),
         "without_filing_list": without_list,
+        "candidates_with_filing_list_from_older_batch": older_batch,
         "candidates": len(c),
         "door_own_code": sum(x.door == "own code" for x in c),
         "door_own_code_and_xbi": sum(x.door == "own code + xbi" for x in c),

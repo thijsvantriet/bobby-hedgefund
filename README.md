@@ -44,7 +44,7 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **stream 0, part 1: SEC access built** (`bobby-archive sec-companies`, docs/decisions/0008, "Update 2026-11-18"). Before the first request the SEC's robots files were read: the data service has none, and the main site does not forbid the ticker file. The command stores the SEC's ticker file and the filing list of every company with a stock-exchange listing (6,051), one request a second, about two and a half hours, once. Tried on 20 companies first; the archive check passes and the contact address is stored nowhere. Stream 0 is built in five parts: (1) these SEC files, (2) the candidate list and the sponsor names, (3) daily prices, (4) the filter, (5) name matching and the owner's check. The universe filter needs prices, so the linking table comes after stream 1.
 
-2026-11-18: **stream 0, part 2: candidate list and sponsor names built** (`bobby-universe`, see "Universe and linking table" below). Reading code only, on files the archive already holds; every file read is checked against its fingerprint. First result: 26,149 distinct company-like sponsor names in 170,192 trial records. The candidate list is written once the SEC company files are complete.
+2026-11-18: **stream 0, part 2: candidate list and sponsor names built** (`bobby-universe`, see "Universe and linking table" below). Reading code only, on files the archive already holds; every file read is checked against its fingerprint. First result: 26,149 distinct company-like sponsor names in 170,192 trial records. A reviewer agent found that a look-alike ticker (AB-C next to ABC) could link a fund holding to the wrong company; fixed and tested before the merge. The candidate list is written once the SEC company files are complete; its counts (among them: how many companies come in through the XBI fund only) then go into docs/decisions/0006 as an update.
 
 2026-11-18: **the owner wants the pilot at the end of November 2026**, not in January. The order of work stays; see "Next step" for what must exist by then.
 
@@ -104,10 +104,15 @@ bobby-universe sponsor-names       # every company-like sponsor name in the arch
 
 - `~/bobby-hedgefund-data/universe/<date>_candidates.csv`: one line per company with one of our four industry
   codes or a place in the XBI fund: SEC company number, name, tickers, industry code, the door it came through,
-  whether it reports as a foreign company (left out of version 1), former names, and a check of its ticker against
-  the Nasdaq lists. `<date>_inputs.txt` lists the archived files that were read, with their fingerprints.
+  whether it reports as a foreign company (left out of version 1), former names, a check of its ticker against
+  the Nasdaq lists, and the name the fund's file gives it (the link to the fund is made by ticker, so the two names
+  can be compared by eye). A fund holding that cannot be linked to exactly one company goes to
+  `<date>_xbi-unmatched.csv` instead of being guessed. `<date>_inputs.txt` lists the archived files that were
+  read, with their fingerprints.
 - `~/bobby-hedgefund-data/linking/<date>_sponsor-names.csv`: sponsor name as written in the registry, its classes,
   number of trials, one example trial.
+- In these files a text that a spreadsheet would run as a formula (starting with `=`, `+`, `-` or `@`) has an
+  apostrophe in front.
 
 Still to come: daily prices, the filter, name matching and the owner's check of the matches.
 
