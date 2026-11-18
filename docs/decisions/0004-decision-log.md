@@ -186,6 +186,42 @@ Revisit: by 2027-02, or before the owner's go for the start of the funds: check 
 exempt, that GitHub's record of pushes can still be read without an account, and that a stored timestamp can be
 verified from a fresh copy of the repository.
 
+## Update 2026-11-18: how it is built
+Commands: `bobby-log verify | show | head`, `bobby-publish plan | day` (README, "Decision log").
+- **Where.** The public files are written in the data folder first (`staging/`), as exactly the tree that goes to
+  `track-record/`; the private half is `log-private/`, one file per record that has sealed content.
+- **The starting value** of the chain is the SHA-256 of the text `bobby-hedgefund decision log, format 1, live`.
+  The pilot's log starts from the same text ending in `pilot`, and every record carries its mode, so a pilot
+  record can never be placed in the real log.
+- **A sealed field**: the SHA-256 of the random value (64 characters), a line-feed and the content in the log's
+  fixed form; one random value per field. The private file is safely on disk before the public line is written.
+  A private file left by a crash before its line was written is set aside under another name, not used again.
+- **A written line is final.** After a crash the next writer adds lines. `HEAD` can then be one record behind,
+  which `verify` reports as harmless and the next writer repairs; anything else (`HEAD` ahead, further behind,
+  missing, or not matching) is reported as damage and stops writing.
+- **Record kinds**, each with a checked form (`src/bobby_hedgefund/log/records.py`): start of the funds, session
+  start, forecast, decision, no decision, refused order, reduced order, fill, closed order (lapsed, replaced,
+  cancelled by the brake, too small), outcome, correction, restart, stop file, refused start, company event, the
+  Dice starting number, a Dice draw, a Rules draw. A "reveal" record (point 2) is not built: after the price
+  service's answer (record 0007) nothing may be revealed.
+- **Checks on written text** before a line is written, with the limits of record 0009, point 5: a long quote and a
+  key, an e-mail address or a path of the home folder become "[removed]"; a sentence about a price or worked out
+  from one, and an amount of money that no filing among the session's inputs states, become "[sealed]". Keys and
+  addresses are kept nowhere. The patterns can miss an unusual wording.
+- **Publishing** refuses: anything outside `track-record/`, a changed or shortened published file, a link, a
+  repository with uncommitted changes or on another branch, a prepared log that fails its own check, and any new
+  content that names a company from the private list of record 0006 (reported by its number in that list, never
+  by name). After a refusal `track-record/` is as it was.
+- **Not switched on yet:** sending to GitHub and the real log (both need a file `LIVE` in the data folder, the
+  owner's go), reading GitHub's receipt time, the OpenTimestamps step and the ruleset on `main`. In the pilot the
+  time of the local commit stands in for the receipt time, and each record says it is a pilot record.
+- **Known snag before the first real publication:** the check the owner's machine runs on every commit treats
+  `.jsonl` and `.csv` files as data files; it needs an exception for `track-record/`.
+- The deletion command for prices (record 0007, point 4) now also removes the private half of the log, the fund
+  books, the session folders, the reports and the saved conversations, and leaves a marker for `verify`.
+
+**Review.** A reviewer agent read the code before the pull request; its findings are listed in the pull request.
+
 ## Sources
 Read on 2026-11-17.
 - Crosby and Wallach, [Efficient Data Structures for Tamper-Evident Logging](https://www.usenix.org/legacy/event/sec09/tech/full_papers/crosby.pdf) (USENIX Security 2009): "Tamper-evidence requires auditing"

@@ -66,6 +66,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **record 0009 drafted** (docs/decisions/0009, "proposed" until the owner merges it): the agent team as files with a fixed model, effort and tool list; model and effort are read by script from each agent run's own record and compared with the file; an agent's answer is taken from that record too, so the session that starts the agents cannot change it; every portfolio-manager round runs three times. Checked against the Claude Code documentation; seven points that documentation could not settle are listed as pilot checks. Three open points for the owner, each with a default.
 
+2026-11-18: **the decision log built** (`bobby-log`, `bobby-publish`; docs/decisions/0004, "Update 2026-11-18"; see "Decision log" below). Lines that are only ever added, each with the fingerprint of the line before it, also across day files; content that may not be public (everything from prices) goes to a private file and the public line shows only its fingerprint; written text is checked for long quotes, prices and untraceable amounts before a line is written; the publish script only adds to `track-record/` and refuses everything else. Tried in a scratch folder: a changed, removed, re-ordered and lost line and changed private content are each caught. Only the pilot mode is switched on: nothing is sent to GitHub, and the real log stays off until the owner's go.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -216,6 +218,36 @@ bobby-trials changes               # by hand; a few minutes; writes only changes
 - Shown this way is what the registry *posted*; a change is seen on the night its record was archived.
 - An archived page or record that cannot be read is counted and reported once (phone message "Bobby trials"),
   not every night.
+
+## Decision log
+Design: docs/decisions/0004 and 0009. Until the funds start only the **pilot** log exists, in
+`~/bobby-hedgefund-data/pilot/` (never in git, never sent anywhere); the real one starts with the owner's go.
+
+```
+bobby-log verify                   # re-check the whole chain of fingerprints and the private files; writes nothing
+bobby-log verify --dir <folder>    # the same for a copy of track-record/ (anyone can run this; public half only)
+bobby-log show --day 2026-11-30    # print records (--open also shows sealed content: private)
+bobby-log head                     # the newest fingerprint and the number of records
+bobby-publish plan                 # what publishing would do; writes nothing
+bobby-publish day 2026-11-30       # the day's one commit (pilot: in a repository inside the pilot folder)
+```
+
+- `staging/`: the public files as they are prepared, exactly the tree that is placed in `track-record/`:
+  `log/<year>/<month>/<date>.jsonl` (one record per line), `HEAD` (newest fingerprint and number of records),
+  `forecasts.csv` (only grows; an outcome is a new line).
+- `log-private/`: per record with sealed content one file with that content and the random values. Falls under
+  the deletion rule for prices (`bobby-prices purge`); after it `verify` reports "content deleted under record
+  0007" instead of damage.
+- **The fingerprint of a record** is the SHA-256 of: the fingerprint of the record before it, a line-feed, and the
+  bytes of the line. The first record starts from a fixed value: the SHA-256 of the text
+  `bobby-hedgefund decision log, format 1, live` (for the pilot the last word is `pilot`, so a pilot record can
+  never be placed in the real log).
+- **A sealed field** shows the SHA-256 of: a random value (64 characters), a line-feed, and the content written in
+  the log's fixed form. Example to check a program against: random value sixty-four zeros and the content
+  `"12.34"` give this fingerprint (sha256): `2c8629da9624bda7b55097b55a1f701433a8d067599434728e2f7fd1b28d4f21`.
+- The fixed form of a line: field names in alphabetical order, no spaces, letters outside the basic English set as
+  codes, and no number with a decimal point (money is whole cents, a percentage is text such as `2.5%`).
+- Live mode refuses to run until a file named `LIVE` exists in the data folder: the owner's go.
 
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with
