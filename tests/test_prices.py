@@ -25,13 +25,13 @@ def close_ms(day: date) -> int:
     return int(datetime(day.year, day.month, day.day, 21, 0, tzinfo=UTC).timestamp() * 1000)  # 16:00 in New York
 
 
-def day_body(day: date, prices: dict[str, float] | None = None, *, adjusted: bool = False) -> bytes:
+def day_body(day: date, prices: dict[str, float] | None = None, *, adjusted: bool = False, status: str = "OK") -> bytes:
     prices = {"AAA": 10.0, "BBB": 4.0} if prices is None else prices
     rows = [
         {"T": t, "o": c, "h": c + 1, "l": c - 1, "c": c, "v": 1000, "vw": c, "n": 5, "t": close_ms(day)}
         for t, c in prices.items()
     ]
-    doc: dict = {"status": "OK", "adjusted": adjusted, "queryCount": len(rows), "resultsCount": len(rows)}
+    doc: dict = {"status": status, "adjusted": adjusted, "queryCount": len(rows), "resultsCount": len(rows)}
     if rows:
         doc["results"] = rows
     return json.dumps(doc).encode()
@@ -171,6 +171,38 @@ def test_a_day_without_prices_is_settled_only_when_it_is_old_and_a_holiday_or_em
     assert massive.closed_days(records, date(2026, 9, 10)) == set()  # too fresh to be settled
 
 
+def test_a_copy_the_service_marks_delayed_is_stored_and_the_final_copy_is_fetched_later(
+    price_site, tmp_path: Path, key_fetcher
+) -> None:
+    late = {"body": day_body(TUE, {"AAA": 11.0, "BBB": 1.0}, status="DELAYED")}
+    price_site.add("/day/2026-11-17", late, late, {"body": day_body(TUE, {"AAA": 11.5, "BBB": 1.0})})
+    with Archive(tmp_path) as archive:
+        new: list[date] = []
+        first = run_days(archive, key_fetcher, price_site, stored_now=new)
+        assert (
+            first["stored"] == 2 and first["of_which_marked_delayed"] == 1 and first["complete"] and new == [MON, TUE]
+        )
+        assert massive.stored_days(archive.records, final_only=True) == {MON}
+        second = run_days(archive, key_fetcher, price_site, "r2")  # still delayed: asked again
+        third = run_days(archive, key_fetcher, price_site, "r3")  # now final
+        fourth = run_days(archive, key_fetcher, price_site, "r4")
+        assert (second["asked"], third["asked"], fourth["asked"]) == (1, 1, 0)
+        assert massive.stored_days(archive.records, final_only=True) == {MON, TUE}
+    inputs = Inputs(tmp_path)
+    assert read.load_day(inputs, read.day_records(inputs)[TUE])["AAA"].close == 11.5  # readers take the newest copy
+    with Archive(tmp_path) as archive:
+        # a delayed copy that never became final is left alone once the day is old
+        archive.store(
+            massive.DAILY_SOURCE,
+            massive.day_name(date(2026, 11, 2)),
+            b"x",
+            run="m",
+            info={"meta": {"service_status": "DELAYED"}},
+        )
+        old = run_days(archive, key_fetcher, price_site, "r5", start=date(2026, 11, 2), end=date(2026, 11, 2))
+    assert old["asked"] == 0
+
+
 def test_the_regular_market_holidays_are_worked_out_by_rule() -> None:
     assert sorted(d.isoformat() for d in holidays.regular_holidays(2026)) == [
         "2026-01-01",
@@ -242,6 +274,7 @@ def test_a_refusal_at_the_old_edge_of_the_history_is_noted_and_not_asked_again(
         b"<html>blocked</html>",
         b"{}",
         b'{"status":"ERROR"}',
+        day_body(MON, status="NOT_AUTHORIZED"),
         day_body(MON, adjusted=True),  # recalculated prices are never stored
         day_body(TUE),  # the prices of another day
         json.dumps({"status": "OK", "adjusted": False, "resultsCount": 5, "results": []}).encode(),

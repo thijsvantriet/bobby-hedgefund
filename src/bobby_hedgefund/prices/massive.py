@@ -40,6 +40,10 @@ ONE_DAY_STATUS = frozenset({400, 404})
 DAILY_LOOKBACK_DAYS = 14  # the morning job also fills gaps of the last two weeks
 MAX_SPLIT_PAGES = 50
 MARKET_ZONE = ZoneInfo("America/New_York")
+# The service marks the newest day "DELAYED" for some hours and "OK" after that. A delayed copy is complete enough
+# to use and is stored, marked; the day is asked again on later runs, and the copy marked OK is stored next to it
+# (stored files are never replaced; readers take the newest copy of a day).
+OK, DELAYED = "OK", "DELAYED"
 
 
 def massive_fetcher(
@@ -92,12 +96,16 @@ def _noted_days(records: list[dict[str, Any]], key: str) -> list[date]:
     return found
 
 
-def stored_days(records: list[dict[str, Any]]) -> set[date]:
+def stored_days(records: list[dict[str, Any]], *, final_only: bool = False) -> set[date]:
+    """Days with a stored price file. `final_only`: leave out days of which only a copy marked "delayed" by the
+    service is stored (the newest day, in the first hours after it becomes available)."""
     days = set()
     for r in records:
         if r.get("source") == DAILY_SOURCE and r.get("kind") in ("file", "unchanged"):
             day = name_day(str(r.get("name")))
-            if day is not None:
+            meta = r.get("meta")
+            delayed = isinstance(meta, dict) and meta.get("service_status") == DELAYED
+            if day is not None and not (final_only and delayed):
                 days.add(day)
     return days
 
@@ -146,13 +154,14 @@ def _working_days(start: date, end: date) -> Iterator[date]:
         day += timedelta(days=1)
 
 
-def check_day(body: bytes, day: date) -> int:
+def check_day(body: bytes, day: date) -> tuple[int, str]:
     """Check that `body` is the service's answer for `day` with unadjusted prices. Returns the number of shares
-    in it (0: no prices for that day). Raises SourceError for anything else; such an answer is never stored."""
+    in it (0: no prices for that day) and the service's status, "OK" or "DELAYED". Raises SourceError for
+    anything else; such an answer is never stored."""
     try:
         doc = json.loads(body)
-        if not isinstance(doc, dict) or doc.get("status") != "OK":
-            raise ValueError("no OK status")
+        if not isinstance(doc, dict) or doc.get("status") not in (OK, DELAYED):
+            raise ValueError("neither an OK nor a DELAYED status")
         if doc.get("adjusted") is not False:
             raise ValueError("prices are not marked as unadjusted")
         results = doc.get("results") or []
@@ -167,7 +176,7 @@ def check_day(body: bytes, day: date) -> int:
         raise SourceError(f"the answer for {day} is not the expected price list ({exc})") from None
     if days - {day}:
         raise SourceError(f"the answer for {day} holds prices of another day")
-    return len(results)
+    return len(results), str(doc["status"])
 
 
 def run_days(
@@ -194,9 +203,12 @@ def run_days(
     it is noticed. A refusal ("too many requests", "forbidden") or a broken connection stops the job at once.
     """
     have = stored_days(archive.records)
-    skip = have | closed_days(archive.records, today) | set(_noted_days(archive.records, "outside_history"))
+    # A day of which only a delayed copy is stored is asked again while it is fresh, for the final copy.
+    final = stored_days(archive.records, final_only=True)
+    settled = final | {d for d in have if (today - d).days > EMPTY_IS_FINAL_AFTER_DAYS}
+    skip = settled | closed_days(archive.records, today) | set(_noted_days(archive.records, "outside_history"))
     todo = [d for d in _working_days(start, end) if d not in skip]
-    asked = stored = empty = outside = thin = 0
+    asked = stored = empty = outside = thin = delayed = 0
     failed: list[str] = []
     for day in todo:
         if (limit is not None and asked >= limit) or not keep_going():
@@ -206,7 +218,7 @@ def run_days(
         asked += 1
         try:
             resp = _get(fetcher, address, pause)
-            count = check_day(resp.body, day)
+            count, service_status = check_day(resp.body, day)
         except FetchError as exc:
             if exc.status == 403 and age >= HISTORY_DAYS - HISTORY_EDGE_DAYS:
                 # The oldest edge of the two years: the service no longer hands this day out. Not asked again.
@@ -237,24 +249,29 @@ def run_days(
         meta: dict[str, Any] = {"day": day.isoformat(), "shares": count}
         if is_thin:
             meta["thin"] = True  # an old day that stays thin is stored as it is, and marked
-        archive.store(
+        if service_status == DELAYED:
+            meta["service_status"] = DELAYED
+            delayed += 1
+        rec = archive.store(
             DAILY_SOURCE,
             day_name(day),
             resp.body,
             run=run,
             compress=True,
-            dedup=False,
+            dedup=True,  # the same delayed copy again is not stored twice
             info={"url": address, "status": resp.status, "headers": resp.headers, "meta": meta},
         )
-        stored += 1
-        if stored_now is not None:
-            stored_now.append(day)
+        if rec["kind"] == "file":
+            stored += 1
+            if stored_now is not None and day not in stored_now:
+                stored_now.append(day)
     left = len(todo) - asked
     summary = {
         "from": start.isoformat(),
         "to": end.isoformat(),
         "asked": asked,
         "stored": stored,
+        "of_which_marked_delayed": delayed,
         "no_prices": empty,
         "too_few_shares_asked_again_later": thin,
         "outside_history": outside,

@@ -211,6 +211,11 @@ read first; what they showed is written here because the pages do not say all of
 - **A day that looks half-filled.** A recent day with fewer than 80% of the usual number of shares (the middle
   value of the stored days within a month of it) is not stored but asked again on the next run; stored files are
   never replaced, so a half-filled file must not get in. After four days it is stored as it is, and marked.
+- **The newest day is marked "DELAYED"** by the service for some hours after it becomes available (found on
+  the first full download: the answer for the day before held the whole market, with that mark). Such a copy is
+  stored, with the mark in its line of the fingerprint list, so the morning has prices to work with. The day is
+  asked again on later runs until the copy marked "OK" is stored next to it; readers take the newest copy of a
+  day. After four days a day is no longer asked again.
 - **A wrong answer for one day** (not the expected layout, prices of another day, "not found") is noted and the
   job goes on with the next day; the run then ends as failed, so the phone message goes out. A refusal ("too many
   requests", "forbidden") or a broken connection stops the job at once.
