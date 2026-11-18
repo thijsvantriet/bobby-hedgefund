@@ -277,6 +277,7 @@ lists of sources invited a mistake that costs a whole run.
 - Not confirmed by any test here, because they need a real session: that Claude Code runs these checks inside an
   agent and names the agent (pilot check 4), and that a check in an agent file applies to every tool.
 
+## Revisit
 Revisit: by 2027-01, or after the pilot week, or when a new Claude Code version changes agent files, hooks or the
 layout of session records, or when a new model replaces one named in a file.
 
