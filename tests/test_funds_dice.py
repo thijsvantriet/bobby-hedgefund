@@ -57,7 +57,7 @@ def test_a_place_among_the_dice_funds() -> None:
 def start(tmp_path: Path) -> tuple[Log, Path, Path]:
     log = make_log(tmp_path)
     prices = tmp_path / "prices"
-    store_splits(prices, [], run="splits-0")
+    store_splits(prices, [])
     with log.writer(MON, clock()) as w:
         w.add("funds_start", {"day": MON.isoformat(), "funds": ["careful", "dice"], "cash_cents": M})
         w.add(
@@ -208,6 +208,11 @@ def test_without_its_inputs_the_rules_fund_holds_nothing_and_says_why(tmp_path: 
     )
     assert log.entries()[decision.record["draw"] - 1].kind == "rules_draw"
     assert cli.main(["book", "--day", "2027-03-01", "--cutoff", "2027-02-03T00:00:00Z"]) == 0
+    assert "waiting for the time the publication of 2027-02-01 was received" in capsys.readouterr().out
+    with log.writer(date(2027, 3, 2), clock()) as w:  # later sessions learn when those two days were published
+        w.add("session_start", session(log, date(2027, 3, 1), 9, received_for=(MON, 9, 0)))
+        w.add("session_start", session(log, date(2027, 3, 2), 9, received_for=(date(2027, 3, 1), 9, 0)))
+    assert cli.main(["book", "--day", "2027-03-02", "--cutoff", "2027-02-03T00:00:00Z"]) == 0
     assert "booked: 1 trading day(s)" in capsys.readouterr().out
     assert cli.main(["check"]) == 0 and "equal to the cent" in capsys.readouterr().out
     assert cli.main(["status"]) == 0

@@ -168,9 +168,17 @@ Commands: `bobby-funds start | book | draw | check | status | event` (README, "F
   small, nothing to sell, company left), a record per company event with what it did to each fund, and one record
   per booked trading day with the values at the close. Everything that comes from prices in them is sealed. The
   day record also says which days are booked, so that no day is booked twice and none is skipped.
-- **Booking order on a day:** share splits, takeovers, then per fund sells and buys, then the values. A split is
-  booked before the day's orders, so a share bought on the day of its split is bought at the new price and is not
-  split again.
+- **Booking order on a day:** first each fund's value at the last closing prices, with the shares as they were
+  at that close (it sizes the day's orders); then share splits, takeovers, per fund sells and buys, and the values
+  at the close. A split is booked before the day's orders, so a share bought on the day of its split is bought at
+  the new price and is not split again.
+- **No day is booked before the fill day of its orders is known.** The fill day follows from when the session's
+  publication was received, and the log holds that time only from the next session on. Until then booking stops
+  before that session's day, so a fill can never slip to a later day. It also stops at a day that is newer than
+  the saved list of share splits.
+- **A run that stops in the middle of a day** (a crash, a full disk) leaves some of that day's records without
+  the day's own record. The next run works that day out again from the state before it and writes only what is
+  not in the log yet, so the day comes out exactly as it would have without the stop.
 - **The fund's value for sizing** is its cash plus every position at the last closing price before the fill day.
   A share without a price that day keeps its last one for at most 30 stored days; without any it counts as zero.
 - **When cash is short** every buy of the day is cut by the same proportion and rounded down; if the rounded-up
@@ -182,7 +190,17 @@ Commands: `bobby-funds start | book | draw | check | status | event` (README, "F
   without a known size pays the highest rate.
 - **Limits** (point 2) are checked in this order: sells first, then per buy: the brake, in the universe, on the
   covered list, 25 positions, the make-or-break limit, the smallest trade, the per-stock limit. A buy above the
-  per-stock limit is cut down to the room that is left; if that room is below 0.5% it is refused.
+  per-stock limit is cut down to the room that is left; if that room is below 0.5% it is refused. A new decision
+  about a company replaces an order for it that is still waiting, and is judged without that order. **One order
+  per company in a round:** a second one is refused, because a buy and a sale of the same company in one round
+  would come out differently depending on which is read first.
+- **What the public log does not say** (record 0007, point 6). Three things in these records would give a return
+  away, and are sealed or left out: (1) the brake by name: a refused or cancelled buy says "a limit on the fund's
+  value", and which limit is in the sealed part; (2) the size an order was cut down to, when it follows from what
+  the position is worth that day (the size that was asked for stays public); (3) the Rules fund does not bring a
+  position that stays back to its equal part: that order's size would be the share's return. **For the owner:**
+  the spec says a decision's size is public, and that the brake is a rule; these three are the cautious reading
+  of the price service's answer. Point 3 is settled in record 0010.
 - **Company events built:** share split, takeover for cash, takeover for shares (the buyer's shares are sold at
   its opening price that day unless the buyer is covered; without a price it waits five trading days and then
   keeps the shares). **Not built, and refused with a message:** mixed deal, spin-off, removal from the exchange,
@@ -199,7 +217,17 @@ Commands: `bobby-funds start | book | draw | check | status | event` (README, "F
   holidays worked out by rule and with the library `exchange_calendars` (502 trading days, the same in all three).
 - **Still to do before the funds start** (unchanged): the check of the trading costs against a year of prices
   (point 3).
-- **Found on the way:** the price history was downloaded in one go, so every one of its files was stored long
+- **Review.** A reviewer agent (Opus) read the code and said "fix first". Worked in: on the day of a split the
+  fund was valued with the new number of shares at the old price (15% too high in its example), which sized that
+  day's orders wrongly; the index funds took every split of the last two years on their first day; a waiting or
+  same-round sale could let a buy pass the per-stock limit; a day could be booked before its orders had a fill
+  day, which moved the fill; a run that stopped half-way through a day came out differently on the second try;
+  the three points on public fields above; the Rules fund could be drawn twice in a month; a reverse split to
+  less than one share without an opening price paid nothing. Known and not built: a ticker that changes or is
+  reused, and a buyer in a takeover that itself may not be named in public.
+- **Found on the way:** the first run on real prices ended in an error of the price reader, which forgot the day
+  it had just read when it had to look far back for a price; fixed and tested. Also: the price history was
+  downloaded in one go, so every one of its files was stored long
   after its day. A session with a data cut-off in the past would see none of them: the cut-off works as meant.
   The first run on the real saved prices used made-up orders and today's cut-off: 75 trading days booked, 23
   fills, one real share split, 1,000 Dice funds, and a recomputation equal to the cent.

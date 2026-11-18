@@ -9,9 +9,10 @@ from pathlib import Path
 
 from ..archive.store import iso
 from ..prices import massive, read
-from ..universe.inputs import Inputs
+from ..universe.inputs import InputError, Inputs
 
 LOOK_BACK_DAYS = 30  # how far back a share without a price keeps its last one
+KEPT_DAYS = 12  # price files kept in memory at a time (each is the whole market of one day)
 
 
 def exact(value: float | None) -> Fraction | None:
@@ -47,11 +48,13 @@ class PriceBook:
         return str(self._records[day]["sha256"])
 
     def bars(self, day: date) -> dict[str, read.Bar]:
-        if day not in self._bars:
-            self._bars[day] = read.load_day(self.inputs, self._records[day])
-            if len(self._bars) > 8:  # a replay walks forward day by day: old days are not needed again
-                self._bars.pop(min(self._bars))
-        return self._bars[day]
+        bars = self._bars.pop(day, None)
+        if bars is None:
+            bars = read.load_day(self.inputs, self._records[day])
+        self._bars[day] = bars  # the day used last is at the end
+        while len(self._bars) > KEPT_DAYS:
+            self._bars.pop(next(iter(self._bars)))  # the day that was not used for the longest time goes
+        return bars
 
     def _bar(self, ticker: str, day: date) -> read.Bar | None:
         """Only the same ticker counts: the SEC writes a share class with a dash (AB-C), the price files with a
@@ -81,6 +84,14 @@ class PriceBook:
                 self._last.clear()
             self._last[key] = found
         return self._last[key]
+
+    def splits_as_of(self) -> date:
+        """The day the newest complete list of share splits was fetched. A day later than this cannot be booked:
+        a split of that day might not be in the list yet."""
+        done = [r for r in self.inputs.runs(massive.SPLITS_SOURCE) if r.get("status") == "ok"]
+        if not done:
+            raise InputError("no complete list of share splits is stored")
+        return date.fromisoformat(str(done[-1]["ts"])[:10])
 
     def splits(self) -> list[read.Split]:
         if self._splits is None:

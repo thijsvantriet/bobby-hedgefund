@@ -9,7 +9,7 @@ from typing import Any
 
 from logkit import H
 
-from bobby_hedgefund.archive.store import Archive
+from bobby_hedgefund.archive.store import Archive, iso
 from bobby_hedgefund.funds.universe import Listed, Universe
 from bobby_hedgefund.log.records import FILL_RULE_PILOT
 from bobby_hedgefund.log.store import Log
@@ -45,8 +45,13 @@ def stored_at(day: date) -> datetime:
     return datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=UTC) + timedelta(hours=6)
 
 
+_SPLITS: dict[str, list[tuple[str, date, float, float]]] = {}
+
+
 def store_day(root: Path, day: date, bars: dict[str, tuple[float | None, float]], when: datetime | None = None) -> None:
-    """One day's price file: ticker -> (opening price or None, closing price)."""
+    """One day's price file: ticker -> (opening price or None, closing price). As the real morning job does, the
+    list of share splits is fetched in the same run."""
+    _store_splits(root, _SPLITS.get(str(root), []), when or stored_at(day), f"splits-{day}")
     rows = [
         {"T": t, "o": o, "h": c, "l": c, "c": c, "v": 1000} if o is not None else {"T": t, "c": c, "v": 1000}
         for t, (o, c) in bars.items()
@@ -64,15 +69,17 @@ def store_day(root: Path, day: date, bars: dict[str, tuple[float | None, float]]
 
 
 def store_splits(root: Path, rows: list[tuple[str, date, float, float]], run: str = "splits-1") -> None:
-    doc = {
-        "status": "OK",
-        "results": [
-            {"ticker": t, "execution_date": d.isoformat(), "split_from": a, "split_to": b} for t, d, a, b in rows
-        ],
-    }
+    """Set what the price service's list of splits holds from now on (every later `store_day` fetches it)."""
+    _SPLITS[str(root)] = rows
+
+
+def _store_splits(root: Path, rows: list[tuple[str, date, float, float]], when: datetime, run: str) -> None:
+    results = [{"ticker": t, "execution_date": d.isoformat(), "split_from": a, "split_to": b} for t, d, a, b in rows]
+    body = json.dumps({"status": "OK", "results": results}).encode()
+    done = {"kind": "run", "ts": iso(when), "run": run, "source": massive.SPLITS_SOURCE, "status": "ok"}
     with Archive(root) as archive:
-        archive.store(massive.SPLITS_SOURCE, "splits-p01.json", json.dumps(doc).encode(), run=run, compress=True)
-        archive.record_run(massive.SPLITS_SOURCE, run, "ok", meta={"pages": 1, "splits": len(rows)})
+        archive.store(massive.SPLITS_SOURCE, "splits-p01.json", body, run=run, when=when, compress=True)
+        archive.append({**done, "meta": {"pages": 1, "splits": len(rows)}})
 
 
 def session(log: Log, day: date, hour: int = 9, received_for: tuple[date, int, int] | None = None) -> dict[str, Any]:

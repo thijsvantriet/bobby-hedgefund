@@ -47,6 +47,16 @@ class Books:
     index_units: dict[str, Fraction] = field(default_factory=dict)
     events_done: set[str] = field(default_factory=set)
     values: dict[date, dict[str, Any]] = field(default_factory=dict)  # the stored values of each booked day
+    draw_days: list[date] = field(default_factory=list)  # session days with a monthly draw (Dice or Rules)
+    rules_months: list[str] = field(default_factory=list)
+    index_bought: date | None = None  # the day the index funds were bought
+
+    def undated(self) -> date | None:
+        """The earliest session day whose orders have no fill day yet, because the time its publication was
+        received is not in the log. No day from then on may be booked: a fill would move to a later day."""
+        days = [o.decided for f in self.funds.values() for o in f.orders.values() if o.due is None]
+        days += [d for d in self.draw_days if d not in self.received]
+        return min(days) if days else None
 
     def set_due(self, orders: list[Order] | None = None) -> None:
         """The fill day of every open order whose session has a known time of publication (record 0003)."""
@@ -54,6 +64,23 @@ class Books:
         for order in todo:
             if order.due is None and order.decided in self.received and order.decided in self.starts:
                 order.due = calendar.fill_day(self.received[order.decided], self.starts[order.decided])
+
+
+# What the daily booking writes. After a crash in the middle of a day these records exist without the day's own
+# record; the next run works that day out again from the state before it (see `Booker`).
+BOOKED_OUTCOMES = ("lapsed", "too small", "nothing to sell", "company left", engine.BRAKED)
+
+
+def unfinished_day(entries: list[Entry]) -> list[Entry]:
+    """The booking records written after the last complete day: what a run left that stopped half-way."""
+    last = max((i for i, e in enumerate(entries) if e.kind == "day_booked"), default=-1)
+    return [
+        e
+        for e in entries[last + 1 :]
+        if e.kind == "fill"
+        or (e.kind == "company_event" and "booked" in e.record)
+        or (e.kind == "order_closed" and e.record["outcome"] in BOOKED_OUTCOMES)
+    ]
 
 
 class Replayer:
@@ -99,7 +126,14 @@ class Replayer:
         elif kind == "order_reduced":
             order = self._fund(rec).orders.get(rec["ref"])
             if order is not None:
-                order.size = canon.pct_fraction(rec["allowed_pct"])
+                allowed = rec["allowed_pct"]
+                if not isinstance(allowed, str):  # sealed: it follows from what the position was worth
+                    allowed = self.log.opened(entry)["allowed_pct"]
+                order.size = canon.pct_fraction(allowed)
+        elif kind in ("dice_draw", "rules_draw"):
+            books.draw_days.append(entry.day)
+            if kind == "rules_draw":
+                books.rules_months.append(rec["month"])
         elif kind == "order_closed":
             self._fund(rec).orders.pop(rec["ref"], None)
         elif kind == "fill":
@@ -134,6 +168,8 @@ class Replayer:
                     fund.peak = max(fund.peak or 0, stored["value_cents"])
             for symbol, stored in values.get("index", {}).items():
                 books.index_units[symbol] = Fraction(stored["units_num"], stored["units_den"])
+            if values.get("index") and books.index_bought is None:
+                books.index_bought = day
 
     def _fund(self, rec: dict[str, Any]) -> Fund:
         fund = self.books.funds.get(rec["fund"])
@@ -142,11 +178,13 @@ class Replayer:
         return fund
 
 
-def replay(log: Log) -> Books:
-    """The state of every fund as it follows from the log."""
+def replay(log: Log, *, skip: set[int] | None = None) -> Books:
+    """The state of every fund as it follows from the log. `skip`: record numbers to leave out (the booking
+    step uses this to go back to the state before a day that was left half-booked)."""
     replayer = Replayer(log)
     for entry in log.entries():
-        replayer.feed(entry)
+        if not skip or entry.seq not in skip:
+            replayer.feed(entry)
     replayer.books.set_due()
     return replayer.books
 
@@ -177,7 +215,8 @@ def same_ticker(a: str, b: str) -> bool:
 
 def split_effect(fund: Fund, ticker: str, ratio: Fraction, price: Fraction | None) -> dict[str, Any] | None:
     """A share split for one fund: shares times the ratio; a fraction of a share is paid out in cash at the first
-    opening price after the split, without cost."""
+    opening price after the split, without cost. `price`: that opening price, or, when the share did not open
+    that day, its last closing price before the split brought to the new shares."""
     for position in fund.positions.values():
         if same_ticker(position.ticker, ticker):
             exact_shares = position.shares * ratio
@@ -293,8 +332,19 @@ class Booker:
         self.events = events
         self.covered = covered
         self.on_day = on_day  # the Dice funds book their day through this, and hand back what to store with it
-        self.books = replay(log)
+        # A run that stopped in the middle of a day left some of that day's records. The day is worked out again
+        # from the state before it, so that it comes out exactly as it would have without the stop; what is in
+        # the log already is not written again.
+        left = unfinished_day(log.entries())
+        self.books = replay(log, skip={e.seq for e in left})
+        self.logged_fills = {e.record["ref"] for e in left if e.kind == "fill"}
+        self.logged_closed = {e.record["ref"] for e in left if e.kind == "order_closed"}
+        self.logged_events = {log.opened(e)["booked"]["key"] for e in left if e.kind == "company_event"}
         self.report = BookReport()
+        if left:
+            self.report.notes.append(
+                f"an earlier run stopped half-way through a day; {len(left)} of its records are kept"
+            )
 
     def rate_of(self, cik: int) -> Fraction:
         return engine.cost_rate(self.universe.market_value(cik))
@@ -310,11 +360,20 @@ class Booker:
         if not stored:
             self.report.notes.append("no price file is stored before the cut-off")
             return self.report
-        day = (books.booked[-1] if books.booked else min(books.started.values()) - timedelta(days=1)) + timedelta(
-            days=1
-        )
+        first = min(books.started.values())
+        day = (books.booked[-1] if books.booked else first - timedelta(days=1)) + timedelta(days=1)
+        undated = books.undated()
         while day <= (min(stored[-1], upto) if upto else stored[-1]):
+            if undated is not None and day >= undated:
+                # The fill day of that session's orders follows from when its publication was received
+                # (record 0003); until the log holds that time, no day from then on is booked.
+                self.report.notes.append(f"waiting for the time the publication of {undated} was received")
+                break
             if self.prices.has(day):
+                if self.prices.splits_as_of() < day:
+                    self.report.waiting_for = day
+                    self.report.notes.append("the saved list of share splits is older than this day")
+                    break
                 self.book_day(day)
             elif day.weekday() < 5 and day not in self.prices.closed and calendar.is_trading_day(day):
                 self.report.waiting_for = day  # the price file must be there first (record 0005, point 2.1)
@@ -347,15 +406,17 @@ class Booker:
         def opening(ticker: str) -> Fraction | None:
             return prices.opening(ticker, day)
 
-        self._book_splits(day, active, opening, sha)
+        # First of all: each fund's value at the last closing prices before this day, "with the shares as they
+        # were at that close" (record 0005, point 2.2). A split of today must not be in it.
+        value_before = {fund.name: engine.fund_value(fund, before)[0] for fund in active}
+        self._book_splits(day, active, opening, before, sha)
         self._book_table_events(day, active, opening, sha)
         for fund in active:
-            value_before, _ = engine.fund_value(fund, before)
             bookings = engine.book_day(
-                fund, day, value_before, opening, self.rate_of, lambda order: self.waited(order, day)
+                fund, day, value_before[fund.name], opening, self.rate_of, lambda order: self.waited(order, day)
             )
             for booking in bookings:
-                self._write(booking, sha, value_before)
+                self._write(booking, sha, value_before[fund.name])
                 engine.apply(fund, booking)
         values: dict[str, Any] = {"funds": {}, "index": {}, "price_file_sha256": sha}
         for fund in active:
@@ -372,6 +433,7 @@ class Booker:
         books.booked.append(day)
         books.values[day] = values
         self.report.days.append(day)
+        self.logged_fills, self.logged_closed, self.logged_events = set(), set(), set()
 
     def close_value(self, fund: Fund, day: date) -> dict[str, Any]:
         """A fund's value at the close of `day`. A share without a price that day keeps its last one, and is named
@@ -390,47 +452,64 @@ class Booker:
         return {"value_cents": value, "cash_cents": fund.cash, "stale": sorted(set(stale)), "no_price": missing}
 
     def _write(self, booking: Booking, price_file: str, value_before: int) -> None:
+        """Log one booking, unless a run that stopped half-way logged it already."""
+        ref = booking.order.ref
         if isinstance(booking, Fill):
-            self.writer.add("fill", fill_body(booking, price_file, value_before))
+            if ref not in self.logged_fills:
+                self.writer.add("fill", fill_body(booking, price_file, value_before))
             self.report.fills += 1
         else:
-            self.writer.add("order_closed", closed_body(booking))
+            if ref not in self.logged_closed:
+                self.writer.add("order_closed", closed_body(booking))
             self.report.closed += 1
 
-    def splits_due(self, day: date) -> list[tuple[str, Fraction]]:
-        """(ticker, new shares per old share) of every split since the last booked day up to `day`."""
-        last = self.last_booked()
-        out: list[tuple[str, Fraction]] = []
+    def splits_due(self, day: date) -> list[tuple[str, Fraction, date]]:
+        """(ticker, new shares per old share, the split's own day) of every split after the last booked day up
+        to `day`. Before the first booked day nothing was held, so nothing older than the start counts."""
+        last = self.last_booked() or min(self.books.started.values()) - timedelta(days=1)
+        out: list[tuple[str, Fraction, date]] = []
         for split in self.prices.splits():
-            if split.day <= day and (last is None or split.day > last):
+            if last < split.day <= day:
                 old, new = exact(split.split_from), exact(split.split_to)
                 if old and new:
-                    out.append((split.ticker, new / old))
+                    out.append((split.ticker, new / old, split.day))
         return out
 
-    def _book_splits(self, day: date, active: list[Fund], opening: Callable[[str], Fraction | None], sha: str) -> None:
-        for ticker, ratio in self.splits_due(day):
-            key = f"split:{ticker}:{day.isoformat()}"
+    def _book_splits(
+        self,
+        day: date,
+        active: list[Fund],
+        opening: Callable[[str], Fraction | None],
+        before: Callable[[str], Fraction | None],
+        sha: str,
+    ) -> None:
+        for ticker, ratio, split_day in self.splits_due(day):
+            key = f"split:{ticker}:{split_day.isoformat()}"
             if key in self.books.events_done:
-                continue  # booked by a run that stopped before the day was complete: never twice
-            effects = [e for e in (split_effect(f, ticker, ratio, opening(ticker)) for f in active) if e]
-            if not effects:
                 continue
+            if not any(same_ticker(p.ticker, ticker) for f in active for p in f.positions.values()):
+                continue  # nobody holds it
+            price = opening(ticker)
+            if price is None:  # no opening price today: the last close before the split, in new shares
+                old_close = before(ticker)
+                price = old_close / ratio if old_close is not None else None
+            effects = [e for e in (split_effect(f, ticker, ratio, price) for f in active) if e]
             held = next(p for f in active for p in f.positions.values() if p.cik == effects[0]["cik"])
-            self.writer.add(
-                "company_event",
-                {
-                    "company": _company(held.cik, held.name, held.ticker),
-                    "event": "split",
-                    "effective": day.isoformat(),
-                    # From the price service's list; to be checked against the company's filing by hand.
-                    "checked_against_filing": False,
-                    "terms": Sealed(
-                        {"new_per_old_num": ratio.numerator, "new_per_old_den": ratio.denominator}, "other"
-                    ),
-                    "booked": Sealed({"key": key, "effects": effects, "price_file_sha256": sha}),
-                },
-            )
+            if key not in self.logged_events:
+                self.writer.add(
+                    "company_event",
+                    {
+                        "company": _company(held.cik, held.name, held.ticker),
+                        "event": "split",
+                        "effective": split_day.isoformat(),
+                        # From the price service's list; to be checked against the company's filing by hand.
+                        "checked_against_filing": False,
+                        "terms": Sealed(
+                            {"new_per_old_num": ratio.numerator, "new_per_old_den": ratio.denominator}, "other"
+                        ),
+                        "booked": Sealed({"key": key, "effects": effects, "price_file_sha256": sha}),
+                    },
+                )
             for effect in effects:
                 apply_effect(self.books.funds[effect["fund"]], effect)
             self.books.events_done.add(key)
@@ -455,18 +534,19 @@ class Booker:
                 terms["cash_per_share"] = canon.format_decimal(event.cash_per_share)
             if event.ratio is not None:
                 terms |= {"ratio": canon.format_decimal(event.ratio), "buyer_cik": event.buyer_cik}
-            self.writer.add(
-                "company_event",
-                {
-                    "company": _company(held.cik, held.name, held.ticker),
-                    "event": event.kind,
-                    "effective": event.effective.isoformat(),
-                    "checked_against_filing": True,  # entered by hand from the filing
-                    "filing": event.filing,
-                    "terms": Sealed(terms, "other"),
-                    "booked": Sealed({"key": event.key, "effects": effects, "price_file_sha256": sha}),
-                },
-            )
+            if event.key not in self.logged_events:
+                self.writer.add(
+                    "company_event",
+                    {
+                        "company": _company(held.cik, held.name, held.ticker),
+                        "event": event.kind,
+                        "effective": event.effective.isoformat(),
+                        "checked_against_filing": True,  # entered by hand from the filing
+                        "filing": event.filing,
+                        "terms": Sealed(terms, "other"),
+                        "booked": Sealed({"key": event.key, "effects": effects, "price_file_sha256": sha}),
+                    },
+                )
             for effect in effects:
                 fund = self.books.funds[effect["fund"]]
                 apply_effect(fund, effect)
@@ -486,10 +566,11 @@ class Booker:
                 price = self.prices.opening(symbol, day)
                 if price is None:
                     continue  # bought at the first opening price there is
-                units = Fraction(engine.START_CASH_CENTS, 100) / price
-            for ticker, ratio in self.splits_due(day):
-                if ticker == symbol:
-                    units *= ratio
+                units = Fraction(engine.START_CASH_CENTS, 100) / price  # bought today: today's split is in the price
+            else:
+                for ticker, ratio, _ in self.splits_due(day):
+                    if ticker == symbol:
+                        units *= ratio
             self.books.index_units[symbol] = units
             found = self.prices.last_close(symbol, day)
             out[symbol] = {

@@ -267,14 +267,17 @@ bobby-funds event --kind "cash takeover" --cik ... --effective ... --filing <SEC
 - **The log is the only truth.** Positions, cash and values are added up from its records; `check` does that
   again from scratch and compares with what was stored, to the cent.
 - **Booking** goes trading day by trading day, also over days without a session. It stops at a trading day whose
-  price file is not stored yet, and it needs a complete saved list of share splits.
+  price file is not stored yet, at a day newer than the saved list of share splits, and before the day of a
+  session whose time of publication the log does not hold yet (its orders have no fill day until then).
 - **The fill day** follows from when the day's publication was received (docs/decisions/0003): the first trading
   day whose opening is at least 30 minutes later, and never the session's own day when it started at or after
   14:00 Amsterdam time. The days the exchange is closed are a hand-made list in `funds/calendar.py`, copied from
   the exchange's page; it covers 2026 and 2027 and must be extended for later years.
 - **Limits in code**, checked when a decision is made, with waiting orders counted as filled: at most 5% per stock
   (8% for Bold), 25 positions, 3 positions with a make-or-break result within 30 days (8 for Bold), only covered
-  companies of the universe, nothing bought at 30% or more below the fund's own highest value, no trade below 0.5%.
+  companies of the universe, nothing bought at 30% or more below the fund's own highest value, no trade below
+  0.5%, one order per company in a round. The public log does not name that 30% rule when it stops a buy, and
+  seals a size that follows from what a position is worth: both would give a return away.
 - **Company events.** Share splits come from the saved list of splits and are marked "not checked against the
   filing". A takeover is entered by hand from its SEC filing with `bobby-funds event` and booked in the next round.
 - **Dice.** For fund number n, every covered company gets the SHA-256 of the text made of the starting number,

@@ -87,7 +87,7 @@ def monthly_draw(
         return found[0] if found else None
 
     info = {cik: (c.ticker, c.name) for cik, c in universe.companies.items()}
-    if "rules" in books.funds:
+    if "rules" in books.funds and month not in books.rules_months:
         fund = books.funds["rules"]
         inputs = rules.load_inputs(paths.mode_root(mode) / "rules")
         chosen = rules.select(inputs[1], covered, session_day) if inputs else []
@@ -96,9 +96,13 @@ def monthly_draw(
             body["why_empty"] = rules.NO_INPUTS
         draw = writer.add("rules_draw", body)
         value, _ = engine.fund_value(fund, price_of)
+        # Only whole sales and new positions at the equal part for now. Bringing a position that stays back to
+        # its equal part would put a size in the public log that follows from the share's return; whether and how
+        # that is done is for record 0010.
         wanted = [
             orders.Proposal(p.action, p.cik, p.name, p.ticker, p.size, {"draw": draw.seq})
             for p in orders.rebalance(fund, chosen, info, value, price_of)
+            if p.action in ("buy", "sell")
         ]
         verdicts = orders.check(fund, value, price_of, wanted, buyable=universe.buyable(), covered=covered, risky=set())
         orders.place(writer, fund, session_day, verdicts, fill_rule=fill_rule(mode), cutoff=iso(cutoff))
