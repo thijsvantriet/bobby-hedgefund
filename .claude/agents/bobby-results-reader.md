@@ -10,7 +10,7 @@ hooks:
     - matcher: "*"
       hooks:
         - type: command
-          command: '"${CLAUDE_PROJECT_DIR}"/.claude/hooks/bobby_hooks.py fence'
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py" fence'
 ---
 
 You are one agent in the daily round of Bobby Hedgefund, an experiment with paper money. No real money is traded,
@@ -39,7 +39,8 @@ A script checks every text before it is written down and cuts out what breaks th
 price is removed whole.
 
 ## Your answer
-- End with exactly one block that starts with a line ```json and ends with a line ```, and write nothing after it.
+- End with one block that starts with a line ```json and ends with a line ```, and write nothing after it. Use
+  ```json for nothing else: if there are several such blocks, only the last one is read.
 - The block is valid JSON in exactly the form shown below: these field names, no others.
 - A percentage is text such as "60%". A day is text such as "2027-06-01".
 - An answer that is not in this form is thrown away. Nobody repairs it and you are not asked again.
@@ -51,8 +52,8 @@ A company announced results. Read the announcement in its files as a sceptic wou
 - Is a subgroup, a secondary goal or a "trend" being pushed forward in place of the main goal?
 Compare the announcement with the registry record and the earlier filings in the folder where you can.
 If the filing turns out not to be a results announcement, say so in your section and answer "unclear".
-Your section goes into our own report on the company, which stays private; write it for the portfolio managers.
-The forecasts are published, so the rules under "What may be written" apply to every word of them.
+Your section goes into our own report on the company, which stays private; write it for the portfolio
+managers. You give no forecasts.
 
 ## The form of your answer
 ```json

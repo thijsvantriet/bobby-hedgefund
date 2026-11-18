@@ -241,16 +241,39 @@ Each has a default that the pilot runs with.
 - **The reading check sits in each agent file** (as a check before every tool use), not in the project's
   settings, so it exists only while that agent runs. It follows links before it judges a path, refuses a search
   without a folder, and refuses when no round is active.
-- **Three more checks are in the project's settings** (`.claude/settings.json`): the start of an agent, changes to
-  files by the leading session, and a note of how each session began. The first two do nothing unless the data
-  folder holds a marker that names the running session and is younger than 90 minutes; the third only writes a
+- **Five more checks are in the project's settings** (`.claude/settings.json`): the start of an agent; changes to
+  files by the leading session; sending a message to an agent or stopping one; the command line, which during a
+  round is only for the round's own commands, one at a time; and a note of how each session began. The first
+  four do nothing unless the data folder holds a marker that names the running session and is younger than 90
+  minutes (a marker that is too old, dated in the future or unreadable counts as none); the fifth only writes a
   line. So ordinary work in this repository is never touched by them.
+- **The reading check refuses whatever goes wrong inside it**, also a fault of its own. It is started through
+  `python3` by name; when the checks file cannot be found at all, `python3` itself ends with the code that
+  refuses the tool. It lets one thing through besides reading: the tool an agent hands its report back with.
+- **What belongs to one fund is closed to the others**: a portfolio manager can read its own task file and its
+  own fund's holdings, not another fund's, and only the Debate fund's agents read the bull and bear cases. Nobody
+  reads the list of all tasks.
+- **Still not a lock.** The leading session could change the marker or these files between rounds, and what a
+  check does not see it cannot refuse. Record 0009, point 3, says so; the copy of the whole conversation is what
+  makes it visible afterwards.
 - **A stand-in** (point 3): when the agent files cannot be used because they were made in the running session,
   the script writes the role's instructions into the task file and names the general agent, the model and the
   effort it must be started with; the start check accepts exactly that.
-- **Answers** (`session/answers.py`): exactly one block in the fixed form, nothing after it, no number with a
-  decimal point; at most five orders and one per company for a portfolio manager. A message about a refused
-  answer says what is wrong, never what the answer said.
+- **Answers** (`session/answers.py`): the last block in the fixed form counts (an earlier one is a draft),
+  nothing may follow it, no number with a decimal point, no field name twice; every list of sources has the one
+  form (number and one sentence); at most five orders and one per company for a portfolio manager; "sell" is
+  always the whole position, a part is a "reduce". A message about a refused answer says what is wrong, never
+  what the answer said.
+- **A thesis states a probability that can be scored**: that its catalyst turns out the way the thesis needs, by
+  its date, not "that the thesis is right".
+
+**Review.** A reviewer agent (Opus) ran the checks with made-up input and confirmed that ordinary work outside a
+round is never refused, but said "fix first". Worked in: after a model fallback a task could be run again on the
+original model; the reading check let a read through when the check itself crashed (any exit code but one does
+not block); a marker dated wrongly never expired; a message to a running agent and the command line were not
+covered; every agent could read every task file and so another fund's holdings; search patterns with braces and
+file filters were not checked; a draft block in an answer threw the whole answer away; two different forms for
+lists of sources invited a mistake that costs a whole run.
 - Not confirmed by any test here, because they need a real session: that Claude Code runs these checks inside an
   agent and names the agent (pilot check 4), and that a check in an agent file applies to every tool.
 

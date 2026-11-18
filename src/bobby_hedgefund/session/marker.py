@@ -6,6 +6,7 @@ in and is younger than 90 minutes; so they can never get in the way of ordinary 
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -39,10 +40,13 @@ def read(data_dir: Path) -> dict[str, Any] | None:
     """The active round, or None; by the same rules as the hooks."""
     try:
         found = json.loads(path(data_dir).read_text(encoding="utf-8"))
-        if not isinstance(found, dict) or time.time() - float(found["started"]) > MAX_AGE_SECONDS:
+        if not isinstance(found, dict):
             return None
+        started = float(found["started"])
+        if not math.isfinite(started) or not 0 <= time.time() - started <= MAX_AGE_SECONDS:
+            return None  # too old, or dated in the future: a marker can never stay switched on for good
         return found
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, RecursionError):
         return None
 
 

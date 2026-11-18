@@ -5,18 +5,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/bobby_hooks.py session-start"
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py\" session-start"
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Agent",
+        "matcher": "Agent|Task",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/bobby_hooks.py agent-start"
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py\" agent-start"
           }
         ]
       },
@@ -25,7 +25,25 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/bobby_hooks.py no-edits"
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py\" no-edits"
+          }
+        ]
+      },
+      {
+        "matcher": "SendMessage|TaskStop",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py\" hands-off"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py\" round-commands"
           }
         ]
       }
