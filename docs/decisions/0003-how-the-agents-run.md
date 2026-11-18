@@ -230,6 +230,24 @@ from scratch each day; a half-built folder blocked the day for good; reports wer
 their day; a time without a zone crashed; a trial-change line was trusted as it stood; the list of tasks could
 be changed unnoticed.
 
+## Update 2026-11-18 (2): how the round is built
+Commands: `/bobbyhedgefund-day` and `bobby-session` (README, "The daily round").
+- **The command** is a skill that only typing starts. Its first line runs `bobby-session start` and puts the
+  output in front of the model; when that script refuses, Claude Code drops the whole command and the model
+  sees nothing of it.
+- **A fresh session** is one whose last noted beginning is "new" or "cleared" (noted by a check at the start of
+  every session). A session that was resumed, shortened or copied, or of which nothing is noted, is refused.
+- **Refusals and stop-file changes** are noted in the data folder at once and written to the log as the first
+  records of the next round that starts.
+- **The fill day in the pilot.** The time of the pilot's local commit stands in for the time GitHub received the
+  publication; the next round reads it and writes it into its first record. A fill can never lie before its
+  decision: should a clock ever put the receipt before the session's own start, the start counts.
+- **The copy of the conversation** is made at the end of the round and once more, complete, at the start of the
+  next one; the fingerprint of the complete copy goes into that round's first record.
+- **Not built in this step:** the real round (it refuses: only the pilot runs), reading GitHub's receipt time,
+  the weekly summary, the monthly letter and the monthly re-run of the universe. The weekly check on the
+  screening has its agent file but no step yet.
+
 ## Sources
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),
