@@ -157,6 +157,93 @@ The private universe files hold market values computed from prices, so they fall
 Later, maybe: a database copy for searching; OpenFIGI to tell share classes and foreign listings apart; foreign
 filers in a version 2.
 
+## Update 2026-11-18: how the filter and the matching are built
+Commands: `bobby-archive sec-shares`, `bobby-universe build | match | decisions | linking | missed-check`
+(README, "Universe and linking table"). What had to be settled while building, beyond the text above:
+
+**Share count (point 2).** The SEC's data service is asked for two figures per candidate: the share count on the
+cover page of a report, and the one on the balance sheet. The newer of the two is used. Limits found:
+- The service only holds figures a company reports *for the company as a whole*. A company that reports each
+  share class apart has neither figure and falls out with the reason "no share count reported for the company as
+  a whole". These are listed for the owner; adding them by hand from the report is a later step.
+- A count older than 15 months does not count (a yearly report plus the time allowed to file it).
+- Several figures for one day in one report are added up, with a note (share classes).
+- **Share splits.** A split after the report was *filed* changes the number of shares, so the count is multiplied
+  by the split's ratio, with a note. A split between the day of the count and the filing day is **not** applied:
+  companies must restate their share figures for such a split, so it is normally in the count already; the line
+  gets "CHECK" in its note. The split list is the price service's (record 0007).
+- The build refuses to run until the share counts of the current batch are complete, so "not fetched yet" can
+  never look like "reports no share count".
+
+**Which ticker.** A company can have several tickers (share classes, warrants, units, preferred shares), and the
+SEC's file does not always list the common share first. The ticker with the most money traded over the 60 days is
+used; all tickers with prices are shown. The SEC writes a share class with a dash, the price service with a dot;
+only that difference is bridged, never a look-alike.
+
+**The filter, two additions.** (1) A share without a price in the last 5 trading days is out ("no longer
+trades"): a company taken over two months ago would otherwise pass on its old prices. (2) "Average over the last
+60 trading days" counts a day without trading as zero, so a newly listed share can enter a month late.
+"Shell company" is read from the SEC's industry code for blank-check companies (6770); the cover-page flag is
+not fetched. In the SEC's ticker file "NYSE" also covers NYSE American.
+
+**Cleaning names (point 3, step 1).** Beyond lower case, punctuation and legal endings: accents are removed;
+"&" is read as "and"; the tags the SEC adds to many names are dropped ("/DE/", "/NEW", "/ADR"); "Holdings" and
+"Group" count as endings.
+
+**Kinds of suggestion (step 3).** Scoring every pair with one similarity score gave mostly noise: two names
+that share a long word such as "Pharmaceuticals" score as alike. So a suggestion is one of five kinds:
+- **strong**: identical after cleaning;
+- **core**: identical once the words that only say "drug company" are left out (Therapeutics, Pharma,
+  Biosciences, ...), for a core of at least four letters;
+- **starts**: the sponsor name starts with the company's whole cleaned name (a subsidiary, a country branch);
+- **contains**: the sponsor name holds the company's whole cleaned name further on ("X Bio, a wholly owned
+  subsidiary of ..."), for a name of at least eight letters;
+- **similar**: nearly the same spelling (rapidfuzz, 90 of 100), and the part that tells the company apart must
+  be nearly the same too (85 of 100) or the first word identical.
+Former names are tried as well. Strong and core suggestions are always shown; of the three weaker kinds at most 25
+per company, most trials first, and the sheet says how many were left out.
+
+**The review sheet (step 4).** A spreadsheet with a how-to page; one grey line per company and its suggestions
+under it. On the company line the owner can choose "not biotech" (the known gap of code 2834: generics makers);
+the next universe run then leaves that company out, and "biotech" takes the mark back. A read-only copy of the
+sheet is kept; when the filled-in sheet is read back, every decided line must still be a line of that copy, and
+one wrong line refuses the whole sheet, with the line numbers. Names can never run as a spreadsheet formula.
+
+**Decisions (point 4).** `decisions.jsonl` is only ever added to, under a lock; every line carries the
+fingerprint of the line before it, and a damaged file is refused, not continued. A changed decision is a new
+line with the number and fingerprint of the line it replaces.
+
+**A third share figure.** The first real run showed about ten mid-size companies falling out only because the
+service has neither share count for them (they report per share class). So a third figure is fetched: the
+average number of shares over the reported period, which nearly every company reports. It is used only when no
+count on a day is usable, and the line says so. It is an approximation: an average over a quarter, not a count.
+
+**First run, 2026-11-18** (counts only; the files are private):
+- Candidates: 704 companies of 6,051 with a stock-exchange listing. 547 through an industry code of our own,
+  150 through a code and the XBI fund, **7 through the XBI fund only**. 102 report as foreign companies and are
+  left out; none has an unknown way of reporting. Of the fund's 159 holdings, 157 were linked to a company; the 2
+  others are listed for a look by hand.
+- Universe: **221 companies**, inside the 150-250 the spec expected. How many companies fail each rule on size,
+  trading and price is in the private inputs file of the run, not here: those counts are computed from prices
+  (record 0007). Not from prices: 102 foreign filers; 25 companies without a usable share count (3 of them fail
+  on nothing else: young companies without a report yet); 19 companies run on the average figure; 7 lines carry
+  the "CHECK" note for a split between the count and its filing, and all 7 fail the filter on other rules anyway.
+- **XBI only (the open point of "Differs from the spec", 2):** 6 companies of the universe come in through the
+  XBI fund only, with yet another industry code. As decided there, they are not named publicly: the published
+  universe list and any published record must leave them out (record 0004, point 3) until the owner decides
+  otherwise.
+- Matching: 221 companies against 26,149 sponsor names gave 311 suggestions (228 strong, 22 core, 33 starts, 15
+  contains, 13 similar; 71 through a former name). 15 companies have no suggestion at all. Some of those run
+  no trials of their own (tools and services companies); for others the registry may class the sponsor as
+  something other than "industry", and then their trials are not in our archive at all. The by-hand check of
+  step 5 (`bobby-universe missed-check`) is the place to find out. The right and missed shares of step 5 are
+  added here after the owner's check.
+
+**Review.** A reviewer agent read the code before the pull request. Worked in, among others: the split rule
+above (the first version would have counted a split twice for a balance-sheet count), the completeness check,
+the ticker choice, the SEC's name tags, a stop when the share-count service answers "not found" many times in a
+row (then the address is wrong, not the companies), and names with line breaks or control characters.
+
 ## Sources
 - SEC, [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data)
   (company numbers "are not recycled"; the ticker files; read 2026-11-17)

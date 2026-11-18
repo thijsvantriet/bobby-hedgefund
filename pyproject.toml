@@ -9,10 +9,12 @@ license-files = ["LICENSE"]
 dependencies = [
     "defusedxml>=0.7.1",
     "openpyxl>=3.1.5",
+    "rapidfuzz>=3.14.6",
 ]
 
 [project.scripts]
 bobby-archive = "bobby_hedgefund.archive.cli:main"
+bobby-filings = "bobby_hedgefund.filings.cli:main"
 bobby-prices = "bobby_hedgefund.prices.cli:main"
 bobby-universe = "bobby_hedgefund.universe.cli:main"
 
