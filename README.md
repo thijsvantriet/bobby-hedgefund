@@ -62,6 +62,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **rules for the historical study drafted** (docs/study/RULES.md, status "proposed"): what it must deliver (base rates and the typical size of a price move), which past results are in it and how the list is made before any outcome is looked at, the measures, the time limit of six sessions. Nothing is downloaded or analysed until the owner says yes; four questions for the owner are at the end of that document.
 
+2026-11-18: streams 0-3 merged into `main` (PRs #15, #16, #17) and installed: prices every morning (07:30, again 12:30), SEC filings inside the nightly archive run, trial-record changes at 01:15. 272 tests pass; three reviewer runs (Opus) before the merge, their findings worked in. Checked after the install: archive and prices pass their fingerprint check.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -70,14 +72,13 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    matches), daily prices, SEC filings, trial-record changes. The terms for prices and SEC filings are read
    (0007, 0008). Stream 0, parts 1 and 2 (the SEC company files, the candidate list and the sponsor
    names), stream 1 (daily prices), the filter, the name matching and stream 2 (SEC filings) are built.
-   **Next, for the owner:** fill in the review sheet of suggested matches (`linking/<date>_review.xlsx`, the
-   newest one; about 220 companies), then `bobby-universe decisions <sheet>` and `bobby-universe linking`
-   make the linking table. After that: the by-hand check of 20 companies for missed names, and record 0009 with
-   the agent files (step 3).
-   Stream 3 (trial-record changes) is built too.
+   Stream 3 (trial-record changes) is built too; all four streams run (merged 2026-11-18).
+   **Waiting for the owner:** fill in the review sheet of suggested matches (`linking/<date>_review.xlsx`, the
+   newest one; 221 companies), then `bobby-universe decisions <sheet>` and `bobby-universe linking`
+   make the linking table. After that: the by-hand check of 20 companies for missed names.
    Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
    and wait for the owner's yes; its AACT download is settled (0014).
-3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
+3. **Now (Claude):** record 0009, agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
    usage limits a session takes.
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026. Needed before it: streams 0-3, record 0009, the agent files, the decision log with its leak check, and the fund books.
 5. In the first live weeks: the app, the alerts and the first monthly letter. A review with the owner every month.
