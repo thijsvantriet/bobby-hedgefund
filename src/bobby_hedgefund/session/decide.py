@@ -127,6 +127,12 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
     inputs = load_inputs(rnd)
     open_ones = {e.seq: e for e in entries if e.kind == "forecast"}
     resolved = {e.record["ref"] for e in entries if e.kind == "outcome"}
+    # Forecasts of today written by an earlier run of this step that stopped halfway: not written twice.
+    written_today = {
+        (e.record["company"]["cik"], e.record["role"], e.record["event"])
+        for e in entries
+        if e.kind == "forecast" and e.day == rnd.day
+    }
     written = 0
     for cik, sections in sorted(analyst_answers(rnd).items()):
         company = universe.companies[cik]
@@ -134,6 +140,8 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
         for got in sections:
             assert got.answer is not None
             for forecast in got.answer.get("forecasts") or []:
+                if (cik, got.agent.removeprefix("bobby-"), forecast["event"]) in written_today:
+                    continue
                 body = {
                     "company": about,
                     "role": got.agent.removeprefix("bobby-"),
@@ -179,12 +187,7 @@ def decide(rnd: Round, cwd: Path, claude_code: str = "") -> list[str]:
     """Step 6: the limits and the day's records. From here the day's decisions are final."""
     if (rnd.round_dir / "decided.json").exists():
         raise RoundError("the day's records were written already: a round decides once")
-    if (rnd.round_dir / BEGAN).exists():
-        raise RoundError(
-            "the day's records were begun before and that run did not finish. A record in the log is final, so "
-            "this step is not run twice: what was written stays, and the day has no further decisions "
-            "(end the round with `bobby-session end --abort`)"
-        )
+    carried_on = (rnd.round_dir / BEGAN).exists()
     log = Log.for_mode(rnd.mode)
     entries = log.entries()
     books = replay(log)
@@ -197,8 +200,7 @@ def decide(rnd: Round, cwd: Path, claude_code: str = "") -> list[str]:
     taken = rounds.collect(rnd, pm_tasks, rnd.deadline(rounds.DECISIONS_UNTIL))
     if any(got.status == "missing" for got in taken):
         raise RoundError("not every portfolio manager has answered: run `bobby-session collect managers` first")
-    rnd.note_step(6, "begin")
-    write_new(rnd.round_dir / BEGAN, json.dumps({"time": iso(utcnow())}) + "\n")
+    rnd.note_step(6, "begin", carried_on=carried_on)
     universe = steps.session_universe(rnd)
     can_buy = steps.buyable(rnd, universe)
     covered = covered_list(rnd.root / "reports") & can_buy
@@ -217,99 +219,118 @@ def decide(rnd: Round, cwd: Path, claude_code: str = "") -> list[str]:
     notes: list[str] = []
     summary: dict[str, Any] = {"funds": {}, "forecasts": 0}
     out: list[str] = []
+    # A record in the log is final. If an earlier run of this step stopped halfway, this run carries on: what was
+    # written stays as it is, and only what is still missing is written (a forecast, a fund's records).
+    today = [e for e in entries if e.day == rnd.day]
+    done_funds = {e.record["fund"] for e in today if e.kind in ("decision", "no_decision") and "fund" in e.record}
+    if carried_on:
+        notes.append("an earlier run of this step stopped halfway; this run wrote only what was still missing")
     with log.writer(rnd.day, check=steps.text_check(rnd, sorted(analysed))) as writer:
+        if not (rnd.round_dir / BEGAN).exists():
+            write_new(rnd.round_dir / BEGAN, json.dumps({"time": iso(utcnow())}) + "\n")
         summary["forecasts"] = write_forecasts(rnd, writer, entries, mark, notes)
         risky = orders.make_or_break(log.entries(), rnd.day)
         for name in [f for f in records.AI_FUNDS if f in books.funds]:
-            fund = books.funds[name]
-            runs = {
-                t.run: got
-                for t in rounds.step_tasks(rnd, f"pm-{name}-run-")
-                if (got := rounds.stored(rnd, t.task)) and t.run
-            }
-            ran = [got for got in runs.values() if got.model]
-            pm_agents = [rounds.agent_entry(got) for got in sorted(ran, key=lambda g: g.run or 0)]
-            readable = [got for got in runs.values() if got.status == "ok"]
-            models = {got.model for got in ran}
-            fund_note = "the three runs did not all use the same model" if len(models) > 1 else ""
-            if not readable:
-                late = any(got.status in ("late", "missing") for got in runs.values()) or not runs
-                reason = "out of time" if late else "no readable answer"
-                body: dict[str, Any] = {"fund": name, "reason": reason, "agents": pm_agents, **mark}
-                if fund_note:
-                    body["note"] = fund_note
-                writer.add("no_decision", body)
-                summary["funds"][name] = {"decision": f"none: {reason}", "runs_readable": 0}
-                out.append(f"{name}: no decision today: {reason}")
+            if name in done_funds:
+                out.append(f"{name}: its records of today were written by the earlier run")
                 continue
-            chosen, table = combine(fund, runs)
-            value, _ = engine.fund_value(fund, price_of)
-            proposals = []
-            for d in chosen:
-                cik = d["cik"]
-                listed = universe.companies.get(cik)
-                position = fund.positions.get(cik)
-                company_name = listed.name if listed else (position.name if position else f"company {cik}")
-                ticker = listed.ticker if listed else (position.ticker if position else "")
-                more: dict[str, Any] = {
-                    "saw": saw(d["sources"], inputs),
-                    "agents": pm_agents + [rounds.agent_entry(got) for got in analysed.get(cik, [])],
-                    "runs": table[cik],
-                    "agreed": agreed(table[cik]),
-                    "from_run": d["from_run"],
-                    "code": code,
-                    **mark,
+            try:
+                fund = books.funds[name]
+                runs = {
+                    t.run: got
+                    for t in rounds.step_tasks(rnd, f"pm-{name}-run-")
+                    if (got := rounds.stored(rnd, t.task)) and t.run
                 }
-                if fund_note:
-                    more["note"] = fund_note
-                if d.get("thesis"):
-                    # The numbers part of a thesis is filled in by script. Until the quarterly reports are read
-                    # (stream 4) there are none to fill in; nothing an agent wrote goes here.
-                    more["thesis"] = {**d["thesis"], "numbers": []}
-                if d.get("reason"):
-                    more["reason"] = d["reason"]
-                size = canon.pct_fraction(d["size_pct"]) if d.get("size_pct") else None
-                proposals.append(orders.Proposal(d["action"], cik, company_name, ticker, size, more))
-            if not proposals:
-                rows = [{"run": n, "readable": (got := runs.get(n)) is not None and got.status == "ok"} for n in RUNS]
-                nothing: dict[str, Any] = {"agents": pm_agents, "runs": rows, "code": code, **mark}
-                if readable:
-                    nothing["from_run"] = min(got.run or 0 for got in readable)
-                if fund_note:
-                    nothing["note"] = fund_note
-                proposals.append(orders.Proposal("nothing", more=nothing))
-            # What the runs said about a company that gets no order today (one buyer only, or a run that was not
-            # followed) goes into the fund's first record of the day: the log holds all three answers.
-            passed = []
-            for cik in sorted(set(table) - {d["cik"] for d in chosen}):
-                if cik not in can_buy and cik not in fund.positions:
-                    notes.append(f"{name}: a run named a company the fund cannot buy; left out of the record")
+                ran = [got for got in runs.values() if got.model]
+                pm_agents = [rounds.agent_entry(got) for got in sorted(ran, key=lambda g: g.run or 0)]
+                readable = [got for got in runs.values() if got.status == "ok"]
+                models = {got.model for got in ran}
+                fund_note = "the three runs did not all use the same model" if len(models) > 1 else ""
+                if not readable:
+                    late = any(got.status in ("late", "missing") for got in runs.values()) or not runs
+                    reason = "out of time" if late else "no readable answer"
+                    body: dict[str, Any] = {"fund": name, "reason": reason, "agents": pm_agents, **mark}
+                    if fund_note:
+                        body["note"] = fund_note
+                    writer.add("no_decision", body)
+                    summary["funds"][name] = {"decision": f"none: {reason}", "runs_readable": 0}
+                    out.append(f"{name}: no decision today: {reason}")
                     continue
-                listed = universe.companies.get(cik)
-                about = {"cik": cik, "name": listed.name if listed else f"company {cik}"}
-                if listed:
-                    about["ticker"] = listed.ticker
-                passed.append({"company": about, "runs": table[cik]})
-            if passed:
-                proposals[0].more["not_taken"] = passed
-            verdicts = orders.check(fund, value, price_of, proposals, buyable=can_buy, covered=covered, risky=risky)
-            orders.place(writer, fund, rnd.day, verdicts, fill_rule=fill_rule, cutoff=iso(rnd.cutoff))
-            wanted = [v for v in verdicts if v.proposal.action != "nothing"]
-            together = [agreed(rows) for rows in table.values()]
-            summary["funds"][name] = {
-                "runs_readable": len(readable),
-                "orders": [
-                    {"cik": v.proposal.cik, "action": v.proposal.action, "outcome": v.outcome, "limit": v.limit}
-                    for v in wanted
-                ],
-                "companies_named_by_a_run": len(table),
-                "companies_on_which_the_runs_agreed": sum(together),
-            }
-            out.append(
-                f"{name}: {len(readable)} of 3 runs readable; {len(wanted)} order(s); "
-                f"{sum(v.outcome == 'refused' for v in wanted)} refused, "
-                f"{sum(v.outcome == 'reduced' for v in wanted)} reduced"
-            )
+                chosen, table = combine(fund, runs)
+                value, _ = engine.fund_value(fund, price_of)
+                proposals = []
+                for d in chosen:
+                    cik = d["cik"]
+                    listed = universe.companies.get(cik)
+                    position = fund.positions.get(cik)
+                    company_name = listed.name if listed else (position.name if position else f"company {cik}")
+                    ticker = listed.ticker if listed else (position.ticker if position else "")
+                    more: dict[str, Any] = {
+                        "saw": saw(d["sources"], inputs),
+                        "agents": pm_agents + [rounds.agent_entry(got) for got in analysed.get(cik, [])],
+                        "runs": table[cik],
+                        "agreed": agreed(table[cik]),
+                        "from_run": d["from_run"],
+                        "code": code,
+                        **mark,
+                    }
+                    if fund_note:
+                        more["note"] = fund_note
+                    if d.get("thesis"):
+                        # The numbers part of a thesis is filled in by script. Until the quarterly reports are read
+                        # (stream 4) there are none to fill in; nothing an agent wrote goes here.
+                        more["thesis"] = {**d["thesis"], "numbers": []}
+                    if d.get("reason"):
+                        more["reason"] = d["reason"]
+                    size = canon.pct_fraction(d["size_pct"]) if d.get("size_pct") else None
+                    proposals.append(orders.Proposal(d["action"], cik, company_name, ticker, size, more))
+                if not proposals:
+                    rows = [
+                        {"run": n, "readable": (got := runs.get(n)) is not None and got.status == "ok"} for n in RUNS
+                    ]
+                    nothing: dict[str, Any] = {"agents": pm_agents, "runs": rows, "code": code, **mark}
+                    if readable:
+                        nothing["from_run"] = min(got.run or 0 for got in readable)
+                    if fund_note:
+                        nothing["note"] = fund_note
+                    proposals.append(orders.Proposal("nothing", more=nothing))
+                # What the runs said about a company that gets no order today (one buyer only, or a run that was not
+                # followed) goes into the fund's first record of the day: the log holds all three answers.
+                passed = []
+                for cik in sorted(set(table) - {d["cik"] for d in chosen}):
+                    if cik not in can_buy and cik not in fund.positions:
+                        notes.append(f"{name}: a run named a company the fund cannot buy; left out of the record")
+                        continue
+                    listed = universe.companies.get(cik)
+                    about = {"cik": cik, "name": listed.name if listed else f"company {cik}"}
+                    if listed:
+                        about["ticker"] = listed.ticker
+                    passed.append({"company": about, "runs": table[cik]})
+                if passed:
+                    proposals[0].more["not_taken"] = passed
+                verdicts = orders.check(fund, value, price_of, proposals, buyable=can_buy, covered=covered, risky=risky)
+                orders.place(writer, fund, rnd.day, verdicts, fill_rule=fill_rule, cutoff=iso(rnd.cutoff))
+                wanted = [v for v in verdicts if v.proposal.action != "nothing"]
+                together = [agreed(rows) for rows in table.values()]
+                summary["funds"][name] = {
+                    "runs_readable": len(readable),
+                    "orders": [
+                        {"cik": v.proposal.cik, "action": v.proposal.action, "outcome": v.outcome, "limit": v.limit}
+                        for v in wanted
+                    ],
+                    "companies_named_by_a_run": len(table),
+                    "companies_on_which_the_runs_agreed": sum(together),
+                }
+                out.append(
+                    f"{name}: {len(readable)} of 3 runs readable; {len(wanted)} order(s); "
+                    f"{sum(v.outcome == 'refused' for v in wanted)} refused, "
+                    f"{sum(v.outcome == 'reduced' for v in wanted)} reduced"
+                )
+            except LogError as exc:
+                # One fund's record refused by the record check: the other funds still get theirs, and this
+                # one is noted (the next run of this step will not write it again if any record of it is in).
+                notes.append(f"{name}: its records could not be written: {exc}")
+                out.append(f"{name}: NOT WRITTEN (see the notes)")
         if "monthly" in rnd.extras:
             dice_books = dice.DiceBooks.load(log, rnd.root / "books" / "dice")
             out += funds_cli.monthly_draw(
@@ -420,7 +441,7 @@ def measure(rnd: Round) -> dict[str, Any]:
             total[kind] = total.get(kind, 0) + count
     limits = _rate_limits()
     minutes = max(0, round(rnd.minutes()))
-    for_log: dict[str, Any] = {"minutes": minutes, "agent_runs": sum(r["runs"] for r in by_role.values())}
+    for_log: dict[str, Any] = {"minutes": minutes, "agent_runs": sum(r.get("starts", 0) for r in by_role.values())}
     for key, name in (("five_hour", "five_hour_pct"), ("seven_day", "weekly_pct")):
         used = (limits or {}).get(key, {}).get("used_percentage")
         if isinstance(used, (int, float)) and 0 <= used <= 999:

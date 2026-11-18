@@ -38,6 +38,7 @@ from .round import Collected, Round, RoundError
 JOBS_FRESH_HOURS = 30
 FIRST_LOOK_BACK = timedelta(days=7)
 FRESH_SOURCES = ("startup", "clear")
+RETRY_KEEPS_TIMES = timedelta(minutes=5)
 LIVE_SECONDS = 120  # a session whose records changed this short ago is taken to be still at work
 # The leading session never waits by itself: the collecting command does the waiting, up to the step's time.
 THEN = "Then, right away: bobby-session collect {step} (it waits for the answers; repeat it until it prints NEXT)"
@@ -180,6 +181,9 @@ def copy_conversation(rnd_root: Path, project: Path, session_id: str, day: date,
         dest.chmod(0o400)
         listing.append(f"{sha256_hex(data)}  {rel}")
     text = "\n".join(listing) + "\n"
+    if not listing:  # Claude Code has written nothing yet: no copy, and a later one may still be made
+        shutil.rmtree(target, ignore_errors=True)
+        return sha256_hex(text.encode("utf-8"))
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
     if final.exists():
         shutil.rmtree(final)  # without its list: never finished
@@ -290,8 +294,12 @@ def _start(
         rnd.first_session_id, rnd.extras, rnd.restarts = earlier.first_session_id, earlier.extras, earlier.restarts
         if never_prepared:
             # The first start stopped before the session folder was there (a failure, a time-out): no agent
-            # ever ran, so this is the same start carried on, not the one restart.
-            out.append("note: an earlier start of today stopped before the session folder was made; carried on")
+            # ever ran and nothing was logged with its times, so this is a new start, not the one restart. Only
+            # a start that is just being retried keeps its times (so the cut-off cannot creep while it is fixed).
+            out.append("note: an earlier start of today stopped before the session folder was made; started anew")
+            rnd.first_session_id = session_id
+            if now - earlier.start > RETRY_KEEPS_TIMES:
+                rnd.start = rnd.cutoff = now.replace(microsecond=0)
         else:
             if earlier.restarts >= 1:
                 raise RoundError(f"the round of {rnd.day} broke off twice: this day is a skipped day")

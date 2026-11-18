@@ -271,6 +271,17 @@ with a test:
 - the leading session no longer waits by itself: the collecting command waits, and stops at the step's time;
 - the log now also holds what each of the three runs said about a company that got no order.
 
+A second review (Opus) of these fixes found two of them incomplete; worked in, with tests:
+- the deciding step no longer refuses after a failure halfway (that would have left the day without records for
+  good): it carries on and writes only what is still missing, and a record refused for one fund does not stop
+  the others;
+- a start that stopped before its folder was made counts as a new start of the session that carries on; it keeps
+  the first times only when it is retried within five minutes, so a day is not lost to a clock that ran on;
+- a task whose agent is already running is not named again, an empty copy of a conversation is not kept as
+  final, and the usage counts real agent starts only.
+Left as it is (low): a leading session that has been silent for more than two minutes can be taken over by a new
+start; the collecting command waits at most 90 seconds, so a working session is never that quiet.
+
 ## Sources
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),

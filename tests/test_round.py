@@ -517,7 +517,7 @@ def test_a_round_whose_last_step_never_ran_does_not_stop_the_next_day(world: dic
     assert start["previous_publication"]["session_day"] == "2027-02-03" and "previous_conversation" in start
 
 
-def test_the_days_records_are_written_once_also_after_a_failure_halfway(world: dict) -> None:
+def test_the_days_records_are_written_once_and_completed_after_a_failure_halfway(world: dict) -> None:
     rnd = begin(world)
 
     def broken(*args, **kwargs):
@@ -529,9 +529,13 @@ def test_the_days_records_are_written_once_also_after_a_failure_halfway(world: d
     world["monkeypatch"].undo()
     world["monkeypatch"].setenv("BOBBY_DATA_DIR", str(world["data"]))
     forecasts = sum(e.kind == "forecast" for e in Log.for_mode("pilot").entries())
-    with pytest.raises(RoundError, match="begun before"):
+    assert forecasts == 2 and not any(e.kind == "decision" for e in Log.for_mode("pilot").entries())
+    out = decide.decide(rnd, world["cwd"])  # carried on: only what is missing is written
+    entries = Log.for_mode("pilot").entries()
+    assert sum(e.kind == "forecast" for e in entries) == 2 and sum(e.kind == "decision" for e in entries) == 1
+    assert any("stopped halfway" in line for line in out)
+    with pytest.raises(RoundError, match="decides once"):
         decide.decide(rnd, world["cwd"])
-    assert sum(e.kind == "forecast" for e in Log.for_mode("pilot").entries()) == forecasts == 2
 
 
 def test_nothing_is_decided_while_a_managers_answer_is_still_on_its_way(world: dict) -> None:
@@ -571,6 +575,11 @@ def test_after_a_restart_no_task_is_handed_out_twice(world: dict) -> None:
     first = steps.screening(rnd)
     assert sum("PROMPT" in line for line in first) == 1 and "Nothing to start" not in "\n".join(first)
     assert sum("PROMPT" in line for line in steps.screening(rnd)) == 1  # asked again: the same task, not a new one
+    (task,) = rounds.step_tasks(rnd, "screening-")
+    agent_run(
+        world["records"], rnd.session_id, rnd.session_dir, task, screening_yes(task), at=rnd.start, finished=False
+    )
+    assert steps.screening(rnd)[0].startswith("Nothing to start")  # it runs already: not named a second time
     decide.end(rnd, abort=True)
     again = begin(world, "session-2", WED_8 + timedelta(minutes=10))
     assert any("1 task(s) of the session that broke off" in line for line in world["start_lines"])
@@ -590,10 +599,22 @@ def test_a_start_that_stopped_before_the_session_folder_was_made_is_carried_on(w
     with pytest.raises(prep.PrepareError):
         begin(world)
     world["monkeypatch"].setattr(prep, "prepare", real)
-    rnd = begin(world, now=WED_8 + timedelta(minutes=4))
+    rnd = begin(world, now=WED_8 + timedelta(minutes=4))  # retried at once: the same times
     assert rnd.start == WED_8 and rnd.restarts == 0 and rnd.extras == ["monthly"]
     kinds = [e.kind for e in Log.for_mode("pilot").entries() if e.day == WED]
     assert kinds == ["refusal", "session_start"]
+
+
+def test_a_start_that_stopped_long_ago_before_its_folder_was_made_starts_anew(world: dict) -> None:
+    world["monkeypatch"].setattr(prep, "prepare", lambda **kwargs: (_ for _ in ()).throw(prep.PrepareError("x")))
+    with pytest.raises(prep.PrepareError):
+        begin(world, "session-a")
+    world["monkeypatch"].undo()
+    world["monkeypatch"].setenv("BOBBY_DATA_DIR", str(world["data"]))
+    later = WED_8 + timedelta(minutes=90)
+    fresh_jobs(world["data"], later)
+    rnd = begin(world, "session-b", later)
+    assert rnd.start == rnd.cutoff == later and rnd.first_session_id == "session-b" and rnd.restarts == 0
 
 
 def test_a_second_session_cannot_take_a_round_over_while_the_first_is_at_work(world: dict) -> None:
