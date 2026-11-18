@@ -133,6 +133,7 @@ by any of them. Downloaded so far (details and terms per source: docs/decisions/
 | [European Medicines Agency](https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format) | Five data files on medicines | Reuse allowed with the source credited ([legal notice](https://www.ema.europa.eu/en/about-us/about-website/legal-notice)) |
 | [Nasdaq Trader symbol directory](https://www.nasdaqtrader.com/Trader.aspx?id=SymbolDirDefs) | Lists of US-listed symbols | Copyright Nasdaq, Inc. One copy for personal, non-commercial use; the files are never passed on or published ([terms](https://www.nasdaqtrader.com/Trader.aspx?id=CopyDisclaimMain)) |
 | [State Street, SPDR S&P Biotech ETF (XBI)](https://www.ssga.com/) | The fund's daily holdings file | Personal use only; the file is never passed on or published ([terms](https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions)) |
+| [U.S. Securities and Exchange Commission, EDGAR](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) | The ticker file and each listed company's filing list (from 2026-11-18) | Free for everyone; at most one request a second with a declared contact, as the SEC asks; the filings' own text belongs to the companies and is only summarised and linked, never republished at length (docs/decisions/0008) |
 
 Sources that were only read for the research are linked where they are used in `docs/research/`. Candidates for later
 streams, with their terms: docs/research/DATA-SOURCES.md.
