@@ -89,7 +89,7 @@ def rows(entries: list[Entry]) -> list[list[str]]:
                     "",
                     r["result"],
                     r["resolved_on"],
-                    r.get("brier") or brier(f["probability"], r["result"]),
+                    brier(f["probability"], r["result"]),
                 ]
             )
     return out

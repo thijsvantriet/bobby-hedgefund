@@ -30,6 +30,7 @@ from .. import paths
 from ..archive.store import iso, sha256_hex, utcnow
 from ..universe.output import write_new_bytes
 from . import canon, records
+from . import text as text_check
 from .seal import SEAL_WHY, Sealed, is_sealed_form, seal_fingerprint, sealed_fields
 
 FORMAT = 1
@@ -37,7 +38,9 @@ START = {mode: sha256_hex(f"bobby-hedgefund decision log, format 1, {mode}".enco
 LOG = "log"
 HEAD = "HEAD"
 LOCK = ".lock"
-DELETED = "DELETED-0007"  # left in the private folder by a purge (docs/decisions/0007, point 4)
+# Left in the private folder by a purge (docs/decisions/0007, point 4). Its first line, "upto <number>", says up to
+# which record the private content was deleted; missing content of a later record is damage.
+DELETED = "DELETED-0007"
 RESERVED = ("v", "seq", "kind", "time", "mode", "prev")
 _DAY_FILE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\.jsonl$")
 
@@ -93,14 +96,16 @@ def day_files(staging: Path) -> list[Path]:
     for path in sorted(root.rglob("*")):
         if path.is_dir() and not path.is_symlink():
             continue
+        if path.name.startswith(".") and not path.is_symlink():
+            continue  # a half-written first line of a day, left by a crash: it was never part of the log
         rel = path.relative_to(root).parts
         match = _DAY_FILE.match(path.name)
         if path.is_symlink() or match is None or len(rel) != 3 or rel[0] != match[1] or rel[1] != match[2]:
-            raise LogError(f"{path} does not belong in the log folder")
+            raise LogError(f"{LOG}/{path.relative_to(root).as_posix()} does not belong in the log folder")
         try:
             date.fromisoformat(path.name.removesuffix(".jsonl"))
         except ValueError:
-            raise LogError(f"{path} is not named after a day") from None
+            raise LogError(f"{LOG}/{path.relative_to(root).as_posix()} is not named after a day") from None
         found.append(path)
     return found
 
@@ -165,6 +170,28 @@ def _write_head(staging: Path, count: int, sha256: str) -> None:
         os.close(fd)
     tmp.replace(staging / HEAD)  # HEAD is the one file of the log that is replaced
     _fsync_dir(staging)
+
+
+def _make_dirs(folder: Path, stop: Path) -> None:
+    """Create `folder` (inside `stop`) and make every new level safe on disk, so that a power cut cannot keep
+    HEAD and lose the day file."""
+    new: list[Path] = []
+    level = folder
+    while level != stop and not level.exists():
+        new.append(level)
+        level = level.parent
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for made in new:
+        _fsync_dir(made.parent)
+
+
+def deleted_upto(private: Path) -> int | None:
+    """Up to which record a purge deleted the private content; None when there was no purge."""
+    marker = private / DELETED
+    if not marker.exists():
+        return None
+    first = marker.read_text(encoding="utf-8", errors="replace").split("\n", 1)[0].split()
+    return int(first[1]) if len(first) == 2 and first[0] == "upto" and first[1].isdigit() else 0
 
 
 def _fsync_dir(folder: Path) -> None:
@@ -283,8 +310,15 @@ class Log:
             _put(record, where, copy.deepcopy(kept["content"]))
         return record
 
-    def writer(self, day: date, clock: Callable[[], datetime] = utcnow) -> Writer:
-        return Writer(self, day, clock)
+    def writer(
+        self,
+        day: date,
+        clock: Callable[[], datetime] = utcnow,
+        check: text_check.TextCheck | None = None,
+    ) -> Writer:
+        """`check`: the session's checks on written text (its source files, the amounts its filings state, the
+        companies that may not be named). Without one, every record is still checked for prices and keys."""
+        return Writer(self, day, clock, check or text_check.TextCheck())
 
     def verify(self, *, check_private: bool = True) -> Report:
         """Re-read everything and say what is wrong. Writes nothing."""
@@ -304,17 +338,20 @@ class Log:
                 report.notes.append(note)
         except LogError as exc:
             report.problems.append(str(exc))
+        kinds: dict[int, str] = {}
         for entry in entries:
             try:
                 records.validate_public(entry.record)
+                records.check_references(entry.kind, entry.record, kinds)
             except records.RecordError as exc:
                 report.problems.append(f"record {entry.seq} ({entry.file}, line {entry.line}): {exc}")
+            kinds[entry.seq] = entry.kind
         self._verify_sealed(entries, report, check_private)
         return report
 
     def _verify_sealed(self, entries: list[Entry], report: Report, check_private: bool) -> None:
         have_private = check_private and self.private is not None
-        deleted = have_private and self.private is not None and (self.private / DELETED).exists()
+        upto = deleted_upto(self.private) if have_private and self.private is not None else None
         for entry in entries:
             found = sealed_fields(entry.record)
             report.sealed += len(found)
@@ -331,7 +368,7 @@ class Log:
             for where, form in found:
                 kept = (fields or {}).get(where)
                 if kept is None:
-                    if deleted:
+                    if upto is not None and entry.seq <= upto:
                         report.sealed_deleted += 1
                     else:
                         report.problems.append(f"record {entry.seq}: the private content of {where} is missing")
@@ -352,28 +389,35 @@ class Log:
                 report.notes.append("sealed content was not checked: the private files are not part of this copy")
             return
         assert self.private is not None
-        if deleted and report.sealed_deleted:
+        if report.sealed_deleted:
             report.notes.append(f"{report.sealed_deleted} sealed fields: content deleted under record 0007")
         if self.private.is_dir():
+            with_sealed = {entry.seq for entry in entries if sealed_fields(entry.record)}
             for path in sorted(self.private.glob("*.json")):
                 number = path.name.split(".")[0]
                 if ".orphan-" in path.name:
                     report.notes.append(f"{path.name}: set aside after a crash, belongs to no record")
                 elif not number.isdigit() or int(number) > len(entries):
                     report.notes.append(f"{path.name}: belongs to no record (a crash before its line was written)")
+                elif int(number) not in with_sealed:
+                    report.notes.append(f"{path.name}: a private file for a record that has no sealed content")
 
 
 class Writer:
     """Adds records. Holds the log's lock from `with` to the end, and checks the whole chain before it writes."""
 
-    def __init__(self, log: Log, day: date, clock: Callable[[], datetime]) -> None:
+    def __init__(self, log: Log, day: date, clock: Callable[[], datetime], check: text_check.TextCheck) -> None:
         self.log = log
         self.day = day
         self.clock = clock
+        self.check = check
         self.note = ""
         self._fd: int | None = None
         self._seq = 0
         self._prev = ""
+        self._kinds: dict[int, str] = {}
+        self._last_file = ""
+        self._last_line = 0
 
     def __enter__(self) -> Writer:
         staging = self.log.staging
@@ -392,6 +436,9 @@ class Writer:
                 )
             self._seq = len(entries)
             self._prev = entries[-1].sha256 if entries else START[self.log.mode]
+            self._kinds = {entry.seq: entry.kind for entry in entries}
+            if entries:
+                self._last_file, self._last_line = entries[-1].file, entries[-1].line
             if self.note:
                 _write_head(staging, self._seq, self._prev)  # bring HEAD up to date with the lines that exist
         except BaseException:
@@ -408,16 +455,26 @@ class Writer:
             self._fd = None
 
     def add(self, kind: str, body: dict[str, Any]) -> Entry:
-        """Write one record. It is final the moment this returns. Raises without writing a public line when the
-        record is not in its fixed form."""
+        """Write one record. It is final the moment this returns.
+
+        **An exception means that no public line was written.** Once the line is safely on disk this does not
+        raise any more: if HEAD cannot be written then, that is noted (`self.note`) and the next writer repairs
+        it. So a caller that tries again after an exception can never write the same decision twice.
+
+        The record's free text is checked first (docs/decisions/0004, point 2): what may not be public is cut out
+        and sealed. `body` itself is not changed."""
         if self._fd is None:
             raise LogError("the writer is not open; use it inside `with`")
         clash = sorted(set(body) & set(RESERVED))
         if clash:
             raise LogError(f"{kind}: the fields {', '.join(clash)} are written by the log itself")
+        body = copy.deepcopy(body)
         try:
+            records.validate(kind, body)  # first, so that the text check works on a record of the right shape
+            self.check.clean_body(kind, body)
             records.validate(kind, body)
-        except records.RecordError as exc:
+            records.check_references(kind, body, self._kinds)
+        except (records.RecordError, ValueError) as exc:
             raise LogError(f"not written: {exc}") from None
         private: dict[str, dict[str, Any]] = {}
         public = _seal(body, "", private)
@@ -439,28 +496,59 @@ class Writer:
             self._write_private(seq, kind, private)  # safely on disk before the public line exists
         rel = day_path(self.day)
         path = self.log.staging / rel
-        new_file = not path.exists()
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        data = line + b"\n"
+        try:
+            if path.exists():
+                self._append(path, data)
+            else:
+                self._first_line(path, data)
+        except OSError as exc:
+            raise LogError(f"could not write the log ({type(exc).__name__}); nothing was added") from exc
+        # From here on the record exists: nothing below may raise.
+        sha = fingerprint(self._prev, line)
+        self._seq, self._prev = seq, sha
+        self._kinds[seq] = kind
+        self._last_line = self._last_line + 1 if rel == self._last_file else 1
+        self._last_file = rel
+        try:
+            _write_head(self.log.staging, seq, sha)
+        except OSError as exc:
+            self.note = f"{HEAD} could not be written ({type(exc).__name__}); the next writer repairs it"
+        return Entry(seq, kind, record, sha, rel, self._last_line)
+
+    def _append(self, path: Path, data: bytes) -> None:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND)
         try:
             size = os.fstat(fd).st_size
-            data = line + b"\n"
             try:
                 done = 0
                 while done < len(data):
                     done += os.write(fd, data[done:])
                 os.fsync(fd)
-            except OSError as exc:
+            except OSError:
                 os.ftruncate(fd, size)  # no half line may stay behind
-                raise LogError(f"could not write the log ({exc}); nothing was added") from exc
+                raise
         finally:
             os.close(fd)
-        if new_file:
-            _fsync_dir(path.parent)
-        sha = fingerprint(self._prev, line)
-        self._seq, self._prev = seq, sha
-        _write_head(self.log.staging, seq, sha)
-        return Entry(seq, kind, record, sha, rel, _line_number(path))
+
+    def _first_line(self, path: Path, data: bytes) -> None:
+        """The first line of a new day: written under another name and given its real name in one step, so that an
+        empty or half day file can never exist."""
+        _make_dirs(path.parent, self.log.staging)
+        tmp = path.with_name(f".{path.name}-{os.getpid()}")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        try:
+            try:
+                done = 0
+                while done < len(data):
+                    done += os.write(fd, data[done:])
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.link(tmp, path)  # unlike a rename, a link never replaces an existing file
+        finally:
+            tmp.unlink(missing_ok=True)
+        _fsync_dir(path.parent)
 
     def _write_private(self, seq: int, kind: str, private: dict[str, dict[str, Any]]) -> None:
         path = self.log.private_path(seq)
@@ -468,7 +556,3 @@ class Writer:
             # Left by a crash between the private file and the public line: that record was never written.
             path.rename(path.with_name(f"{seq:08d}.orphan-{secrets.token_hex(4)}.json"))
         write_new_bytes(path, canon.encode({"seq": seq, "kind": kind, "fields": private}) + b"\n")
-
-
-def _line_number(path: Path) -> int:
-    return path.read_bytes().count(b"\n")

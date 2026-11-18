@@ -6,6 +6,7 @@ import pytest
 from logkit import DAY1, clock, decision, forecast, lines, make_log
 
 from bobby_hedgefund.log import text as T
+from bobby_hedgefund.log.private import PrivateCompany, PrivateNames
 
 SOURCE = (
     "The primary endpoint of the phase 3 trial was met with a statistically significant improvement in overall "
@@ -63,6 +64,16 @@ def test_two_short_quotes_are_allowed_a_third_goes() -> None:
         "At a share price of 12 dollars the company is cheap.",
         "The valuation leaves room.",
         "The stock closed at 7.",
+        "Shares have run 60% since the readout.",
+        "Shares +45% since data.",
+        "Shares are 70% below their 2021 peak.",
+        "The stock is up approx. 40% since the data.",
+        "We see 3x upside if the trial hits.",
+        "The market is pricing in a 20% chance of approval.",
+        "XBI is up 12% this year.",
+        "Negative EV makes this cheap.",
+        "Mkt cap 300M vs cash.",
+        "The stock trades at a discount to its net cash.",
     ],
 )
 def test_a_sentence_about_a_price_or_worked_out_from_one_is_sealed_whole(sentence: str) -> None:
@@ -79,6 +90,12 @@ def test_a_sentence_about_a_price_or_worked_out_from_one_is_sealed_whole(sentenc
         "Enrolment is up to 300 patients.",
         "The main goal was met in the second study.",
         "Half of the patients responded.",
+        "The share of patients with a response rose to 45% in the third quarter.",
+        "The disease affects 2 million people.",
+        "The dose was 300 mg vs. 150 mg in the earlier study, approx. twice as high.",
+        "Dr. A. Example presented the data, e.g. the survival curves.",
+        "Filing 0001193125-26-445294.txt and trial NCT05936580 were read.",
+        "The hazard ratio was 0.62 (95% CI 0.45 to 0.85).",
     ],
 )
 def test_ordinary_sentences_are_left_alone(sentence: str) -> None:
@@ -95,6 +112,12 @@ def test_an_amount_of_money_is_sealed_unless_a_filing_states_it() -> None:
     assert result.text == "Cash was $245.3 million and the loan is $50 million. A milestone of [sealed] follows."
     assert [(s.why, s.content) for s in result.removed] == [("money", "$75 million")]
     assert cleaned(text).text.count("[sealed]") == 3  # without a filing to trace to, every amount goes
+    # A rounded amount counts as stated when a filing has the exact one; an amount without a currency sign is
+    # money when the sentence is about money.
+    exact = {1_234_567_000}
+    assert cleaned("Cash was $1.2 billion.", exact).removed == []
+    assert cleaned("Cash was $1.5 billion.", exact).text == "Cash was [sealed]."
+    assert cleaned("Peak sales of 2B are plausible.", exact).text == "Peak sales of [sealed] are plausible."
     # A per-share figure goes even when a filing states the amount.
     assert cleaned("The offering was priced at $245.3 million.", known).text == "[sealed]"
 
@@ -105,6 +128,28 @@ def test_keys_addresses_and_home_paths_are_removed_and_kept_nowhere() -> None:
     result = cleaned(text)
     assert result.text == "Write to [removed] with key [removed] from [removed] on [removed] today."
     assert all(s.why == "secret" and s.keep is False for s in result.removed) and len(result.removed) == 4
+    dotted = "64a1b2c3d4e5f6a7.12345678"  # a key in two parts
+    assert cleaned(f"The key {dotted} was used.").text == "The key [removed] was used."
+
+
+def test_a_private_company_is_cut_out_of_free_text_and_refused_where_it_cannot_be_cut(tmp_path: Path) -> None:
+    private = PrivateNames([PrivateCompany(7654321, "ZZQX", "Zzyzx Biosciences Holdings, Inc.")])
+    check = T.TextCheck(private=private)
+    body = decision()
+    body["thesis"]["risks"] = "Zzyzx is working on the same target, and ZZQX has more cash."
+    check.clean_body("decision", body)
+    assert body["thesis"]["risks"] == "[removed] is working on the same target, and [removed] has more cash."
+    assert [(s.why, s.keep) for s in body["removed"]] == [("other", True), ("other", True)]
+    hidden = {"cik": 7654321, "name": "Zzyzx Biosciences Holdings, Inc.", "ticker": "ZZQX"}
+    with pytest.raises(ValueError, match="may not be named in public") as refused:
+        check.clean_body("decision", decision(company=hidden))
+    assert "zzyzx" not in str(refused.value).lower()
+    log = make_log(tmp_path)
+    with log.writer(DAY1, clock(), check) as w:
+        with pytest.raises(Exception, match="may not be named"):
+            w.add("forecast", {**forecast(), "company": hidden})
+        entry = w.add("forecast", {**forecast(), "reasoning": "Unlike Zzyzx Biosciences, this trial is blinded."})
+    assert entry.record["reasoning"] == "Unlike [removed], this trial is blinded." and len(log.entries()) == 1
 
 
 def test_a_forecast_defined_by_a_price_is_refused() -> None:

@@ -236,10 +236,11 @@ def test_the_fields_that_say_what_was_decided_can_never_be_sealed(tmp_path: Path
                 w.add("decision", decision(**{name: Sealed(value, "other")}))
         with pytest.raises(LogError):
             w.add("decision", decision(company=Sealed(dict(ACME), "other")))
+        w.add("decision", decision())
         # Nor can a caller hand in something that already looks sealed: its content would exist nowhere.
         with pytest.raises(LogError, match="only be made by the log writer"):
-            w.add("fill", {**fill(), "details": {"sealed": H, "why": "price"}})
-    assert log.entries() == []
+            w.add("fill", {**fill(1), "details": {"sealed": H, "why": "price"}})
+    assert len(log.entries()) == 1
 
 
 def test_sell_reduce_and_nothing_have_their_own_forms() -> None:
@@ -272,6 +273,7 @@ def test_sealed_content_is_in_the_private_file_only(tmp_path: Path) -> None:
 def test_the_same_content_sealed_twice_gives_two_different_fingerprints(tmp_path: Path) -> None:
     log = make_log(tmp_path)
     with log.writer(DAY1, clock()) as w:
+        w.add("decision", decision())
         a = w.add("fill", fill(1))
         b = w.add("fill", fill(1))
     assert a.record["details"]["sealed"] != b.record["details"]["sealed"]
@@ -291,15 +293,15 @@ def test_changed_or_missing_private_content_is_damage(tmp_path: Path) -> None:
 
 def test_a_key_or_address_is_kept_nowhere(tmp_path: Path) -> None:
     log = make_log(tmp_path)
+    key = "sk_live_" + "a1B2c3D4" * 4
     with log.writer(DAY1, clock()) as w:
-        w.add(
-            "correction",
-            {"ref": 1, "text": "A text with [removed].", "removed": [Sealed("secret-value", "secret", keep=False)]},
-        )
-    assert b"secret-value" not in log.private_path(1).read_bytes()
+        w.add("stop_file", {"state": "on", "noticed": "2027-02-03T09:30:00Z"})
+        entry = w.add("correction", {"ref": 1, "text": f"The key {key} was pasted by mistake."})
+    assert entry.record["text"] == "The key [removed] was pasted by mistake."
+    assert key.encode() not in log.private_path(2).read_bytes() and key.encode() not in b"".join(lines(log))
     report = log.verify()
     assert (report.sealed_not_kept, report.problems) == (1, [])
-    assert log.opened(log.entries()[0])["removed"][0]["why"] == "secret"
+    assert log.opened(entry)["removed"][0]["why"] == "secret"  # there is no content to put back
 
 
 def test_a_private_file_left_by_a_crash_is_set_aside_not_reused(tmp_path: Path) -> None:
@@ -321,22 +323,112 @@ def test_a_failed_write_leaves_no_half_line(tmp_path: Path, monkeypatch) -> None
     from bobby_hedgefund.log import store
 
     real = store.os.fsync
-    calls = {"n": 0}
 
     def breaks(fd: int) -> None:
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise OSError("disk full")
-        real(fd)
+        raise OSError("disk full")
 
     with log.writer(DAY1, clock()) as w:
         monkeypatch.setattr(store.os, "fsync", breaks)
         with pytest.raises(LogError, match="nothing was added"):
             w.add("stop_file", {"state": "on", "noticed": "2027-02-03T09:30:00Z"})
         monkeypatch.setattr(store.os, "fsync", real)
+        assert day_file(log).read_bytes() == before
         w.add("stop_file", {"state": "off", "noticed": "2027-02-03T09:31:00Z"})
     assert day_file(log).read_bytes().startswith(before) and len(log.entries()) == 4
     assert not log.verify().problems
+
+
+def test_a_failed_first_write_of_a_new_day_leaves_no_empty_file_and_the_log_stays_writable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    log = filled(tmp_path)
+    from bobby_hedgefund.log import store
+
+    real = store.os.fsync
+
+    def breaks(fd: int) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store.os, "fsync", breaks)
+    with log.writer(DAY2, clock()) as w, pytest.raises(LogError, match="nothing was added"):
+        w.add("stop_file", {"state": "on", "noticed": "2027-02-04T09:30:00Z"})
+    monkeypatch.setattr(store.os, "fsync", real)
+    assert not day_file(log, DAY2).exists() and not log.verify().problems
+    # Even a half-written first line that a crash left under its temporary name does not get in the way.
+    (day_file(log, DAY2).parent / ".2027-02-04.jsonl-123").write_bytes(b"half")
+    with log.writer(DAY2, clock()) as w:
+        w.add("stop_file", {"state": "on", "noticed": "2027-02-04T09:30:00Z"})
+    assert len(log.entries()) == 4 and not log.verify().problems
+
+
+def test_once_a_line_is_written_add_never_raises_so_nothing_is_written_twice(tmp_path: Path, monkeypatch) -> None:
+    log = filled(tmp_path)
+    from bobby_hedgefund.log import store
+
+    real = store._write_head
+
+    def no_head(staging: Path, count: int, sha256: str) -> None:
+        raise OSError("disk full")
+
+    with log.writer(DAY1, clock()) as w:
+        monkeypatch.setattr(store, "_write_head", no_head)
+        entry = w.add("stop_file", {"state": "on", "noticed": "2027-02-03T09:30:00Z"})  # does not raise
+        assert entry.seq == 4 and "could not be written" in w.note
+        monkeypatch.setattr(store, "_write_head", real)
+    assert [e.seq for e in log.entries()] == [1, 2, 3, 4]
+    report = log.verify()
+    assert not report.problems and any("one record behind" in n for n in report.notes)
+    with log.writer(DAY1, clock()) as w:
+        assert w.add("stop_file", {"state": "off", "noticed": "2027-02-03T09:40:00Z"}).seq == 5
+    assert not log.verify().notes
+
+
+def test_the_writer_checks_the_text_itself_so_no_caller_can_forget_it(tmp_path: Path) -> None:
+    log = make_log(tmp_path)
+    body = decision()
+    body["thesis"]["risks"] = "The shares fell 40% last month. The rest is fine."
+    link = {"n": 1, "source": "x", "summary": "y", "link": "https://example.org/a?token=1"}
+    with log.writer(DAY1, clock()) as w:
+        entry = w.add("decision", body)
+        with pytest.raises(LogError, match="defined by a price"):
+            w.add("forecast", {**forecast(), "event": "The share price is above 20 dollars on 1 June"})
+        key = "sk_live_" + "a1B2c3D4" * 4
+        with pytest.raises(LogError, match="looks like a key or an address"):  # not free text: cannot be cut out
+            w.add("session_start", {**session_start(), "universe": {"file": key, "sha256": H}})
+        with pytest.raises(LogError, match="plain https link"):
+            w.add("forecast", {**forecast(), "sources": [link]})
+    assert entry.record["thesis"]["risks"] == "[sealed] The rest is fine."
+    assert body["thesis"]["risks"].startswith("The shares fell")  # the caller's own copy is not changed
+    assert len(log.entries()) == 1 and log.opened(entry)["removed"] == ["The shares fell 40% last month."]
+
+
+def test_a_number_from_prices_must_be_sealed(tmp_path: Path) -> None:
+    log = make_log(tmp_path)
+    body = decision()
+    body["thesis"]["numbers"] = [{"label": "market value against cash", "value": "1.8", "basis": "price"}]
+    with log.writer(DAY1, clock()) as w:
+        with pytest.raises(LogError, match="must be sealed"):
+            w.add("decision", body)
+        body["thesis"]["numbers"] = [{"label": "months of cash", "value": "22"}]
+        with pytest.raises(LogError, match="'basis' is missing"):
+            w.add("decision", body)
+    assert log.entries() == []
+
+
+def test_messages_never_hold_a_value_or_the_home_folder(tmp_path: Path, monkeypatch, capsys) -> None:
+    for call in (lambda: canon.encode({"price": 12.34}), lambda: canon.decimal_fraction("77,34")):
+        with pytest.raises(canon.CanonError) as refused:
+            call()
+        assert "12.3" not in str(refused.value).replace("'12.34'", "") and "77" not in str(refused.value)
+    data = tmp_path / "home" / "somebody" / "data"
+    monkeypatch.setenv("BOBBY_DATA_DIR", str(data))
+    log = Log.for_mode("pilot")
+    with log.writer(DAY1, clock()) as w:
+        w.add("decision", decision("nothing"))
+    (day_file(log).parent / "notes.txt").write_text("x")
+    assert cli.main(["verify"]) == 1
+    out = capsys.readouterr().out
+    assert "somebody" not in out and "log: <data folder>/pilot/staging" in out and "log/2027/02/notes.txt" in out
 
 
 def test_a_copy_without_private_files_checks_the_public_half(tmp_path: Path, capsys) -> None:
@@ -368,10 +460,39 @@ def test_after_a_purge_verify_reports_deleted_content_not_damage(tmp_path: Path,
     }
     assert "12.34" not in note.read_text()
     assert [p.name for p in (data / "pilot" / "log-private").iterdir()] == [DELETED]
+    assert (data / "pilot" / "log-private" / DELETED).read_text().startswith("upto 3\n")
     assert not (data / "pilot" / "books").exists() and day_file(log).read_bytes() == public
     assert cli.main(["verify"]) == 0
     assert "content deleted under record 0007: 2" in capsys.readouterr().out
     assert purge.purge_private(data) == (None, {})  # nothing left: running it again does nothing
+    # Content that goes missing after the purge is damage again: the marker only covers records up to the purge.
+    with log.writer(DAY2, clock()) as w:
+        w.add("fill", fill())
+    assert cli.main(["verify"]) == 0
+    log.private_path(4).unlink()
+    assert cli.main(["verify"]) == 1 and "private content of /details is missing" in capsys.readouterr().out
+
+
+def test_a_purge_that_stopped_before_its_marker_leaves_it_when_run_again(tmp_path: Path, monkeypatch) -> None:
+    data = tmp_path / "data"
+    monkeypatch.setenv("BOBBY_DATA_DIR", str(data))
+    log = Log.for_mode("pilot")
+    with log.writer(DAY1, clock()) as w:
+        w.add("decision", decision())
+        w.add("fill", fill(1))
+    real = purge._leave_marker
+
+    def power_cut(root: Path, stamp: str) -> None:
+        raise OSError("power cut")
+
+    monkeypatch.setattr(purge, "_leave_marker", power_cut)
+    with pytest.raises(OSError):
+        purge.purge_private(data)
+    monkeypatch.setattr(purge, "_leave_marker", real)
+    assert cli.main(["verify"]) == 1  # between the two runs the content is simply missing
+    purge.purge_private(data)
+    assert (data / "pilot" / "log-private" / DELETED).read_text().startswith("upto 2\n")
+    assert not list((data / "pilot").glob(".log-private-purging-*")) and cli.main(["verify"]) == 0
 
 
 def test_the_purge_refuses_a_folder_that_is_a_link(tmp_path: Path) -> None:
@@ -418,9 +539,38 @@ def test_brier_scores_are_exact_text() -> None:
     assert forecasts.brier("0%", "no") == "0.0000" and forecasts.brier("33.33%", "yes") == "0.4445"
 
 
-def test_an_outcome_must_point_to_a_forecast(tmp_path: Path) -> None:
-    log = filled(tmp_path)
+def test_a_pointer_to_the_wrong_record_is_refused_before_it_is_written(tmp_path: Path) -> None:
+    log = filled(tmp_path)  # 1 session start, 2 decision, 3 fill
+    outcome = {"result": "yes", "resolved_on": "2027-05-20", "summary": "Met.", "sources": []}
+    closed = {"fund": "careful", "company": dict(ACME), "outcome": "replaced", "day": "2027-02-03"}
     with log.writer(DAY1, clock()) as w:
-        w.add("outcome", {"ref": 2, "result": "yes", "resolved_on": "2027-05-20", "summary": "Met.", "sources": []})
-    with pytest.raises(LogError, match="no forecast"):
-        forecasts.write(log.staging, log.entries())
+        for kind, body in (
+            ("outcome", {**outcome, "ref": 2}),  # a decision is no forecast
+            ("outcome", {**outcome, "ref": 99}),  # does not exist
+            ("fill", fill(1)),  # a session start is no decision
+            ("fill", fill(4)),  # itself: not written yet
+            ("order_closed", {**closed, "ref": 2, "by": 3}),  # replaced by a fill?
+            ("dice_draw", {"month": "2027-02", "covered": [], "rule_version": "1", "seed_ref": 1}),
+        ):
+            with pytest.raises(LogError, match="points to record"):
+                w.add(kind, body)
+        w.add("correction", {"ref": 3, "text": "Any earlier record may be corrected."})
+    assert len(log.entries()) == 4 and forecasts.write(log.staging, log.entries()) == 1  # only the header
+
+
+def test_verify_checks_the_pointers_too(tmp_path: Path) -> None:
+    log = make_log(tmp_path)
+    with log.writer(DAY1, clock()) as w:
+        w.add("forecast", forecast())
+        w.add("outcome", {"ref": 1, "result": "yes", "resolved_on": "2027-05-20", "summary": "Met.", "sources": []})
+    raw = lines(log)
+    # Rebuild the chain by hand around a first line of another kind: the fingerprints are right, the pointer is not.
+    first = canon.decode(raw[0].rstrip(b"\n"))
+    stop = {"kind": "stop_file", "state": "on", "noticed": "2027-02-03T09:30:00Z"}
+    other = canon.encode({k: first[k] for k in ("v", "seq", "time", "mode", "prev")} | stop)
+    second = canon.decode(raw[1].rstrip(b"\n")) | {"prev": fingerprint(first["prev"], other)}
+    second_line = canon.encode(second)
+    day_file(log).write_bytes(other + b"\n" + second_line + b"\n")
+    head = {"records": 2, "sha256": fingerprint(second["prev"], second_line), "v": 1}
+    (log.staging / "HEAD").write_bytes(canon.encode(head) + b"\n")
+    assert any("which is a stop_file, not a forecast" in p for p in log.verify().problems)

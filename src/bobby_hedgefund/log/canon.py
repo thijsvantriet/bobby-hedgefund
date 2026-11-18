@@ -30,7 +30,8 @@ def check(value: Any, where: str = "record") -> None:
     if isinstance(value, int):
         return
     if isinstance(value, float):
-        raise CanonError(f"{where}: a number with a decimal point ({value!r}); write cents, or text such as '2.5%'")
+        # The value itself is never put in a message: it may be a price.
+        raise CanonError(f"{where}: a number with a decimal point; write cents, or text such as '2.5%'")
     if isinstance(value, list):
         for i, item in enumerate(value):
             check(item, f"{where}/{i}")
@@ -38,7 +39,7 @@ def check(value: Any, where: str = "record") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             if not isinstance(key, str):
-                raise CanonError(f"{where}: a field name that is not text ({key!r})")
+                raise CanonError(f"{where}: a field name that is not text")
             check(item, f"{where}/{key}")
         return
     raise CanonError(f"{where}: {type(value).__name__} cannot be written to the log")
@@ -63,7 +64,7 @@ def decode(line: bytes) -> Any:
 
 
 def _no_float(text: str) -> Any:
-    raise CanonError(f"a number with a decimal point ({text})")
+    raise CanonError("a number with a decimal point")
 
 
 def is_pct(text: object) -> bool:
@@ -73,7 +74,7 @@ def is_pct(text: object) -> bool:
 def pct_fraction(text: str) -> Fraction:
     """'2.5%' -> 1/40. Exact: fund sizes are never rounded on the way in."""
     if not is_pct(text):
-        raise CanonError(f"not a percentage in the log's form: {text!r}")
+        raise CanonError("not a percentage in the log's form (such as '2.5%')")
     return Fraction(text[:-1]) / 100
 
 
@@ -92,7 +93,7 @@ def format_pct(part: Fraction) -> str:
 def decimal_fraction(text: str) -> Fraction:
     """'12.34' -> 617/50: a price as text, read exactly."""
     if not isinstance(text, str) or not DECIMAL.match(text):
-        raise CanonError(f"not a number in the log's form: {text!r}")
+        raise CanonError("not a number in the log's form (such as '12.34')")
     return Fraction(text)
 
 
