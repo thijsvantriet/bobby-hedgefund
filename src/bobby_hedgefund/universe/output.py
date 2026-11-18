@@ -27,16 +27,21 @@ def free_label(day: date, targets: Sequence[tuple[Path, str]]) -> str:
 def write_new(path: Path, text: str) -> None:
     """Create `path` with `text`. Refuses to replace an existing file; a failed write leaves no half file under
     the final name. Folders and files are for the owner only: the results hold private data."""
+    write_new_bytes(path, text.encode("utf-8"))
+
+
+def write_new_bytes(path: Path, data: bytes, *, editable: bool = False) -> None:
+    """As `write_new`, for any content. `editable`: a file the owner fills in (a review sheet) stays writable;
+    every other result is made read-only, because it is never edited afterwards."""
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = path.with_name(f".tmp-{os.getpid()}-{path.name}")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         try:
-            data = text.encode("utf-8")
             done = 0
             while done < len(data):
                 done += os.write(fd, data[done:])
-            os.fchmod(fd, 0o400)  # read-only: a result is never edited afterwards
+            os.fchmod(fd, 0o600 if editable else 0o400)
             os.fsync(fd)
         finally:
             os.close(fd)

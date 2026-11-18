@@ -138,7 +138,7 @@ def share_count(arch: Inputs, cik: int, batch: str, as_of: date) -> tuple[read_s
     return best, best.note
 
 
-def build(arch: Inputs, price_inputs: Inputs) -> Result:
+def build(arch: Inputs, price_inputs: Inputs, not_biotech: frozenset[int] = frozenset()) -> Result:
     cands = candidates.build(arch)
     batch = str(cands.counts["sec_batch"])
     day_recs = prices.day_records(price_inputs)
@@ -159,6 +159,8 @@ def build(arch: Inputs, price_inputs: Inputs) -> Result:
             why.append("not listed on an accepted exchange")
         if cand.sic == SHELL_CODE:
             why.append("shell company")
+        if cand.cik in not_biotech:
+            why.append("marked 'not biotech' by the owner")
 
         ticker = next((t for t in (price_ticker(t, known) for t in cand.tickers) if t), None)
         count, shares_note = share_count(arch, cand.cik, batch, last_day)
