@@ -1,4 +1,4 @@
-"""Command line for the day-1 archive: `bobby-archive run | baseline | verify | status`."""
+"""Command line for the archive: `bobby-archive run | baseline | sec-companies | verify | status`."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import sources
+from .. import settings
+from . import sec, sources
 from .fetch import DEFAULT_USER_AGENT, Fetcher, FetchError
 from .store import Archive, ArchiveError, Busy, new_run_id, read_records
 
@@ -25,6 +26,11 @@ def archive_root() -> Path:
 
 def make_fetcher() -> Fetcher:
     return Fetcher(user_agent=os.environ.get("BOBBY_USER_AGENT") or DEFAULT_USER_AGENT)
+
+
+def make_sec_fetcher() -> Fetcher:
+    # Raises SettingsError when the contact address is missing: no request is ever sent without it (record 0008).
+    return sec.sec_fetcher(settings.sec_contact())
 
 
 def _attempt(archive: Archive, source: str, run: str, job: Callable[[], dict[str, Any]]) -> bool:
@@ -82,6 +88,31 @@ def cmd_baseline(args: argparse.Namespace) -> int:
             sources.CTGOV_BASELINE,
             run,
             lambda: sources.run_ctgov_baseline(archive, fetcher, run, api=sources.CTGOV_API, resume=args.resume),
+        )
+    return 0 if ok else 1
+
+
+def cmd_sec_companies(args: argparse.Namespace) -> int:
+    try:
+        fetcher = make_sec_fetcher()
+    except settings.SettingsError as exc:
+        print(f"NOT RUN: {exc}")
+        return 1
+    run = new_run_id()
+    with Archive(archive_root()) as archive:
+        ok = _attempt(
+            archive,
+            sec.SEC_SOURCE,
+            run,
+            lambda: sec.run_sec_companies(
+                archive,
+                fetcher,
+                run,
+                tickers_url=sec.SEC_TICKERS_URL,
+                submissions_url=sec.SEC_SUBMISSIONS_URL,
+                resume=args.resume,
+                limit=args.limit,
+            ),
         )
     return 0 if ok else 1
 
@@ -147,6 +178,12 @@ def main(argv: list[str] | None = None) -> int:
     p_base = sub.add_parser("baseline", help="one-time full copy of company-linked trial records (large)")
     p_base.add_argument("--resume", action="store_true", help="continue an interrupted baseline")
     p_base.set_defaults(func=cmd_baseline)
+    p_sec = sub.add_parser(
+        "sec-companies", help="SEC ticker file and the filing list of every listed company (monthly, by hand; hours)"
+    )
+    p_sec.add_argument("--resume", action="store_true", help="continue an interrupted or limited batch")
+    p_sec.add_argument("--limit", type=int, metavar="N", help="stop after N new filing lists (for a first try)")
+    p_sec.set_defaults(func=cmd_sec_companies)
     p_verify = sub.add_parser("verify", help="check every stored file against the manifest; writes nothing")
     p_verify.add_argument("--quick", action="store_true", help="check the manifest and file sizes only")
     p_verify.set_defaults(func=cmd_verify)

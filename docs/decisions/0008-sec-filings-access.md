@@ -40,6 +40,7 @@ service for programs.
 
 **Not read yet:** the `robots.txt` of `data.sec.gov`, the separate address of the SEC's documented data service.
 It is read before the first request to that address, and the outcome is added here as an update.
+(Done on 2026-11-18: see "Update 2026-11-18" below.)
 
 **Reuse.** Filings are public and free to read and download. That is not the same as free to republish: the text of
 a filing, and above all the press releases and slide decks attached to it, are written by the company. The public
@@ -109,6 +110,31 @@ If the owner agrees, the spec gets a line under "Changes".
 ## Revisit
 Revisit: by 2027-05, or when the SEC changes its request limit, its header rule or its robots.txt, or when a nightly
 run is refused.
+
+## Update 2026-11-18: the data service's robots file, and the first company fetch
+**Robots files, read with the declared header before any other request.**
+- `https://data.sec.gov/robots.txt` does not exist (the service answers "not found"). So nothing there is forbidden
+  to scripts; the rules that count are the ones on the "Accessing EDGAR Data" page above.
+- `https://www.sec.gov/robots.txt` was read again in full: it does not mention `/files/`, where the
+  company-ticker-exchange file lives. `/Archives/edgar/data` is allowed and `/cgi-bin` forbidden, as before.
+
+**The monthly universe run asks for more than point 1 estimated.** Point 1 said "a few thousand requests, about an
+hour", for the companies with our industry codes. But a company's industry code is only written in its own
+filing-list file, and the SEC's search by industry code lives under the forbidden `/cgi-bin`. So the first run
+fetches the filing list of every company in the ticker file that has a stock-exchange listing: 6,051 companies on
+2026-11-18 (of 10,400 lines; the rest trade outside an exchange or have no listing). At one request a second that
+is about two and a half hours, once. Later monthly runs fetch new companies and the current candidates. This stays
+far inside the SEC's limit of 10 requests a second, and no bulk download is used (point 7).
+
+**How it is built** (`src/bobby_hedgefund/archive/sec.py`, command `bobby-archive sec-companies`):
+- the header is `public-data-archiver` followed by the contact address; the address is read by
+  `src/bobby_hedgefund/settings.py` from the environment or the local `.env`, and a test checks that it reaches no
+  stored file, manifest line, printed line or error text;
+- a pause of one second before every request; "too many requests" and "forbidden" end the job at once, and
+  `--resume` continues the same batch later;
+- every file is stored as received under the archive source `sec`, with the batch and the company number in its
+  manifest line; a filing list that did not change since the last batch is not stored twice;
+- the job is started by hand. It holds the archive's lock while it runs, so it is run during the day, not at 23:30.
 
 ## Sources
 - SEC, [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) (read 2026-11-17)

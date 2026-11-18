@@ -434,7 +434,7 @@ sources. Numbers continue after `0002`.
 
 1. Decision records 0003-0008, then streams 0-3. Alongside: the historical study (after 0014).
 2. Agent files, the log and the fund books (0005, 0009); the pilot week.
-3. Streams 4-5, record 0010, first reports for the covered list, the owner's go; the funds start. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Estimate: pilot around January 2027.
+3. Streams 4-5, record 0010, first reports for the covered list, the owner's go; the funds start. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026.
 4. In the first live weeks: streams 6-7, the app, alerts, the first letter.
 
 ## Words used
