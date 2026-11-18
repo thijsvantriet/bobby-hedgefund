@@ -115,7 +115,7 @@ OWNERSHIP = """<XML>
 def filings_site(site):
     site.submissions_url = site.base + "/submissions/CIK{cik:010d}.json"
     site.filing_url = site.base + "/Archives/edgar/data/{cik}/{accession}.txt"
-    site.index_url = site.base + "/daily-index/{year}/QTR{quarter}/form.{day:%Y%m%d}.idx"
+    site.index_url = site.base + "/daily-index/{year}/QTR{quarter}/master.{day:%Y%m%d}.idx"
     rows = [
         (A5, "4", "2026-11-03"),
         (A4, "8-K/A", "2026-11-03"),
@@ -155,7 +155,7 @@ def test_followed_filings_from_the_start_day_are_stored_once_oldest_first(
     assert first["filings_stored"] == 3 and first["by_form"] == {"4": 1, "8-K": 2} and first["complete"]
     assert first["asked"] == 5 and waits[:5] == [1.0] * 5  # two filing lists and three filings, a pause before each
     assert again["filings_stored"] == 0 and again["asked"] == 2  # only the filing lists are asked again
-    stored = [r for r in rows if r.get("source") == "sec-filings" and r["kind"] == "file"]
+    stored = [r for r in rows if str(r.get("name", "")).startswith("filing-") and r["kind"] == "file"]
     assert [r["meta"]["accession"] for r in stored] == [A2, A4, A5]
     assert stored[0]["meta"] == {
         "cik": 101,
@@ -165,13 +165,17 @@ def test_followed_filings_from_the_start_day_are_stored_once_oldest_first(
         "accepted": "2026-09-15T16:05:00.000Z",
     }
     assert all(r["path"].startswith("raw/sec-filings/") for r in stored)
-    lists = [r for r in rows if r.get("source") == "sec"]
+    lists = [r for r in rows if str(r.get("name", "")).startswith("submissions-")]
     assert [r["kind"] for r in lists] == [
         "file",
         "file",
         "unchanged",
         "unchanged",
-    ]  # an unchanged list is not stored twice
+    ]  # an unchanged list: not stored twice
+    # kept apart from the monthly company files, so the monthly fetch does not trip over them
+    assert {r["source"] for r in lists} == {"sec-filings"}
+    with Archive(tmp_path, readonly=True) as archive:
+        assert sec._unfinished_batch(archive) is None
 
 
 def test_limit_and_keep_going_stop_between_requests_and_the_next_run_continues(
@@ -193,19 +197,41 @@ def test_a_refusal_stops_the_job(filings_site, tmp_path: Path, fetcher, status: 
     assert len(filings_site.hits) == 3  # stopped at the refusal: no further request
 
 
-def test_a_missing_filing_is_noted_once_and_a_wrong_answer_is_asked_again(
+def test_a_missing_filing_is_asked_again_three_times_and_a_wrong_answer_until_it_is_right(
     filings_site, tmp_path: Path, fetcher
 ) -> None:
     filings_site.add(f"/Archives/edgar/data/101/{A2}.txt", {"status": 404})
-    filings_site.add(
-        f"/Archives/edgar/data/101/{A4}.txt", {"body": b"<html>please slow down</html>"}, {"body": filing_text(A4)}
-    )
+    wrong = {"body": b"<html>please slow down " + A4.encode() + b"</html>"}  # names the filing, but is not it
+    filings_site.add(f"/Archives/edgar/data/101/{A4}.txt", wrong, {"body": filing_text(A4)})
     filings_site.add("/submissions/CIK0000000103.json", {"body": filing_list(999, [])})
     with Archive(tmp_path) as archive:
         first = fetch(archive, fetcher, filings_site)
+        assert first["not_found"] == 1 and first["odd"] == 2 and first["filings_stored"] == 1 and not first["complete"]
         again = fetch(archive, fetcher, filings_site, "r2")
-    assert first["not_found"] == 1 and first["odd"] == 2 and first["filings_stored"] == 1 and not first["complete"]
-    assert again["filings_stored"] == 1 and again["not_found"] == 0  # the wrong answer was asked again, the 404 not
+        assert again["filings_stored"] == 1 and again["not_found"] == 1  # both asked again
+        assert A2 not in sec_filings.stored_accessions(archive) and A2 not in sec_filings.given_up(archive)
+        third = fetch(archive, fetcher, filings_site, "r3")
+        fourth = fetch(archive, fetcher, filings_site, "r4")
+        assert third["not_found"] == 1 and fourth["not_found"] == 0 and A2 in sec_filings.given_up(archive)
+        assert A2 not in sec_filings.stored_accessions(archive)  # the cross-check still sees it as missing
+
+
+def test_a_filing_that_is_too_large_is_noted_and_does_not_block_the_rest(filings_site, tmp_path: Path, waits) -> None:
+    small = sec.sec_fetcher(CONTACT, allowed_hosts=LOCAL, timeout=5, backoff=(), sleep=waits.append, max_bytes=5000)
+    filings_site.add(f"/Archives/edgar/data/101/{A2}.txt", {"body": filing_text(A2) + b"x" * 9000})
+    with Archive(tmp_path) as archive:
+        first = fetch(archive, small, filings_site)
+        again = fetch(archive, small, filings_site, "r2")
+    assert first["too_large"] == 1 and first["filings_stored"] == 2 and again["asked"] == 2  # not asked again
+
+
+def test_many_wrong_answers_in_a_row_stop_the_job(filings_site, tmp_path: Path, fetcher, monkeypatch) -> None:
+    monkeypatch.setattr(sec_filings, "MAX_ODD_IN_A_ROW", 2)
+    for accession in (A2, A4, A5):
+        filings_site.add(f"/Archives/edgar/data/101/{accession}.txt", {"body": b"<html>maintenance</html>"})
+    with Archive(tmp_path) as archive, pytest.raises(SourceError, match="not filings"):
+        fetch(archive, fetcher, filings_site)
+    assert len(filings_site.hits) == 3  # one filing list, two wrong answers, then it stopped
 
 
 @pytest.mark.parametrize(
@@ -214,6 +240,7 @@ def test_a_missing_filing_is_noted_once_and_a_wrong_answer_is_asked_again(
         [("../../etc/passwd", "8-K", "2026-11-03")],
         [("0000000101-26-1", "8-K", "2026-11-03")],
         [("0000000101-26-00000x", "8-K", "2026-11-03")],
+        [("\u0660" * 10 + "-26-000001", "8-K", "2026-11-03")],  # digits, but not the plain ones
         [(A5, "8-K", "tomorrow")],
     ],
 )
@@ -230,31 +257,33 @@ def test_which_forms_are_followed() -> None:
     assert all(sec_filings.followed(f) for f in yes) and not any(sec_filings.followed(f) for f in no)
 
 
-INDEX = f"""Description:           Daily Index of EDGAR Dissemination Feed by Form Type
+INDEX = f"""Description:           Daily Index of EDGAR Dissemination Feed
 Last Data Received:    Nov 03, 2026
 
-Form Type   Company Name                                                  CIK         Date Filed  File Name
----------------------------------------------------------------------------------------------------------
-4                Alpha Therapeutics, Inc.                                      101         20261103    edgar/data/101/{A5}.txt
-8-K/A            Alpha Therapeutics, Inc.                                      101         20261103    edgar/data/101/{A4}.txt
-SCHEDULE 13G/A   Some Fund Of Many Words LP                                    103         20261103    edgar/data/103/0000000777-26-000009.txt
-DEF 14A          Alpha Therapeutics, Inc.                                      101         20261103    edgar/data/101/{A3}.txt
-8-K              Somebody Else Corp                                            555         20261103    edgar/data/555/0000000555-26-000001.txt
+CIK|Company Name|Form Type|Date Filed|File Name
+--------------------------------------------------------------------------------
+101|Alpha Therapeutics, Inc.|4|20261103|edgar/data/101/{A5}.txt
+101|Alpha Therapeutics, Inc.|8-K/A|20261103|edgar/data/101/{A4}.txt
+103|Some Fund | Of Many Words LP|SCHEDULE 13G/A|20261103|edgar/data/103/0000000777-26-000009.txt
+101|Alpha Therapeutics, Inc.|DEF 14A|20261103|edgar/data/101/{A3}.txt
+555|Somebody Else Corp|8-K|20261103|edgar/data/555/0000000555-26-000001.txt
 """
 
 
 def test_index_entries_reads_forms_with_spaces() -> None:
     entries = sec_filings.index_entries(INDEX.encode())
     assert entries[:3] == [("4", 101, A5), ("8-K/A", 101, A4), ("SCHEDULE 13G/A", 103, "0000000777-26-000009")]
-    with pytest.raises(SourceError):
-        sec_filings.index_entries(b"<html>not an index</html>")
+    for bad in (b"<html>not an index</html>", b"Form Type   Company Name\n-----\n4   Alpha  101  20261103  x/y.txt\n"):
+        with pytest.raises(SourceError):
+            sec_filings.index_entries(bad)
 
 
 def test_crosscheck_names_followed_filings_of_our_companies_that_are_not_stored(
     filings_site, tmp_path: Path, fetcher
 ) -> None:
-    filings_site.add("/daily-index/2026/QTR4/form.20261103.idx", {"body": INDEX.encode()})
-    days = [date(2026, 10, 31), date(2026, 11, 2), date(2026, 11, 3)]  # a Saturday, a day without index, a day
+    filings_site.add("/daily-index/2026/QTR4/master.20261103.idx", {"body": INDEX.encode()})
+    # a Saturday and a regular holiday (not asked for), a day whose index is "not found", and a normal day
+    days = [date(2026, 10, 31), date(2026, 9, 7), date(2026, 11, 2), date(2026, 11, 3)]
 
     def check(archive, name: str) -> dict:
         return sec_filings.run_crosscheck(
@@ -276,6 +305,22 @@ def test_crosscheck_names_followed_filings_of_our_companies_that_are_not_stored(
         summary = check(archive, "c2")
     assert summary["missing"] == 0 and summary["days_checked"] == 1 and summary["days_without_index"] == 1
     assert summary["our_filings_in_the_index"] == 3
+    assert sum("daily-index" in h for h in filings_site.hits) == 4  # two days asked, in two checks
+
+
+def test_crosscheck_stops_at_a_forbidden_answer(filings_site, tmp_path: Path, fetcher) -> None:
+    filings_site.add("/daily-index/2026/QTR4/master.20261102.idx", {"status": 403})
+    with Archive(tmp_path) as archive, pytest.raises(FetchError):
+        sec_filings.run_crosscheck(
+            archive,
+            fetcher,
+            "c1",
+            ciks=[101],
+            days=[date(2026, 11, 2), date(2026, 11, 3)],
+            since=SINCE,
+            index_url=filings_site.index_url,
+        )
+    assert len(filings_site.hits) == 1
 
 
 def test_reading_a_header_its_documents_and_an_event_reports_items() -> None:
@@ -380,3 +425,13 @@ def test_the_nightly_run_includes_the_filings_and_a_refusal_fails_only_that_sour
     filings_site.add("/submissions/CIK0000000101.json", {"status": 429})
     assert archive_cli.main(["run", "--only", "sec-filings"]) == 1
     assert "FAILED  sec-filings" in capsys.readouterr().out
+
+
+def test_the_nightly_filings_job_stops_when_its_time_is_up(commands: Path, filings_site, monkeypatch, capsys) -> None:
+    from bobby_hedgefund.archive import sources
+
+    write_universe(commands)
+    monkeypatch.setattr(sources, "FILE_GROUPS", ())
+    monkeypatch.setattr(archive_cli, "NIGHTLY_FILINGS_SECONDS", 0)
+    assert archive_cli.main(["run", "--only", "sec-filings"]) == 0
+    assert "'asked': 0" in capsys.readouterr().out and filings_site.hits == []

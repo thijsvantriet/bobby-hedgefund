@@ -123,7 +123,7 @@ def documents(body: bytes) -> list[Document]:
                 if line.startswith(f"<{tag}>"):
                     tags[tag] = line[len(tag) + 2 :].strip()
         text = body[text_at + 6 : end] if text_at >= 0 else b""
-        text = text.removesuffix(b"\n").removesuffix(b"</TEXT>")
+        text = text.rstrip(b"\r\n").removesuffix(b"</TEXT>")
         out.append(
             Document(
                 tags.get("TYPE", ""),

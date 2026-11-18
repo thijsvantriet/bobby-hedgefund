@@ -59,6 +59,9 @@ def _attempt(archive: Archive, source: str, run: str, job: Callable[[], dict[str
     return True
 
 
+NIGHTLY_FILINGS_SECONDS = 90 * 60
+
+
 def _universe_ciks() -> list[int] | None:
     """The companies of the newest universe file; None when there is none yet."""
     from ..universe import current  # here, not at the top: the universe code itself imports this module
@@ -70,7 +73,11 @@ def _universe_ciks() -> list[int] | None:
         return None
 
 
-def _sec_filings_job(archive: Archive, run: str, **kwargs: Any) -> dict[str, Any]:
+def _sec_filings_job(archive: Archive, run: str, budget: float | None = None, **kwargs: Any) -> dict[str, Any]:
+    """`budget`: seconds this job may go on asking, counted from its own start."""
+    if budget is not None:
+        started = time.monotonic()
+        kwargs["keep_going"] = lambda: time.monotonic() - started < budget
     ciks = _universe_ciks()
     if ciks is None:
         return {"skipped": "no universe file yet"}
@@ -100,8 +107,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     jobs[sources.CTGOV_UPDATES] = lambda a, f, r: sources.run_ctgov_updates(a, f, r, api=sources.CTGOV_API)
     for group in slow:
         jobs[group.source] = lambda a, f, r, g=group: sources.run_file_group(a, f, g, r)
-    # Last: the filings of the universe's companies. A few hundred requests, with a fetcher of its own.
-    jobs[sec_filings.FILINGS_SOURCE] = lambda a, f, r: _sec_filings_job(a, r)
+    # Last: the filings of the universe's companies. A few hundred requests, with a fetcher of its own, and
+    # a time budget: what is left is fetched the next night (the run as a whole must stay well inside the limit
+    # of its systemd unit).
+    jobs[sec_filings.FILINGS_SOURCE] = lambda a, f, r: _sec_filings_job(a, r, budget=NIGHTLY_FILINGS_SECONDS)
     wanted = args.only or list(jobs)
     unknown = [name for name in wanted if name not in jobs]
     if unknown:

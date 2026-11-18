@@ -27,6 +27,10 @@ class FetchError(Exception):
         self.status = status  # the HTTP status, when the publisher answered with one
 
 
+class ResponseTooLarge(FetchError):
+    """The answer is larger than this fetcher accepts. Asking again would give the same."""
+
+
 @dataclass(frozen=True)
 class Response:
     url: str
@@ -145,7 +149,7 @@ class Fetcher:
         if status != 200:
             raise FetchError(f"{url}: unexpected HTTP status {status}")
         if len(raw) > self.max_bytes:
-            raise FetchError(f"{url}: response larger than the limit of {self.max_bytes} bytes")
+            raise ResponseTooLarge(f"{url}: response larger than the limit of {self.max_bytes} bytes")
         # A connection that drops halfway is not reported by read() when a size limit is passed: check it here,
         # so a cut-off download is retried and never stored as if it were the whole file.
         announced = headers.get("content-length", "")

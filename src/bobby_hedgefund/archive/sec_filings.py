@@ -8,12 +8,14 @@ Runs every night after the other archive sources, and by hand for the first fetc
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from datetime import date
 from typing import Any
 
-from .fetch import Fetcher, FetchError
-from .sec import MAX_ODD_IN_A_ROW, SEC_PAUSE, SEC_SOURCE, SEC_SUBMISSIONS_URL, _get, submissions_name
+from ..prices.holidays import is_regular_holiday
+from .fetch import Fetcher, FetchError, ResponseTooLarge
+from .sec import MAX_ODD_IN_A_ROW, SEC_PAUSE, SEC_SUBMISSIONS_URL, _get, submissions_name
 from .sources import SourceError
 from .store import Archive
 
@@ -22,7 +24,11 @@ INDEX_SOURCE = "sec-index"
 # The complete filing as one text file: all its documents in one. Under /Archives/edgar/data, which the SEC's
 # robots file allows and its "Accessing EDGAR Data" page describes for automated use.
 SEC_FILING_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}.txt"
-SEC_DAILY_INDEX_URL = "https://www.sec.gov/Archives/edgar/daily-index/{year}/QTR{quarter}/form.{day:%Y%m%d}.idx"
+SEC_DAILY_INDEX_URL = "https://www.sec.gov/Archives/edgar/daily-index/{year}/QTR{quarter}/master.{day:%Y%m%d}.idx"
+# A filing the SEC's list names can be missing from the file store for a short while. It is asked again on later
+# runs; after this many "not found" answers it is left alone.
+NOT_FOUND_IS_FINAL_AFTER = 3
+_ACCESSION = re.compile(r"\d{10}-\d{2}-\d{6}", re.ASCII)
 # Event reports; share sales (shelf registrations and their supplements); insider trades; holders of more than
 # 5%, under the old and the new form names; quarterly and yearly reports (for stream 4). Amendments included.
 FOLLOWED_FORMS = frozenset(
@@ -54,9 +60,8 @@ def recent_filings(body: bytes, cik: int) -> list[dict[str, str]]:
     out = []
     for number, form, day, when in zip(numbers, forms, days, accepted, strict=True):
         number = str(number)
-        parts = number.split("-")
         # The number becomes part of an address and of a file name: only the SEC's own form is accepted.
-        if len(parts) != 3 or [len(p) for p in parts] != [10, 2, 6] or not number.replace("-", "").isdigit():
+        if not _ACCESSION.fullmatch(number):
             raise ValueError("an accession number in an unexpected form")
         date.fromisoformat(str(day))
         out.append({"accession": number, "form": str(form), "filed": str(day), "accepted": str(when)})
@@ -64,15 +69,29 @@ def recent_filings(body: bytes, cik: int) -> list[dict[str, str]]:
 
 
 def stored_accessions(archive: Archive) -> set[str]:
-    """Filings that are stored, or that the SEC said it does not have (noted, not asked again)."""
+    """Filings that are really stored."""
     found = set()
     for r in archive.records:
         meta = r.get("meta")
-        if r.get("source") != FILINGS_SOURCE or not isinstance(meta, dict) or "accession" not in meta:
+        if r.get("source") != FILINGS_SOURCE or r.get("kind") not in ("file", "unchanged"):
             continue
-        if r.get("kind") in ("file", "unchanged") or meta.get("not_found"):
+        if isinstance(meta, dict) and "accession" in meta:
             found.add(str(meta["accession"]))
     return found
+
+
+def given_up(archive: Archive) -> set[str]:
+    """Filings that are not asked for again: "not found" several times, or too large to fetch."""
+    counts: dict[str, int] = {}
+    for r in archive.records:
+        meta = r.get("meta")
+        if r.get("source") != FILINGS_SOURCE or r.get("status") != "note" or not isinstance(meta, dict):
+            continue
+        if meta.get("too_large"):
+            counts[str(meta.get("accession"))] = NOT_FOUND_IS_FINAL_AFTER
+        elif meta.get("not_found") and "accession" in meta:
+            counts[str(meta["accession"])] = counts.get(str(meta["accession"]), 0) + 1
+    return {accession for accession, n in counts.items() if n >= NOT_FOUND_IS_FINAL_AFTER}
 
 
 def run_sec_filings(
@@ -91,8 +110,8 @@ def run_sec_filings(
     """For each company: store its filing list (when it changed), then every followed filing from `since` on that
     is not stored yet. `limit` stops after that many requests in all; `keep_going` answering False stops before
     the next request. Nothing is fetched twice, so a run that stopped is continued by running it again."""
-    have = stored_accessions(archive)
-    asked = lists = filings = not_found = odd = odd_in_a_row = companies_done = 0
+    have = stored_accessions(archive) | given_up(archive)
+    asked = lists = filings = not_found = too_large = odd = odd_in_a_row = companies_done = 0
     by_form: dict[str, int] = {}
 
     def may_ask() -> bool:
@@ -122,15 +141,15 @@ def run_sec_filings(
                 raise SourceError(f"{odd_in_a_row} answers in a row were not filing lists; stopped") from None
             continue
         odd_in_a_row = 0
-        # Kept with the company files of the universe (source "sec"), so there is one history of filing lists.
+        # Kept apart from the monthly company files (source "sec"): those belong to batches of the whole market.
         archive.store(
-            SEC_SOURCE,
+            FILINGS_SOURCE,
             submissions_name(cik),
             resp.body,
             run=run,
             compress=True,
             dedup=True,
-            info={"url": url, "status": resp.status, "headers": resp.headers, "meta": {"cik": cik, "nightly": True}},
+            info={"url": url, "status": resp.status, "headers": resp.headers, "meta": {"cik": cik}},
         )
         lists += 1
         wanted = [
@@ -146,18 +165,30 @@ def run_sec_filings(
             asked += 1
             try:
                 resp = _get(fetcher, address, pause)
+            except ResponseTooLarge:
+                # Asking again gives the same: noted once, never asked again, and the job goes on.
+                archive.record_run(FILINGS_SOURCE, run, "note", meta={**meta, "too_large": True})
+                have.add(filing["accession"])
+                too_large += 1
+                continue
             except FetchError as exc:
                 if exc.status != 404:
-                    raise
+                    raise  # a refusal or a broken connection stops the job
+                # Asked again on later runs; `given_up` decides when it is left alone.
                 archive.record_run(FILINGS_SOURCE, run, "note", meta={**meta, "not_found": True})
-                have.add(filing["accession"])
                 not_found += 1
                 continue
-            if filing["accession"].encode() not in resp.body[:4000]:
-                # Not this filing (an error page with status 200): not stored, asked again on the next run.
+            first_line = resp.body[:300].split(b"\n", 1)[0]
+            if not (resp.body.startswith(b"<SEC-DOCUMENT>") and filing["accession"].encode() in first_line):
+                # Not this filing (for example a "please wait" page with status 200): not stored, asked again
+                # on the next run. Many in a row mean the SEC is sending something else altogether: stop.
                 archive.record_run(FILINGS_SOURCE, run, "note", meta={**meta, "odd": True})
                 odd += 1
+                odd_in_a_row += 1
+                if odd_in_a_row >= MAX_ODD_IN_A_ROW:
+                    raise SourceError(f"{odd_in_a_row} answers in a row were not filings; stopped") from None
                 continue
+            odd_in_a_row = 0
             archive.store(
                 FILINGS_SOURCE,
                 filing_name(filing["accession"]),
@@ -184,8 +215,9 @@ def run_sec_filings(
         "filings_stored": filings,
         "by_form": dict(sorted(by_form.items())),
         "not_found": not_found,
+        "too_large": too_large,
         "odd": odd,
-        "complete": not stopped and odd == 0,
+        "complete": not stopped and odd == 0 and not_found == 0,
     }
 
 
@@ -194,24 +226,23 @@ def index_name(day: date) -> str:
 
 
 def index_entries(body: bytes) -> list[tuple[str, int, str]]:
-    """(form, company number, accession number) for every line of a daily index file."""
-    text = body.decode("latin-1")
-    lines = text.splitlines()
+    """(form, company number, accession number) for every line of a daily index file (the "master" layout:
+    company number | company name | form | day | file name)."""
+    lines = body.decode("latin-1").splitlines()
     try:
         start = next(i for i, line in enumerate(lines) if line.startswith("-----")) + 1
+        if "CIK|Company Name|Form Type|Date Filed|File Name" not in lines[:start]:
+            raise StopIteration
     except StopIteration:
-        raise SourceError("the daily index has no table") from None
+        raise SourceError("the daily index does not have the expected table") from None
     out = []
     for line in lines[start:]:
         if not line.strip():
             continue
-        # Fixed columns: the form type fills the first 17 characters (it may contain spaces, "SC 13D"); the
-        # file name is the last column, with the day and the company number just before it.
-        parts = line.split()
+        parts = line.split("|")
         try:
-            path, cik = parts[-1], int(parts[-3])
+            cik, form, path = int(parts[0]), parts[-3].strip(), parts[-1].strip()  # a name may hold a "|" itself
             accession = path.rsplit("/", 1)[1].removesuffix(".txt")
-            form = line[:17].strip()
         except (IndexError, ValueError):
             raise SourceError("a line of the daily index is not in the expected layout") from None
         out.append((form, cik, accession))
@@ -230,14 +261,15 @@ def run_crosscheck(
     pause: float = SEC_PAUSE,
 ) -> dict[str, Any]:
     """Compare what is stored with the SEC's own list of each day's filings (record 0008, point 8). One request
-    per day; a day without an index (weekend, holiday) is skipped. Lists followed filings of our companies that
-    the index names and the archive does not hold."""
+    per day. Weekends and regular market holidays have no index and are not asked for (the SEC answers
+    "forbidden" for a missing index, the same answer as a refusal, so such a day cannot be told apart by asking).
+    Lists followed filings of our companies that the index names and the archive does not hold."""
     have = stored_accessions(archive)
     ours = set(ciks)
     missing: list[str] = []
     checked = without_index = seen = 0
     for day in days:
-        if day < since or day.weekday() >= 5:
+        if day < since or day.weekday() >= 5 or is_regular_holiday(day):
             continue
         url = index_url.format(year=day.year, quarter=(day.month - 1) // 3 + 1, day=day)
         try:

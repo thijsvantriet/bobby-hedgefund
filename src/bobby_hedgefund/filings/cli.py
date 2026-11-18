@@ -38,14 +38,14 @@ def cmd_recent(args: argparse.Namespace) -> int:
     except InputError:
         names = {}
     shown = bad = 0
-    recs = [r for r in inputs.files(FILINGS_SOURCE) if isinstance(r.get("meta"), dict)]
+    recs = [r for r in inputs.files(FILINGS_SOURCE) if isinstance(r.get("meta"), dict) and "accession" in r["meta"]]
     for rec in sorted(recs, key=lambda r: (str(r["meta"].get("filed")), str(r["meta"].get("accession")))):
         meta = rec["meta"]
         if str(meta.get("filed")) < since or (args.form and str(meta.get("form")).upper() != args.form.upper()):
             continue
         try:
             detail = _detail(str(meta.get("form")), inputs.read(rec))
-        except read.FilingError as exc:
+        except (read.FilingError, InputError) as exc:
             detail, bad = f"NOT READABLE: {exc}", bad + 1
         company = names.get(meta.get("cik"), f"company {meta.get('cik')}")
         print(f"{meta.get('filed')}  {meta.get('form')!s:14} {company[:34]:34} {detail}")
