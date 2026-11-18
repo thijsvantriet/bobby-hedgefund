@@ -481,3 +481,14 @@ record holds. Each record lists its points under "Differs from the spec".
 
 **2026-11-17, decision record 0014** (owner). AACT states no terms of use; the owner takes that as permission, so
 the historical study's download may be built under the rules of 0014, without a question to AACT first.
+
+**2026-11-18, decision record 0009** (agent team; "proposed" until the owner merges it). Where it differs from the
+text above:
+- Model and effort are read from each agent run's own record and compared with the agent file; a start can
+  override the file, so the file alone proves nothing.
+- The whole round of a portfolio manager runs three times; the two-of-three rule is applied per company, and
+  every other action follows run number 1. One readable answer is enough for selling, not for buying.
+- The weekly check on the screening is an agent file of its own.
+- Companies that are in the universe through the XBI fund only get no deep analysis, so they are never covered,
+  bought, drawn or forecast (the owner's open point 2 of that record).
+- "The next model down" is one new start of the task, allowed and logged by the script.

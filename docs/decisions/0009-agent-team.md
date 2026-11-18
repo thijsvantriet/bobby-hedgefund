@@ -32,9 +32,10 @@ at 45; one session may use at most half of a five-hour usage limit.
   one run, and that wins over the file. So the file alone proves nothing: the run's own record must be read.
 - **A check can run before every tool use** (a "hook"), it is told which agent is calling, and it can refuse. Such
   a check can be written in the agent file itself, and then exists only while that agent runs.
-- **Every agent run has its own record on disk**: `…/<session>/subagents/agent-<id>.jsonl` with a small file next
-  to it naming the agent type. Looked at on this machine (field names only): every answer line carries the exact
-  model name, the token counts, the effort and the Claude Code version. The record is written with a small delay.
+- **Every agent run has its own record on disk**: one file per run in the session's folder `subagents/`, with a
+  small file next to it naming the agent type. Looked at on this machine (field names only): every answer line
+  carries the exact model name, the effort, the Claude Code version and how much text went in and out (counted in
+  "tokens", the unit the usage limits are measured in). The record is written with a small delay.
 - **What an agent receives besides its task:** its own instructions, the project's briefing files (unless the file
   sets `omitClaudeMd: true`), and a snapshot of the repository's git status with the latest commit titles. The last
   cannot be switched off per agent.
@@ -83,8 +84,8 @@ One file per role in `.claude/agents/`, named `bobby-<role>.md`:
 | `bobby-screening` | `claude-haiku-5-5` | low | Once per group of about 25 companies with news |
 | `bobby-screening-check` | `claude-opus-5-5` | high | Weekly, on 20 random companies marked "no" |
 | `bobby-science-analyst`, `bobby-clinical-analyst`, `bobby-financial-analyst`, `bobby-market-analyst` | `claude-opus-5-5` | high | Once per company in deep analysis |
-| `bobby-results-reader` | `claude-opus-5-5` | high | Only when a results announcement is among the new items; also records which catalysts have resolved |
-| `bobby-bull`, `bobby-bear` | `claude-opus-5-5` | high | Debate fund only, two rounds at most |
+| `bobby-results-reader` | `claude-opus-5-5` | high | Only when a results announcement is among the new items |
+| `bobby-bull`, `bobby-bear` | `claude-opus-5-5` | high | Debate fund only, two rounds at most, once per session: all three runs of that fund's manager read the same debate |
 | `bobby-pm-careful`, `bobby-pm-bold`, `bobby-pm-debate` | `claude-fable-5-2` | high | Three times per session (point 4) |
 
 - **Full model names, never the short names** (`opus`, `fable`): a short name moves to a new model the day one is
@@ -94,61 +95,92 @@ One file per role in `.claude/agents/`, named `bobby-<role>.md`:
 - Companies without any new item are marked "no news" by the script and are not sent to the screening model.
 - **Option A for the report:** each analyst returns one section; a script joins them into the one report per
   company. No editor agent.
-- Every agent's answer has a fixed form (a block of JSON that a script checks): a report section, a forecast
-  (the event, the date, the probability, whether it is a make-or-break result), a screening answer, or a decision
-  with the thesis form of the spec, section 5. It ends with a list "what I lacked", which the script collects for
-  the review after the pilot (record 0003).
-- The instructions tell every agent: no prices, market values or per-share figures in written text (the numbers
-  part of a thesis is filled in by script, record 0004); name sources by their number in the session's inputs
-  list; a quote is at most two sentences.
+- Every agent's answer has a fixed form (a block of named fields that a script can check): a report section, a
+  forecast (the event, the date, the probability, whether it is a make-or-break result), a screening answer, or a
+  decision with the thesis form of the spec, section 5. It ends with a list "what I lacked", which the script
+  collects for the review after the pilot (record 0003).
+- **Which catalysts have resolved** (spec, section 1, step 4) is recorded by the clinical and regulatory analyst,
+  for every kind of catalyst (a trial result, an FDA decision). For a results announcement the results reader adds
+  its reading of the result.
+- The reports themselves stay in the data folder: they hold numbers from prices and text from sources. Public are
+  only the forecasts, the decisions with their thesis, and the day page made from them.
+- The instructions tell every agent: in a forecast or a thesis, no prices, market values or per-share figures, and
+  nothing worked out from a price (a rise or fall in percent, "trades below its cash", a ratio to the market
+  value); the numbers part of a thesis is filled in by script (record 0004). Name sources by their number in the
+  session's inputs list; a quote is at most two sentences.
 
 ### 2. How the versions are logged
-After each agent run a script reads that run's own record and stores, for the log:
+A script reads each agent run's own record. It waits until the record holds the final answer (records are
+written with a delay); a run without a final answer by minute 38 is "no answer". It stores, for the log:
 - the exact model name and the effort **as recorded for the run**, and the Claude Code version;
-- the fingerprint (SHA-256) of the agent file and of the task text, and the git commit of the code;
-- the token counts and the times of the run (for the usage figures of the spec, section 7).
+- the fingerprint of the agent file and of the task text, and the git commit of the code.
 
-If the recorded model or effort differs from the agent file, the run is logged as **substituted**, with both
-values. It is never accepted silently. **If a model is not available**, the next one down is used (Fable, then
-Opus, then Sonnet) and the record says so; without Haiku the screening is skipped that day and the rotation of the
-spec decides who is analysed.
+The tokens and the times of each run are kept in a private file in the data folder, per role, for the usage
+figures of the pilot. Only percentages of the usage limits are published (spec, section 7).
+
+**All records of a session, the agents' included, are copied to the data folder** (spec, section 3): at the end
+of the session, and completed at the start of the next one, because Claude Code writes them with a delay and
+removes them after 30 days. The fingerprint of the complete copy goes into the next session's first log record.
+
+**When the recorded model or effort differs from the agent file**, the answer is rejected, with one exception.
+If a run fails because its model cannot be used, the script (not the leading session) allows one new start of
+that task on the next model down (Fable, then Opus, then Sonnet). That run is logged as **substituted**, with both
+model names. If the three runs of one portfolio manager did not all use the same model, the whole round is marked
+in the log. Without Haiku the screening is skipped that day and the rotation of the spec decides who is analysed.
 
 ### 3. The leading session cannot steer
-The leading session only starts agents and runs scripts. It decides nothing, and the design does not rely on it
-behaving:
+The leading session only starts agents and runs scripts. It decides nothing. These rules guard against slips and
+shortcuts by the leading model; they are not a lock against a model that sets out to cheat, because the leading
+session has a command line. What makes that visible afterwards is the complete copy of the conversation (point 2).
 - **An agent is started with exactly a prepared task text.** The script writes one task file per run. A check at
   the start refuses any other text, any agent type that does not belong to the task, and any model or effort given
   by hand. The same is checked again afterwards from the agent's record.
+- **A task file cannot be swapped.** The script stores the fingerprint of every task file at the moment it writes
+  it, and makes the session folder read-only. A start is refused, and an answer rejected, when the task file no
+  longer has that fingerprint. The round is refused when an agent file or a check script differs from the commit
+  the session runs. While a round is active, the leading session's own tools for changing files are refused.
 - **Only the first start of a task counts**, and every start is noted. A task cannot be run again until the answer
-  suits.
+  suits. (The one exception is the model fallback of point 2, which the script allows and logs.)
 - **An agent record with a second incoming message is rejected.** Nothing can be whispered to a running agent.
 - **The answer is taken by script from the agent's own record** (option C), never from what the leading session
   passes on. An answer that cannot be read is "no decision" (for an analyst: no section); nothing is retyped or
   repaired by hand.
 - **The script reads back which tools the agent used.** Anything but reading inside the session folder rejects
-  the answer. This is a second layer behind the tool list and the reading check, and the only layer in a dry run
-  where the agent files cannot be loaded.
+  the answer. This is a second layer behind the tool list and the reading check. It is the only layer in the one
+  case where the agent files cannot be used: a try-out in the session that has just created them (Claude Code
+  notices a new agents folder only after a restart).
 - The portfolio managers' task files are put together by script from the collected reports.
 
 ### 4. Repeated decisions: option A
 - Each AI fund's portfolio manager runs **three times per session**, independently, on the same task text; the
   runs are numbered beforehand.
 - **A new position is opened only when at least two of the three say buy, at the smallest size among those that
-  do.** The thesis that is logged is the one of the lowest-numbered run that said buy.
+  do.** A position is new when the fund does not hold the company and has no buy order waiting for it (record
+  0005, point 2). The thesis that is logged is the one of the run with that smallest size (the lowest-numbered one
+  if two are equal), so size and thesis always come from the same run.
 - **Everything else (add, reduce, sell, do nothing) follows run number 1**: the number given beforehand, not the
-  run that happens to finish first. If run 1 has no readable answer, run 2 takes its place, and the log says so.
+  run that happens to finish first. If run 1 has no readable answer, the lowest-numbered readable run takes its
+  place, and the log says so.
+- The two rules work side by side. If run 1 sells company X and runs 2 and 3 both want to open company Y, X is
+  sold and Y is opened. The orders of both rules together form the fund's one list for the day, and the risk
+  limits are checked on that list (spec, section 1, step 6).
+- **One readable answer is enough for selling, not for buying.** With a single readable run its add, reduce and
+  sell orders count (a missed sell costs most; spec, section 1), but no new position is opened. Without any
+  readable answer the fund gets "no decision today".
 - The log records all three answers and whether they agreed.
 - Forecasts are not repeated (spec, section 3).
-- A run that has not answered by minute 38 counts as "no answer". With fewer than two readable answers the fund
-  gets "no decision today".
+- A run that has not answered by minute 38 counts as "no answer".
 
 ### 5. Checks on written text
 Fixed here because the agents' instructions and the log's checks (record 0004, point 2) must agree:
 - **A long quote** is more than 40 words in a row copied from one source file, or more than two such copies of
   over 15 words in one text. The check replaces it by "[removed]".
-- **A market value of a company or a figure per share** in written text is always sealed (record 0007, point 6).
-  **Any other amount of money** is sealed unless the same amount stands in a filing among the session's inputs. In
-  doubt it is sealed.
+- **A market value of a company, a figure per share, and anything worked out from a price** (a rise or fall of a
+  share in percent, a return, a ratio to the price or the market value, "trades below its cash") in written text
+  is always sealed (record 0007, point 6). **Any other amount of money** is sealed unless the same amount stands
+  in a filing among the session's inputs. In doubt it is sealed. The check is a list of patterns, so it can miss
+  an unusual wording; that is why the agents are told the rule as well, and why the day page is read once more by
+  the same check before it is published.
 - **A forecast whose event is defined by a price** ("the share is above X on date Y") is refused: its outcome
   could not be published.
 
@@ -161,6 +193,12 @@ Fixed here because the agents' instructions and the log's checks (record 0004, p
 3. Section 3, the weekly check on the screening, gets its own agent file.
 4. Section 1: agents get a snapshot of the repository's git status that cannot be switched off. It shows file names
    and commit titles of this public repository, nothing from the data folder.
+5. Section 4, the universe and the "same pool for all" rule: the companies that are in the universe through the
+   XBI fund only (six at the run of 2026-11-18; counted again at every monthly re-run, record 0006) get no deep
+   analysis. So they are never on the covered list, never in a Dice draw, and the rotation of section 1 skips
+   them (open point 2).
+6. Section 3 says a session "uses the next one down" when a model is not available. Here that is one new start of
+   the task, allowed and logged by the script.
 
 ## Open points for the owner
 Each has a default that the pilot runs with.
@@ -185,12 +223,15 @@ Each has a default that the pilot runs with.
 
 **To check in the pilot** (could not be confirmed from documentation):
 1. that the effort recorded for a run equals the effort in the file;
-2. that Fable runs as an agent inside a session;
-3. that an agent with the tool list above really has no connector tools (its record shows every tool call);
+2. that Fable runs as an agent inside a session, and that the exact names `claude-fable-5-2` and
+   `claude-haiku-5-5` are accepted (a wrong name must fail, not quietly become another model);
+3. that an agent with the tool list above really has no tools that reach outside services (its record shows every
+   tool it used);
 4. that the reading check fires inside an agent and names it;
 5. that `/clear` is reported as a fresh start with a new session number (record 0003);
 6. what an agent actually received at its start (briefing, memory, git status), read once from a record;
-7. whether the usage percentages reach a script through the status line (spec, section 7).
+7. whether the usage percentages reach a script through the status line, the one place Claude Code gives them to
+   (spec, section 7).
 
 ## Revisit
 Revisit: by 2027-01, or after the pilot week, or when a new Claude Code version changes agent files, hooks or the
