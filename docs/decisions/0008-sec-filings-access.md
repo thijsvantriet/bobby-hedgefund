@@ -146,6 +146,46 @@ far inside the SEC's limit of 10 requests a second, and no bulk download is used
 A reviewer agent read the code before the pull request; its findings (the redirect rule, the odd answer that could
 block a batch, the evening stop, the `--new` rule) are worked in.
 
+## Update 2026-11-18 (2): the nightly filings, the cross-check and the reading step
+Commands: `bobby-archive sec-filings`, `bobby-archive sec-crosscheck`, `bobby-filings recent`; the nightly
+`bobby-archive run` does the filings as its last job.
+
+- **What is fetched** (point 1): per universe company its filing list, then every filing of a followed kind
+  that is not stored yet, from **1 September 2026** on (so the first fetch stays a few thousand requests), as the
+  complete text file `/Archives/edgar/data/<company>/<accession number>.txt`. Followed kinds: 8-K; S-3,
+  S-3ASR, 424B5; 4; SC 13D, SC 13G and their new names SCHEDULE 13D, SCHEDULE 13G; 10-Q and 10-K (for stream 4);
+  and the amendments of all of these.
+- **Checked on real filings:** insider trades and large-holder filings *do* appear in the company's own filing
+  list (the open question under "Consequences"), so the daily index is not needed for them.
+- **Storage:** archive source `sec-filings`: the filings, and the nightly copies of the filing lists (kept apart
+  from the monthly company files of source `sec`, which belong to batches of the whole market).
+- **An accession number** becomes part of an address and a file name, so only the SEC's own form of it
+  (10-2-6 plain digits) is accepted. An answer is stored only when it starts as a filing and names that number
+  in its first line; anything else (a "please wait" page) is not stored and asked again, and ten such answers in
+  a row stop the job.
+- **"Not found"** for a filing the list names is asked again on later nights and left alone after three times.
+  A filing larger than 300 MB is noted and not asked again. Neither blocks the filings after it.
+- **Time.** In the nightly run the job stops asking after 90 minutes; what is left comes the next night. By
+  hand it stops at 22:30 like the other SEC commands. A refusal stops it at once (point 2).
+- **Cross-check (point 8):** `sec-crosscheck` reads the SEC's daily index in its pipe-separated layout
+  (`master.<day>.idx`) for the last seven days, stores each index file, and names every followed filing of our
+  companies that the index lists and the archive does not hold; it then ends as failed, so it is noticed.
+  **The SEC answers "forbidden" for a day without an index**, the same answer as a refusal. So weekends and
+  regular market holidays are not asked for, and a "forbidden" on any other day stops the check. Read on
+  2026-11-18: `robots.txt` does not forbid `/Archives/edgar/daily-index`, and the "Accessing EDGAR Data" page
+  describes the index files for automated use. The check is run by hand for now (weekly); a timer can follow.
+- **Reading (point 6): our own small reader, not edgartools.** What the first steps need is in the filing's
+  plain header (kind, dates, the items of an 8-K) and, for an insider trade, in one small XML document, read
+  with defusedxml (open source, PSF licence; it refuses the XML tricks that make a parser read files or use up
+  memory). edgartools was **not installed or tried**: it would add 37 packages for these two readers. It stays
+  the candidate for stream 4 (reading the numbers in quarterly reports), where a ready-made reader earns its
+  place; the test "without any network contact" of point 6 is done then. The raw file is kept, so a better reader
+  can always be used later.
+- **Review.** A reviewer agent read the code before the pull request. Worked in, among others: the nightly
+  filing lists first went into source `sec` and would have broken the monthly company fetch from the first night;
+  one filing that fails every time no longer blocks the queue; the time limit for the nightly job; the index
+  layout (the first version read the fixed-width layout with a guessed column width).
+
 ## Sources
 - SEC, [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) (read 2026-11-17)
 - SEC, [robots.txt](https://www.sec.gov/robots.txt) (read 2026-11-17)

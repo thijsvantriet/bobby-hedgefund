@@ -157,6 +157,65 @@ The private universe files hold market values computed from prices, so they fall
 Later, maybe: a database copy for searching; OpenFIGI to tell share classes and foreign listings apart; foreign
 filers in a version 2.
 
+## Update 2026-11-18: how the filter and the matching are built
+Commands: `bobby-archive sec-shares`, `bobby-universe build | match | decisions | linking | missed-check`
+(README, "Universe and linking table"). What had to be settled while building, beyond the text above:
+
+**Share count (point 2).** The SEC's data service is asked for two figures per candidate: the share count on the
+cover page of a report, and the one on the balance sheet. The newer of the two is used. Limits found:
+- The service only holds figures a company reports *for the company as a whole*. A company that reports each
+  share class apart has neither figure and falls out with the reason "no share count reported for the company as
+  a whole". These are listed for the owner; adding them by hand from the report is a later step.
+- A count older than 15 months does not count (a yearly report plus the time allowed to file it).
+- Several figures for one day in one report are added up, with a note (share classes).
+- **Share splits.** A split after the report was *filed* changes the number of shares, so the count is multiplied
+  by the split's ratio, with a note. A split between the day of the count and the filing day is **not** applied:
+  companies must restate their share figures for such a split, so it is normally in the count already; the line
+  gets "CHECK" in its note. The split list is the price service's (record 0007).
+- The build refuses to run until the share counts of the current batch are complete, so "not fetched yet" can
+  never look like "reports no share count".
+
+**Which ticker.** A company can have several tickers (share classes, warrants, units, preferred shares), and the
+SEC's file does not always list the common share first. The ticker with the most money traded over the 60 days is
+used; all tickers with prices are shown. The SEC writes a share class with a dash, the price service with a dot;
+only that difference is bridged, never a look-alike.
+
+**The filter, two additions.** (1) A share without a price in the last 5 trading days is out ("no longer
+trades"): a company taken over two months ago would otherwise pass on its old prices. (2) "Average over the last
+60 trading days" counts a day without trading as zero, so a newly listed share can enter a month late.
+"Shell company" is read from the SEC's industry code for blank-check companies (6770); the cover-page flag is
+not fetched. In the SEC's ticker file "NYSE" also covers NYSE American.
+
+**Cleaning names (point 3, step 1).** Beyond lower case, punctuation and legal endings: accents are removed;
+"&" is read as "and"; the tags the SEC adds to many names are dropped ("/DE/", "/NEW", "/ADR"); "Holdings" and
+"Group" count as endings.
+
+**Kinds of suggestion (step 3).** Scoring every pair with one similarity score gave mostly noise: two names
+that share a long word such as "Pharmaceuticals" score as alike. So a suggestion is one of four kinds:
+- **strong**: identical after cleaning;
+- **core**: identical once the words that only say "drug company" are left out (Therapeutics, Pharma,
+  Biosciences, ...), for a core of at least four letters;
+- **starts**: the sponsor name starts with the company's whole cleaned name (a subsidiary, a country branch);
+- **similar**: nearly the same spelling (rapidfuzz, 90 of 100), and the part that tells the company apart must
+  be nearly the same too (85 of 100) or the first word identical.
+Former names are tried as well. Strong and core suggestions are always shown; of the two weaker kinds at most 25
+per company, most trials first, and the sheet says how many were left out.
+
+**The review sheet (step 4).** A spreadsheet with a how-to page; one grey line per company and its suggestions
+under it. On the company line the owner can choose "not biotech" (the known gap of code 2834: generics makers);
+the next universe run then leaves that company out, and "biotech" takes the mark back. A read-only copy of the
+sheet is kept; when the filled-in sheet is read back, every decided line must still be a line of that copy, and
+one wrong line refuses the whole sheet, with the line numbers. Names can never run as a spreadsheet formula.
+
+**Decisions (point 4).** `decisions.jsonl` is only ever added to, under a lock; every line carries the
+fingerprint of the line before it, and a damaged file is refused, not continued. A changed decision is a new
+line with the number and fingerprint of the line it replaces.
+
+**Review.** A reviewer agent read the code before the pull request. Worked in, among others: the split rule
+above (the first version would have counted a split twice for a balance-sheet count), the completeness check,
+the ticker choice, the SEC's name tags, a stop when the share-count service answers "not found" many times in a
+row (then the address is wrong, not the companies), and names with line breaks or control characters.
+
 ## Sources
 - SEC, [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data)
   (company numbers "are not recycled"; the ticker files; read 2026-11-17)
