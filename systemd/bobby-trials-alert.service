@@ -1,0 +1,6 @@
+[Unit]
+Description=Bobby Hedgefund: trial-changes failure alert
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'for i in $(seq 1 20); do "$HOME/server/tools/send_ha_message.sh" "Bobby trials" "The nightly list of changes in trial records was not made. See: journalctl --user -u bobby-trials" && exit 0; sleep 30; done; exit 1'

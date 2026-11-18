@@ -1,0 +1,11 @@
+[Unit]
+Description=Bobby Hedgefund: trial-record changes at 01:15
+
+[Timer]
+# After the nightly archive run of 23:30, whose trial pages are saved within its first minutes.
+OnCalendar=*-*-* 01:15:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

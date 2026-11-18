@@ -12,11 +12,12 @@ fi
 (cd "$project" && uv sync --frozen --quiet && uv run --no-sync pytest -q)   # never install code whose tests fail
 # A snapshot of the program in its own environment (~/.local/share/uv/tools); the command lands in ~/.local/bin.
 uv tool install --quiet --force --reinstall "$project"
-echo "installed bobby-archive, bobby-prices and bobby-universe from commit $(git -C "$project" rev-parse --short HEAD) ($(git -C "$project" branch --show-current))"
+echo "installed bobby-archive, bobby-prices, bobby-trials and bobby-universe from commit $(git -C "$project" rev-parse --short HEAD) ($(git -C "$project" branch --show-current))"
 dest="$HOME/.config/systemd/user"
 mkdir -p "$dest"
 cp "$here"/bobby-archive.service "$here"/bobby-archive.timer "$here"/bobby-archive-alert.service "$dest"/
 cp "$here"/bobby-prices.service "$here"/bobby-prices.timer "$here"/bobby-prices-alert.service "$dest"/
+cp "$here"/bobby-trials.service "$here"/bobby-trials.timer "$here"/bobby-trials-alert.service "$dest"/
 systemctl --user daemon-reload
-systemctl --user enable --now bobby-archive.timer bobby-prices.timer
-systemctl --user list-timers bobby-archive.timer bobby-prices.timer --no-pager
+systemctl --user enable --now bobby-archive.timer bobby-prices.timer bobby-trials.timer
+systemctl --user list-timers bobby-archive.timer bobby-prices.timer bobby-trials.timer --no-pager
