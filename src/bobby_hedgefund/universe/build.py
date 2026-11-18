@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
+from ..archive import sec_shares
 from ..archive.sec_shares import CONCEPTS, SHARES_SOURCE, shares_name
 from ..prices import read as prices
 from . import candidates, read_shares
@@ -51,6 +52,7 @@ HEADER = (
     "market_value",
     "avg_traded_per_day",
     "days_with_prices",
+    "tickers_with_prices",
     "tickers",
     "former_names",
 )
@@ -69,6 +71,7 @@ class Line:
     market_value: float | None = None
     avg_traded: float | None = None
     days_with_prices: int = 0
+    priced_tickers: tuple[str, ...] = ()
 
     @property
     def in_universe(self) -> bool:
@@ -96,6 +99,7 @@ class Line:
             "" if self.market_value is None else round(self.market_value),
             "" if self.avg_traded is None else round(self.avg_traded),
             self.days_with_prices,
+            " ".join(self.priced_tickers),
             " ".join(c.tickers),
             " | ".join(c.former_names),
         )
@@ -131,16 +135,25 @@ def share_count(arch: Inputs, cik: int, batch: str, as_of: date) -> tuple[read_s
             if count is not None:
                 found.append(count)
     if not found:
-        return None, "no share count reported for the company as a whole"
+        asked = sec_shares.not_reported(arch.records, batch)
+        if all((cik, taxonomy) in asked for taxonomy, _ in CONCEPTS):
+            return None, "no share count reported for the company as a whole"
+        return None, "no usable share count in the SEC's answers"
     best = max(found, key=lambda c: (c.as_of, c.filed, c.source == "cover page"))
     if as_of - best.as_of > MAX_SHARES_AGE:
         return None, f"newest share count is of {best.as_of.isoformat()}: too old"
     return best, best.note
 
 
-def build(arch: Inputs, price_inputs: Inputs, not_biotech: frozenset[int] = frozenset()) -> Result:
+def build(
+    arch: Inputs, price_inputs: Inputs, not_biotech: frozenset[int] = frozenset(), *, allow_partial: bool = False
+) -> Result:
     cands = candidates.build(arch)
     batch = str(cands.counts["sec_batch"])
+    shares_complete = sec_shares.batch_complete(arch.records, batch)
+    if not shares_complete and not allow_partial:
+        # Without this check a company whose share count was simply not fetched yet would fall out unnoticed.
+        raise InputError("the share counts of this batch are not complete: finish `bobby-archive sec-shares` first")
     day_recs = prices.day_records(price_inputs)
     days = list(day_recs)[-TRADING_DAYS:]
     if len(days) < TRADING_DAYS:
@@ -162,7 +175,11 @@ def build(arch: Inputs, price_inputs: Inputs, not_biotech: frozenset[int] = froz
         if cand.cik in not_biotech:
             why.append("marked 'not biotech' by the owner")
 
-        ticker = next((t for t in (price_ticker(t, known) for t in cand.tickers) if t), None)
+        # A company can have several tickers (share classes, warrants, units, preferred shares). The one with the
+        # most money traded over the 60 days is taken as the common share; all priced ones are shown.
+        priced = [t for t in dict.fromkeys(price_ticker(t, known) for t in cand.tickers) if t]
+        traded = {t: sum(b[t].close * b[t].volume for b in bars.values() if t in b) for t in priced}
+        ticker = max(priced, key=lambda t: traded[t]) if priced else None
         count, shares_note = share_count(arch, cand.cik, batch, last_day)
         if ticker is None:
             why.append("no prices in the last 60 trading days")
@@ -175,14 +192,26 @@ def build(arch: Inputs, price_inputs: Inputs, not_biotech: frozenset[int] = froz
         if count is None:
             why.append(shares_note)
         else:
-            # The count is of an earlier day. A share split since then changed the number of shares.
+            # The count is from an earlier report. A share split after that report was filed changed the number
+            # of shares. A split between the day of the count and the filing day is left alone: companies must
+            # restate their share figures for such a split, so it is normally in the count already. It is noted,
+            # because for a cover-page count that is not certain.
             factor = 1.0
+            between = []
             for s in splits:
-                if s.ticker == ticker and count.as_of < s.day <= close_day:
+                if s.ticker != ticker:
+                    continue
+                if count.filed < s.day <= close_day:
                     factor *= s.split_to / s.split_from
+                elif count.as_of < s.day <= count.filed:
+                    between.append(s.day.isoformat())
             shares = count.shares * factor
+            notes = [shares_note] if shares_note else []
             if factor != 1.0:
-                shares_note = "; ".join(x for x in (shares_note, f"share split since the count: x{factor:g}") if x)
+                notes.append(f"share split since the report: x{factor:g}")
+            if between:
+                notes.append(f"CHECK: share split on {', '.join(between)}, between the count and its filing")
+            shares_note = "; ".join(notes)
             value = shares * last.close
             if value < MIN_VALUE:
                 why.append("market value under $300 million")
@@ -207,6 +236,7 @@ def build(arch: Inputs, price_inputs: Inputs, not_biotech: frozenset[int] = froz
                 value,
                 avg_traded,
                 len(seen),
+                tuple(priced),
             )
         )
 
@@ -219,7 +249,10 @@ def build(arch: Inputs, price_inputs: Inputs, not_biotech: frozenset[int] = froz
             reasons[key] = reasons.get(key, 0) + 1
     result.counts = {
         "sec_batch": batch,
+        "share_counts_complete": shares_complete,
         "price_days": f"{days[0].isoformat()} to {last_day.isoformat()}",
+        "check_split_between_count_and_filing": sum("CHECK:" in x.shares_note for x in result.lines),
+        "companies_with_several_priced_tickers": sum(len(x.priced_tickers) > 1 for x in result.lines),
         "candidates": len(lines),
         "in_universe": len(inside),
         "in_universe_xbi_only": sum(x.candidate.door == "xbi only" for x in inside),

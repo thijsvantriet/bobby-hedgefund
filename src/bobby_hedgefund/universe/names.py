@@ -68,11 +68,15 @@ SECTOR_WORDS = frozenset(
     ]
 )
 _NOT_WORD = re.compile(r"[^a-z0-9]+")
+_SEC_TAG = re.compile(r"\s*[/\\]\s*[A-Za-z]{0,4}\s*[/\\]?\s*$")
 _DOTTED = re.compile(r"\b(?:[a-z]\.){2,}")
 
 
 def clean(name: str) -> str:
     """Lower case, accents and punctuation removed, "&" read as "and", legal endings dropped."""
+    # The SEC adds a tag to many names: the state ("X CORP /DE/", "X INC / MA"), "/NEW", "/ADR". Not part of the name.
+    while (shorter := _SEC_TAG.sub("", name)) != name:
+        name = shorter
     text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii").lower()
     text = _DOTTED.sub(lambda m: m.group().replace(".", ""), text)  # "S.A." and "N.V." become "sa" and "nv"
     text = text.replace("&", " and ").replace("'", "")

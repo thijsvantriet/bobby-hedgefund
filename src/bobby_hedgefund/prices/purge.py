@@ -45,18 +45,27 @@ UNIVERSE_FOLDER = "universe"
 PRICE_COLUMNS = frozenset({"last_close", "market_value", "avg_traded_per_day"})
 
 
-def strip_universe_files(data_dir: Path) -> list[str]:
+def strip_universe_files(data_dir: Path) -> tuple[list[str], list[str]]:
     """Replace every universe file by a copy without the columns that come from prices: who was in and out, and
-    why, stays (record 0006). The copy is written first, under a new name; then the original is removed."""
+    why, stays (record 0006). The copy is written first, under a new name; then the original is removed.
+    Returns the names done, and the names that could not be handled and still need a look by hand."""
     folder = data_dir / UNIVERSE_FOLDER
     if folder.is_symlink():
         raise PurgeError("the universe folder is a link to somewhere else; nothing was deleted there")
     done: list[str] = []
+    left: list[str] = []
     for path in sorted(folder.glob("*_universe.csv")) if folder.is_dir() else []:
-        if path.is_symlink() or not path.is_file():
+        if path.name.startswith("."):
             continue
-        with open(path, encoding="utf-8", newline="") as fh:
-            rows = list(csv.reader(fh))
+        if path.is_symlink() or not path.is_file():
+            left.append(f"{path.name} (a link or not a file)")
+            continue
+        try:
+            with open(path, encoding="utf-8", newline="") as fh:
+                rows = list(csv.reader(fh))
+        except (OSError, UnicodeDecodeError, csv.Error) as exc:
+            left.append(f"{path.name} (not readable: {type(exc).__name__})")
+            continue
         keep = [i for i, name in enumerate(rows[0]) if name not in PRICE_COLUMNS] if rows else []
         copy = path.with_name(path.name.removesuffix(".csv") + "-without-prices.csv")
         if not copy.exists():  # left by an interrupted purge: complete, because it is written in one step
@@ -65,7 +74,7 @@ def strip_universe_files(data_dir: Path) -> list[str]:
             write_new(copy, out.getvalue())
         path.unlink()
         done.append(path.name)
-    return done
+    return done, left
 
 
 def purge(data_dir: Path) -> tuple[Path | None, int]:

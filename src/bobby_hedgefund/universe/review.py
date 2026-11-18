@@ -34,7 +34,7 @@ COLUMNS = (
 SHEET = "Matches"
 COMPANY_KIND = "company"  # the first line of each company: the place for a decision about the company itself
 SPONSOR_CHOICES = ("yes", "no", "parent or subsidiary")
-COMPANY_CHOICES = ("not biotech",)
+COMPANY_CHOICES = ("not biotech", "biotech")  # "biotech" takes an earlier "not biotech" back
 HOW_TO = (
     "How to fill this in",
     "",
@@ -45,6 +45,7 @@ HOW_TO = (
     "    no                       it is another organisation",
     "On the grey company line itself you may choose 'not biotech' when the company does not belong in a biotech",
     "universe at all (a maker of generic medicines, a diagnostics or tools company). Otherwise leave it empty.",
+    "('biotech' on that line takes an earlier 'not biotech' back.)",
     "",
     "kind:  strong = identical name;  core = same name apart from words like Therapeutics / Pharma;",
     "       starts = the sponsor name starts with the company name;  similar = nearly the same spelling.",
@@ -55,29 +56,28 @@ HOW_TO = (
 )
 
 
-def rows(companies: list[Company], suggestions: list[Suggestion]) -> list[tuple[object, ...]]:
+def _printable(text: str) -> str:
+    """A spreadsheet cannot hold control characters, and a line break inside a name helps nobody."""
+    return "".join(ch if ch.isprintable() else " " for ch in text)
+
+
+def rows(
+    companies: list[Company], suggestions: list[Suggestion], dropped: dict[int, int] | None = None
+) -> list[tuple[object, ...]]:
     by_company: dict[int, list[Suggestion]] = {}
     for s in suggestions:
         by_company.setdefault(s.company.cik, []).append(s)
     out: list[tuple[object, ...]] = []
     for c in companies:
-        out.append((c.cik, c.name, c.ticker, "", "", COMPANY_KIND, "", "", "", ""))
+        cut = (dropped or {}).get(c.cik)
+        remark = f"{cut} weaker suggestions left out" if cut else ""
+        out.append((c.cik, _printable(c.name), c.ticker, remark, "", COMPANY_KIND, "", "", "", ""))
         for s in by_company.get(c.cik, []):
             sp = s.sponsor
-            out.append(
-                (
-                    c.cik,
-                    c.name,
-                    c.ticker,
-                    s.matched_on,
-                    sp.name,
-                    s.kind,
-                    s.score,
-                    len(sp.trials),
-                    len(sp.lead),
-                    max(sp.trials),
-                )
-            )
+            if not sp.name.isprintable():
+                continue  # a name with a control character cannot go through a spreadsheet and back unchanged
+            row = (c.cik, _printable(c.name), c.ticker, _printable(s.matched_on), sp.name, s.kind, s.score)
+            out.append((*row, len(sp.trials), len(sp.lead), max(sp.trials)))
     return out
 
 
@@ -139,7 +139,7 @@ def read_decisions(sheet_path: Path, copy_path: Path) -> tuple[list[Decision], i
     try:
         copy_bytes = copy_path.read_bytes()
         known = {}
-        for row in csv.DictReader(copy_bytes.decode("utf-8").splitlines()):
+        for row in csv.DictReader(io.StringIO(copy_bytes.decode("utf-8"), newline="")):
             known[(row["cik"], plain_cell(row["sponsor_name"]), row["kind"])] = row
     except (OSError, KeyError, UnicodeDecodeError) as exc:
         raise DecisionError(
@@ -147,7 +147,10 @@ def read_decisions(sheet_path: Path, copy_path: Path) -> tuple[list[Decision], i
         ) from exc
     try:
         book = load_workbook(sheet_path, read_only=True, data_only=True)
-        table = list(book[SHEET].iter_rows(values_only=True))
+        try:
+            table = list(book[SHEET].iter_rows(values_only=True))
+        finally:
+            book.close()
     except Exception as exc:  # openpyxl raises many kinds of error on a damaged file
         raise DecisionError(f"{sheet_path.name} could not be read as a review sheet ({type(exc).__name__})") from exc
     if not table or [_text(v) for v in table[0]][: len(COLUMNS) + 2] != [*COLUMNS, "decision", "note"]:

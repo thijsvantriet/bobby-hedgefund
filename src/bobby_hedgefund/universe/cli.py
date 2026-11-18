@@ -61,11 +61,19 @@ def prices_root() -> Path:
     return data_dir() / "prices"
 
 
-def cmd_build(_: argparse.Namespace) -> int:
+MAX_PRICE_AGE_DAYS = 7  # calendar days; older than this, the morning download has probably stopped
+
+
+def cmd_build(args: argparse.Namespace) -> int:
     arch, price_inputs = Inputs(archive_root()), Inputs(prices_root())
     marks = decisions.current(decisions.load(linking_dir()))
-    not_biotech = frozenset(cik for (cik, _), rec in marks.items() if rec.get("decision") == "not biotech")
-    result = build.build(arch, price_inputs, not_biotech)
+    not_biotech = frozenset(
+        cik for (cik, _), rec in marks.items() if rec.get("decision") == "not biotech"
+    )  # newest mark
+    result = build.build(arch, price_inputs, not_biotech, allow_partial=args.allow_partial)
+    age = (date.today() - result.days[-1]).days
+    if age > MAX_PRICE_AGE_DAYS and not args.allow_partial:
+        raise InputError(f"the newest price file is {age} days old: check `bobby-prices status` first")
     folder = universe_dir()
     label = free_label(date.today(), [(folder, "universe.csv"), (folder, "universe-inputs.txt")])
     text = _inputs_text("universe", result.counts, arch)
@@ -100,8 +108,9 @@ def cmd_match(_: argparse.Namespace) -> int:
     inputs = Inputs(archive_root())
     collector, pages = _collect_sponsors(inputs)
     sponsors = collector.names()
-    suggestions = match.suggest(companies, sponsors)
-    table = review.rows(companies, suggestions)
+    dropped: dict[int, int] = {}
+    suggestions = match.suggest(companies, sponsors, dropped)
+    table = review.rows(companies, suggestions, dropped)
     folder = linking_dir()
     endings = ("review.xlsx", "review.csv", "review-inputs.txt")
     label = free_label(date.today(), [(folder, e) for e in endings])
@@ -115,12 +124,15 @@ def cmd_match(_: argparse.Namespace) -> int:
         "suggestions": len(suggestions),
         **{f"suggestions_{kind}": sum(s.kind == kind for s in suggestions) for kind in match.KINDS},
         "suggestions_through_a_former_name": sum(s.is_former_name for s in suggestions),
+        "weaker_suggestions_left_out": sum(dropped.values()),
+        "companies_with_suggestions_left_out": len(dropped),
     }
     text = _inputs_text("review sheet of suggested matches", {**facts, "pages_read": pages}, inputs)
     text += "# universe file (fingerprint, path):\n" + _file_line(universe_file)
+    sheet, copy = review.workbook(table), review.machine_copy(table)  # both made before any file is written
     write_new(folder / f"{label}_review-inputs.txt", text)
-    write_new(folder / f"{label}_review.csv", review.machine_copy(table))  # the copy that is never edited
-    write_new_bytes(folder / f"{label}_review.xlsx", review.workbook(table), editable=True)
+    write_new(folder / f"{label}_review.csv", copy)  # the copy that is never edited
+    write_new_bytes(folder / f"{label}_review.xlsx", sheet, editable=True)
     for key, value in facts.items():
         print(f"{key:36} {value}")
     print(f"for the owner to fill in: {folder / f'{label}_review.xlsx'}")
@@ -241,9 +253,13 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-partial", action="store_true", help="also run while the SEC company files are incomplete (a try-out)"
     )
     p_cand.set_defaults(func=cmd_candidates)
-    sub.add_parser(
-        "build", help="the universe: the candidates put through the filter on size, trading and price"
-    ).set_defaults(func=cmd_build)
+    p_build = sub.add_parser(
+        "build", help="the universe: the candidates put through the size, trading and price filter"
+    )
+    p_build.add_argument(
+        "--allow-partial", action="store_true", help="also run on incomplete share counts or old prices (a try-out)"
+    )
+    p_build.set_defaults(func=cmd_build)
     sub.add_parser(
         "match", help="suggest sponsor names for every company in the universe; writes the review sheet"
     ).set_defaults(func=cmd_match)

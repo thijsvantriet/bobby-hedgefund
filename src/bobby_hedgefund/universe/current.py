@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 from pathlib import Path
 
 from .inputs import InputError
@@ -12,12 +13,13 @@ from .output import plain_cell
 
 def newest_universe(folder: Path) -> tuple[Path, list[Company]]:
     """The newest `*_universe.csv` in `folder` and its companies marked "in", sorted by name."""
-    files = sorted(folder.glob("*_universe.csv"), key=lambda p: (p.stat().st_mtime, p.name)) if folder.is_dir() else []
+    files = [p for p in folder.glob("*_universe.csv") if not p.name.startswith(".")] if folder.is_dir() else []
+    files.sort(key=lambda p: (p.stat().st_mtime, p.name))
     if not files:
         raise InputError("no universe file yet: run `bobby-universe build` first")
     path = files[-1]
     try:
-        rows = list(csv.DictReader(path.read_text(encoding="utf-8").splitlines()))
+        rows = list(csv.DictReader(io.StringIO(path.read_text(encoding="utf-8"), newline="")))
         companies = [
             Company(
                 cik=int(r["cik"]),

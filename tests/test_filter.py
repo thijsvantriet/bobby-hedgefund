@@ -39,7 +39,8 @@ def concept(
     cik: int, tag: str, facts: list[tuple[str, float]], *, filed: str = "2026-11-05", unit: str = "shares"
 ) -> bytes:
     rows = [{"end": end, "val": val, "accn": f"a-{end}", "form": "10-Q", "filed": filed} for end, val in facts]
-    return json.dumps({"cik": cik, "tag": tag, "units": {unit: rows}}).encode()
+    taxonomy = "dei" if tag.startswith("E") else "us-gaap"
+    return json.dumps({"cik": cik, "tag": tag, "taxonomy": taxonomy, "units": {unit: rows}}).encode()
 
 
 def store_shares(archive: Archive, cik: int, taxonomy: str, body: bytes, batch: str = "b1") -> None:
@@ -47,6 +48,15 @@ def store_shares(archive: Archive, cik: int, taxonomy: str, body: bytes, batch: 
     archive.store(
         sec_shares.SHARES_SOURCE, sec_shares.shares_name(cik, taxonomy), body, run="s1", compress=True, info=info
     )
+
+
+def finish_shares(archive: Archive, not_reported: tuple[int, ...] = (), batch: str = "b1") -> None:
+    """What a finished `sec-shares` run leaves behind: a note per figure a company does not report, and the run."""
+    for cik in not_reported:
+        for taxonomy, _ in sec_shares.CONCEPTS:
+            meta = {"batch": batch, "cik": cik, "taxonomy": taxonomy, "not_reported": True}
+            archive.record_run(sec_shares.SHARES_SOURCE, "s1", "note", meta=meta)
+    archive.record_run(sec_shares.SHARES_SOURCE, "s1", "ok", meta={"batch": batch, "complete": True})
 
 
 def store_prices(prices_root: Path, per_ticker: dict[str, tuple[float, float]], days: list[date], skip=()) -> None:
@@ -88,6 +98,7 @@ def world(root: Path) -> Path:  # noqa: F811
         store_shares(archive, 106, "us-gaap", concept(106, "C", [("2026-09-30", 100e6)]))  # balance sheet only
         store_shares(archive, 108, "dei", concept(108, "E", [("2026-10-31", 500e6)]))
         store_shares(archive, 102, "dei", concept(102, "E", [("2026-10-31", 50e6)]))
+        finish_shares(archive, not_reported=(104,))
     store_prices(root.parent / "prices", PRICES, working_days(60))
     return root
 
@@ -116,7 +127,56 @@ def test_a_share_class_ticker_is_found_and_a_split_since_the_count_is_applied(wo
     zeta = lines(world)[106]
     assert zeta.ticker_used == "ZETA.A" and zeta.shares == 10e6 and zeta.market_value == 500e6
     assert zeta.count is not None and zeta.count.source == "balance sheet"
-    assert "share split since the count: x0.1" in zeta.shares_note and zeta.in_universe
+    assert "share split since the report: x0.1" in zeta.shares_note and zeta.in_universe
+
+
+def test_a_split_between_the_count_and_its_filing_is_not_applied_again_but_flagged(root: Path) -> None:  # noqa: F811
+    with Archive(root) as archive:
+        # counted on 30 September, a 1-for-10 split on 10 November, the report filed on 12 November: the company
+        # restated its figure for the split, so the 10 million is already the number after it
+        store_shares(archive, 106, "us-gaap", concept(106, "C", [("2026-09-30", 10e6)], filed="2026-11-12"))
+        finish_shares(archive)
+    store_prices(root.parent / "prices", PRICES, working_days(60))
+    zeta = lines(root)[106]
+    assert zeta.shares == 10e6 and zeta.market_value == 500e6
+    assert zeta.shares_note == "CHECK: share split on 2026-11-10, between the count and its filing"
+
+
+def test_of_several_tickers_the_one_with_the_most_trading_is_used(root: Path) -> None:  # noqa: F811
+    import bobby_hedgefund.universe.candidates as candidates_module
+
+    with Archive(root) as archive:
+        store_shares(archive, 101, "dei", concept(101, "E", [("2026-10-31", 50e6)]))
+        finish_shares(archive)
+    prices = {**PRICES, "ALFAW": (0.5, 1_000.0)}  # a warrant of the same company, listed first by the SEC
+    store_prices(root.parent / "prices", prices, working_days(60))
+    real = candidates_module.build
+
+    def with_warrant_first(inputs, **kwargs):
+        result = real(inputs, **kwargs)
+        result.candidates = [
+            candidates_module.Candidate(**{**c.__dict__, "tickers": ("ALFAW", "ALFA")}) if c.cik == 101 else c
+            for c in result.candidates
+        ]
+        return result
+
+    build.candidates.build = with_warrant_first
+    try:
+        alfa = lines(root)[101]
+    finally:
+        build.candidates.build = real
+    assert alfa.ticker_used == "ALFA" and alfa.priced_tickers == ("ALFAW", "ALFA") and alfa.last_close == 20.0
+
+
+def test_incomplete_share_counts_are_refused_unless_asked_for(root: Path, capsys) -> None:  # noqa: F811
+    with Archive(root) as archive:
+        store_shares(archive, 101, "dei", concept(101, "E", [("2026-10-31", 50e6)]))
+    store_prices(root.parent / "prices", PRICES, working_days(60))
+    with pytest.raises(InputError, match="share counts of this batch are not complete"):
+        lines(root)
+    assert cli.main(["build"]) == 1 and "sec-shares" in capsys.readouterr().out
+    assert cli.main(["build", "--allow-partial"]) == 0
+    assert "share_counts_complete" in capsys.readouterr().out
 
 
 def test_a_look_alike_ticker_gives_no_price() -> None:
@@ -131,6 +191,7 @@ def test_bounds_missing_days_and_a_share_that_stopped_trading(root: Path) -> Non
         store_shares(archive, 101, "dei", concept(101, "E", [("2026-10-31", 600e6)]))  # x $20 = $12 billion
         store_shares(archive, 103, "dei", concept(103, "E", [("2026-10-31", 50e6)]))
         store_shares(archive, 106, "dei", concept(106, "E", [("2026-10-31", 50e6)]))
+        finish_shares(archive)
     skip = {("GAMA", d) for d in days[:30]} | {("ZETA.A", d) for d in days[-6:]}
     prices = {**PRICES, "GAMA": (20.0, 300_000.0)}  # $6 million on 30 days of 60: $3 million a day
     store_prices(root.parent / "prices", prices, days, skip)
@@ -146,11 +207,12 @@ def test_a_share_count_that_is_too_old_does_not_count(root: Path) -> None:  # no
         store_shares(archive, 101, "dei", concept(101, "E", [("2025-06-30", 50e6)]))
         store_shares(archive, 103, "dei", concept(103, "E", [("2026-10-31", 50e6)], unit="USD"))  # not a share count
         store_shares(archive, 106, "dei", concept(106, "E", [("2026-10-31", 50e6)]), batch="older")  # another batch
+        finish_shares(archive)
     store_prices(root.parent / "prices", PRICES, working_days(60))
     found = lines(root)
     assert found[101].why_out == ("newest share count is of 2025-06-30: too old",)
-    assert found[103].why_out == ("no share count reported for the company as a whole",)
-    assert "no share count reported for the company as a whole" in found[106].why_out
+    assert found[103].why_out == ("no usable share count in the SEC's answers",)
+    assert "no usable share count in the SEC's answers" in found[106].why_out
 
 
 def test_fewer_than_sixty_days_of_prices_is_refused(world: Path, tmp_path: Path) -> None:
@@ -229,7 +291,7 @@ def test_share_counts_are_stored_and_a_missing_figure_is_noted_and_not_asked_aga
         other_batch = sec_shares.run_sec_shares(
             archive, fetcher, "r3", ciks=[101], batch="b2", concept_url=shares_site.url
         )
-    assert first["stored"] == 3 and first["not_reported"] == 1 and first["complete"] and first["companies"] == 2
+    assert first["stored"] == 3 and first["not_found"] == 1 and first["complete"] and first["companies"] == 2
     assert again["asked"] == 0 and again["had_already"] == 4
     assert (
         waits == [1.0] * 6 and other_batch["asked"] == 2
@@ -242,11 +304,14 @@ def test_share_counts_are_stored_and_a_missing_figure_is_noted_and_not_asked_aga
 def test_a_strange_answer_is_not_stored_and_is_asked_again(shares_site, tmp_path: Path, fetcher) -> None:
     path = "/concept/CIK0000000103/dei/EntityCommonStockSharesOutstanding.json"
     good = shares_site.routes[path][0]
-    shares_site.add(path, {"body": concept(999, "EntityCommonStockSharesOutstanding", [])}, good)
+    wrong_company = {"body": concept(999, "EntityCommonStockSharesOutstanding", [])}
+    wrong_figure = {"body": concept(103, "EntityCommonStockSharesOutstanding", []).replace(b'"dei"', b'"us-gaap"')}
+    shares_site.add(path, wrong_company, wrong_figure, good)
     with Archive(tmp_path) as archive:
         first = fetch(archive, fetcher, shares_site)
         again = fetch(archive, fetcher, shares_site, "r2")
-    assert first["odd"] == 1 and not first["complete"] and again["asked"] == 1 and again["stored"] == 1
+        third = fetch(archive, fetcher, shares_site, "r3")
+    assert first["odd"] == 1 and not first["complete"] and again["odd"] == 1 and third["stored"] == 1
 
 
 @pytest.mark.parametrize("status", [429, 403])
@@ -268,6 +333,20 @@ def test_many_strange_answers_in_a_row_stop_the_job(shares_site, tmp_path: Path,
         shares_site.add(f"/concept/CIK0000000101/{taxonomy}/{tag}.json", {"body": b"<html>"})
     with Archive(tmp_path) as archive, pytest.raises(SourceError):
         fetch(archive, fetcher, shares_site, ciks=[101])
+
+
+def test_many_not_found_answers_in_a_row_stop_the_job_and_do_not_count(
+    shares_site, tmp_path: Path, fetcher, monkeypatch
+) -> None:
+    monkeypatch.setattr(sec_shares, "MAX_NOT_FOUND_IN_A_ROW", 3)
+    with Archive(tmp_path) as archive:
+        with pytest.raises(SourceError, match="not found"):
+            fetch(archive, fetcher, shares_site, ciks=[201, 202, 203])  # the fake site knows none of them
+        assert sec_shares.not_reported(archive.records, "b1") == set()
+        hits = len(shares_site.hits)
+        with pytest.raises(SourceError):
+            fetch(archive, fetcher, shares_site, "r2", ciks=[201, 202, 203])
+    assert hits == 3 and len(shares_site.hits) == 6  # asked again: the first answers were not taken as final
 
 
 def test_sec_shares_command_asks_for_the_candidates_of_the_newest_batch(

@@ -19,7 +19,7 @@ from .read_trials import SponsorName
 KINDS = ("strong", "core", "starts", "similar")
 SIMILAR_FROM = 90.0  # of 100
 MIN_CORE_LENGTH = 4  # a shorter core ("bio", "ab") fits too many names to be a suggestion by itself
-MAX_PER_COMPANY = 25
+MAX_PER_COMPANY = 25  # for "starts" and "similar" together; "strong" and "core" are never left out
 
 
 @dataclass(frozen=True)
@@ -84,9 +84,12 @@ class SponsorIndex:
         return found
 
 
-def suggest(companies: list[Company], sponsors: list[SponsorName]) -> list[Suggestion]:
+def suggest(
+    companies: list[Company], sponsors: list[SponsorName], dropped: dict[int, int] | None = None
+) -> list[Suggestion]:
     """All suggestions, company by company (in the order given), strongest kind and most trials first. A sponsor
-    name is suggested at most once per company: under the company name that fits it best."""
+    name is suggested at most once per company: under the company name that fits it best. Of the weaker kinds at
+    most MAX_PER_COMPANY are kept per company; how many were left out is written into `dropped` (by company)."""
     index = SponsorIndex(sponsors)
     out: list[Suggestion] = []
     for company in companies:
@@ -97,6 +100,13 @@ def suggest(companies: list[Company], sponsors: list[SponsorName]) -> list[Sugge
                 if i not in best or rank < (KINDS.index(best[i][0]), -best[i][1]):
                     best[i] = (kind, score, written)
         ordered = sorted(best.items(), key=lambda kv: (KINDS.index(kv[1][0]), -len(sponsors[kv[0]].trials), -kv[1][1]))
-        for i, (kind, score, written) in ordered[:MAX_PER_COMPANY]:
+        weak = 0
+        for i, (kind, score, written) in ordered:
+            if kind in ("starts", "similar"):
+                weak += 1
+                if weak > MAX_PER_COMPANY:
+                    continue
             out.append(Suggestion(company, written, sponsors[i], kind, round(score, 1)))
+        if weak > MAX_PER_COMPANY and dropped is not None:
+            dropped[company.cik] = weak - MAX_PER_COMPANY
     return out

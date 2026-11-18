@@ -31,6 +31,12 @@ def sponsor(name: str, *trials: str) -> SponsorName:
         ("Smith & Jones Holdings Ltd", "smith and jones", "smith jones"),
         ("Kappa Co., Ltd.", "kappa", "kappa"),
         ("Lambda N.V.", "lambda", "lambda"),
+        ("NU PHARMACEUTICALS INC /DE/", "nu pharmaceuticals", "nu"),
+        ("Xi Therapeutics Inc / MA", "xi therapeutics", "xi"),
+        ("OMICRON CORP /NEW", "omicron", "omicron"),
+        ("Pi Bio Co., Limited/ADR", "pi bio", "pi"),
+        ("Rho CORP/", "rho", "rho"),
+        ("Sigma/Tau Research", "sigma tau research", "sigma tau research"),  # a slash inside a name stays
         ("Mu L.L.C.", "mu", "mu"),
         ("Inc", "inc", "inc"),  # a name that is only a legal ending keeps it
         ("Bio-Pharma Sciences", "bio pharma sciences", ""),  # nothing tells this company from another
@@ -87,6 +93,32 @@ def test_a_short_or_empty_core_suggests_nothing_by_itself_and_order_is_strongest
         ("Gamma Research Europe", "starts"),
     ]
     assert got[0].matched_on == "Gamma Research Corp" and not got[0].is_former_name
+
+
+def test_strong_and_core_are_never_cut_and_what_is_left_out_is_counted(monkeypatch) -> None:
+    monkeypatch.setattr(match, "MAX_PER_COMPANY", 2)
+    company = match.Company(7, "Kappa Research", "KAPA")
+    sponsors = [sponsor(f"Kappa Research Site {n}", *[f"N{i}" for i in range(n)]) for n in range(1, 6)]
+    sponsors += [sponsor("Kappa Research Inc"), sponsor("Kappa Research LLC"), sponsor("Kappa Research Ltd")]
+    dropped: dict[int, int] = {}
+    got = match.suggest([company], sponsors, dropped)
+    assert [s.kind for s in got] == ["strong"] * 3 + ["starts"] * 2 and dropped == {7: 3}
+    assert [s.sponsor.name for s in got[3:]] == ["Kappa Research Site 5", "Kappa Research Site 4"]  # most trials kept
+    remark = review.rows([company], got, dropped)[0][3]
+    assert remark == "3 weaker suggestions left out"
+
+
+def test_names_with_line_breaks_or_control_characters_do_not_break_the_sheet(tmp_path: Path) -> None:
+    company = match.Company(8, "Tau\x0bBio Corp", "TAU")
+    sponsors = [sponsor("Tau Bio\nCorp"), sponsor('Tau Bio, "Corp"'), sponsor("Tau Bio")]
+    rows = review.rows([company], match.suggest([company], sponsors))
+    assert [r[4] for r in rows] == ["", 'Tau Bio, "Corp"', "Tau Bio"]  # the name with a line break is left out
+    xlsx, copy = tmp_path / "x_review.xlsx", tmp_path / "x_review.csv"
+    xlsx.write_bytes(review.workbook(rows))
+    copy.write_text(review.machine_copy(rows))
+    fill(xlsx, {3: ("yes", "")})
+    found, _ = review.read_decisions(xlsx, copy)
+    assert [(d.sponsor_name, d.company) for d in found] == [('Tau Bio, "Corp"', "Tau Bio Corp")]
 
 
 def table() -> list[tuple[object, ...]]:
@@ -162,6 +194,7 @@ def test_decisions_are_read_back_and_undecided_lines_are_counted(sheet) -> None:
         ({3: ("maybe", "")}, {}, "is not one of"),
         ({2: ("yes", "")}, {}, "is not one of"),  # a company line only takes "not biotech"
         ({3: ("not biotech", "")}, {}, "is not one of"),
+        ({3: ("biotech", "")}, {}, "is not one of"),
         ({3: ("yes", "")}, {(3, 5): "Alpha Therapeutics Europe"}, "not a line of the original sheet"),
         ({3: ("yes", "")}, {(3, 1): 103}, "not a line of the original sheet"),
         ({}, {(1, 5): "sponsor"}, "column headings"),
@@ -262,6 +295,14 @@ def test_from_universe_to_linking_table_through_the_commands(world: Path, capsys
     assert cli.main(["build"]) == 0  # the owner's mark takes the company out of the next universe
     newest = read_csv(data / "universe" / f"{today}-2_universe.csv")
     assert {r["cik"]: r["why_out"] for r in newest}["106"] == "marked 'not biotech' by the owner"
+
+    fill(xlsx, {5: ("biotech", "a mistake")})  # the mark is taken back: the company returns
+    assert cli.main(["decisions", str(xlsx)]) == 0 and cli.main(["build"]) == 0
+    back = read_csv(data / "universe" / f"{today}-3_universe.csv")
+    assert {r["cik"]: r["in_universe"] for r in back}["106"] == "yes"
+    fill(xlsx, {5: ("not biotech", "generics after all")})
+    assert cli.main(["decisions", str(xlsx)]) == 0 and cli.main(["build"]) == 0
+    capsys.readouterr()
 
     assert cli.main(["missed-check", "--count", "5", "--seed", "7"]) == 0
     drawn = read_csv(linking / f"{today}_missed-check.csv")

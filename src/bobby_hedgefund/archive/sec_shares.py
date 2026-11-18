@@ -28,14 +28,53 @@ def shares_name(cik: int, taxonomy: str) -> str:
     return f"shares-{taxonomy}-cik{cik:010d}.json"
 
 
+# This many "not found" answers in a row mean the address is wrong or the service moved, not that all these
+# companies report nothing: stop, and do not count those answers.
+MAX_NOT_FOUND_IN_A_ROW = 50
+
+
+def _batch_metas(archive: Archive, batch: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    return [
+        (r, r["meta"])
+        for r in archive.records
+        if r.get("source") == SHARES_SOURCE and isinstance(r.get("meta"), dict) and r["meta"].get("batch") == batch
+    ]
+
+
+def not_reported(archive_records: list[dict[str, Any]], batch: str) -> set[tuple[int, str]]:
+    """(company, taxonomy) pairs for which the service answered "not found" in this batch. Answers of a run that
+    was stopped for too many of them in a row do not count."""
+    metas = [
+        (r, r["meta"])
+        for r in archive_records
+        if r.get("source") == SHARES_SOURCE and isinstance(r.get("meta"), dict) and r["meta"].get("batch") == batch
+    ]
+    void = {m.get("void_run") for _, m in metas if m.get("void_run")}
+    found: set[tuple[int, str]] = set()
+    for r, m in metas:
+        if r.get("status") == "note" and m.get("not_reported") is True and r.get("run") not in void:
+            found.add((int(m["cik"]), str(m["taxonomy"])))
+    return found
+
+
+def batch_complete(archive_records: list[dict[str, Any]], batch: str) -> bool:
+    """True when a run finished this batch: every company was asked for both figures."""
+    return any(
+        r.get("source") == SHARES_SOURCE
+        and r.get("kind") == "run"
+        and r.get("status") == "ok"
+        and isinstance(r.get("meta"), dict)
+        and r["meta"].get("batch") == batch
+        and r["meta"].get("complete") is True
+        for r in archive_records
+    )
+
+
 def _done(archive: Archive, batch: str) -> set[tuple[int, str]]:
     """(company, taxonomy) pairs this batch already has an answer for: a stored file, or a note "not there"."""
-    done: set[tuple[int, str]] = set()
-    for r in archive.records:
-        meta = r.get("meta")
-        if r.get("source") != SHARES_SOURCE or not isinstance(meta, dict) or meta.get("batch") != batch:
-            continue
-        if r.get("kind") in ("file", "unchanged") or (r.get("kind") == "run" and meta.get("not_reported")):
+    done: set[tuple[int, str]] = set(not_reported(archive.records, batch))
+    for r, meta in _batch_metas(archive, batch):
+        if r.get("kind") in ("file", "unchanged"):
             try:
                 done.add((int(meta["cik"]), str(meta["taxonomy"])))
             except (KeyError, TypeError, ValueError):
@@ -65,7 +104,7 @@ def run_sec_shares(
     todo = [
         (cik, taxonomy, tag) for cik in sorted(set(ciks)) for taxonomy, tag in CONCEPTS if (cik, taxonomy) not in done
     ]
-    asked = stored = not_reported = odd = odd_in_a_row = 0
+    asked = stored = missing = odd = odd_in_a_row = missing_in_a_row = 0
     for cik, taxonomy, tag in todo:
         if (limit is not None and asked >= limit) or not keep_going():
             break
@@ -79,11 +118,20 @@ def run_sec_shares(
                 raise  # a refusal or a broken connection stops the job; running it again continues
             # The company does not report this figure for the company as a whole: note it, do not ask again.
             archive.record_run(SHARES_SOURCE, run, "note", meta={**meta, "not_reported": True})
-            not_reported += 1
+            missing += 1
+            missing_in_a_row += 1
+            if missing_in_a_row >= MAX_NOT_FOUND_IN_A_ROW:
+                archive.record_run(SHARES_SOURCE, run, "note", meta={"batch": batch, "void_run": run})
+                raise SourceError(
+                    f"{missing_in_a_row} answers in a row were 'not found': the address may be wrong. Stopped; "
+                    "the 'not found' answers of this run are not counted"
+                ) from None
             continue
+        missing_in_a_row = 0
         try:
             doc = json.loads(resp.body)
-            if int(doc["cik"]) != cik or doc["tag"] != tag or not isinstance(doc["units"], dict):
+            right = int(doc["cik"]) == cik and doc["tag"] == tag and doc["taxonomy"] == taxonomy
+            if not right or not isinstance(doc["units"], dict):
                 raise ValueError("not this company's figure")
         except (ValueError, KeyError, TypeError):
             # A strange answer is not stored and not counted as done: it is asked again on the next run.
@@ -110,7 +158,7 @@ def run_sec_shares(
         "companies": len(set(ciks)),
         "asked": asked,
         "stored": stored,
-        "not_reported": not_reported,
+        "not_found": missing,
         "odd": odd,
         "had_already": len(set(ciks)) * len(CONCEPTS) - len(todo),
         "left": left,

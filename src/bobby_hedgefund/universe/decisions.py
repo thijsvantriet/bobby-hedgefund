@@ -17,8 +17,9 @@ from ..archive.store import GENESIS, sha256_hex
 
 FILE = "decisions.jsonl"
 # "parent or subsidiary": the sponsor is the company's parent or daughter. "not biotech": a decision about the
-# company itself (it should not be in the universe); "no": this sponsor name is another organisation.
-ALLOWED = ("yes", "no", "parent or subsidiary", "not biotech")
+# company itself (it should not be in the universe), and "biotech" takes that back; "no": this sponsor name is
+# another organisation.
+ALLOWED = ("yes", "no", "parent or subsidiary", "not biotech", "biotech")
 LINKED = ("yes", "parent or subsidiary")
 
 
