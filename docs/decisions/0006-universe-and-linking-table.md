@@ -191,14 +191,16 @@ not fetched. In the SEC's ticker file "NYSE" also covers NYSE American.
 "Group" count as endings.
 
 **Kinds of suggestion (step 3).** Scoring every pair with one similarity score gave mostly noise: two names
-that share a long word such as "Pharmaceuticals" score as alike. So a suggestion is one of four kinds:
+that share a long word such as "Pharmaceuticals" score as alike. So a suggestion is one of five kinds:
 - **strong**: identical after cleaning;
 - **core**: identical once the words that only say "drug company" are left out (Therapeutics, Pharma,
   Biosciences, ...), for a core of at least four letters;
 - **starts**: the sponsor name starts with the company's whole cleaned name (a subsidiary, a country branch);
+- **contains**: the sponsor name holds the company's whole cleaned name further on ("X Bio, a wholly owned
+  subsidiary of ..."), for a name of at least eight letters;
 - **similar**: nearly the same spelling (rapidfuzz, 90 of 100), and the part that tells the company apart must
   be nearly the same too (85 of 100) or the first word identical.
-Former names are tried as well. Strong and core suggestions are always shown; of the two weaker kinds at most 25
+Former names are tried as well. Strong and core suggestions are always shown; of the three weaker kinds at most 25
 per company, most trials first, and the sheet says how many were left out.
 
 **The review sheet (step 4).** A spreadsheet with a how-to page; one grey line per company and its suggestions

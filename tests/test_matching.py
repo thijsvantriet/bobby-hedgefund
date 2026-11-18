@@ -67,6 +67,8 @@ def test_the_four_kinds_of_suggestion_and_what_is_not_suggested() -> None:
         sponsor("Delta Therapeutics"),  # alike as a whole only through the long shared word
         sponsor("Beta Therapeutics"),  # the same sector word only
         sponsor("Alpha"),
+        sponsor("Kappa Bio, Inc., a wholly owned subsidiary of Alpha Therapeutics"),
+        sponsor("Not Alpha Therapeuticsville"),  # the name must stand as whole words
     )
     assert found == {
         "Alpha Therapeutics": "strong",
@@ -75,12 +77,16 @@ def test_the_four_kinds_of_suggestion_and_what_is_not_suggested() -> None:
         "Alpha Tx": "core",
         "Alpha": "core",
         "Alpha Therapeutics Australia Pty Ltd": "starts",
+        "Kappa Bio, Inc., a wholly owned subsidiary of Alpha Therapeutics": "contains",
         "Alpha Theraputics": "similar",
     }
 
 
 def test_a_short_or_empty_core_suggests_nothing_by_itself_and_order_is_strongest_then_most_trials() -> None:
     assert kinds(match.Company(1, "AB Bio Inc", "AB"), sponsor("AB Pharma"), sponsor("Bio Sciences")) == {}
+    generic = match.Company(2, "Omega Tracks Inc", "OMT", ("Biopharma Company, Inc.",))
+    got = kinds(generic, sponsor("Array Biopharma"), sponsor("Biopharma Company"), sponsor("Biopharma Company Europe"))
+    assert got == {"Biopharma Company": "strong"}  # a former name of sector words only: identical or nothing
     company = match.Company(1, "Gamma Research Corp", "GAMA")
     got = match.suggest(
         [company],
