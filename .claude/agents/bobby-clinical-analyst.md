@@ -10,7 +10,7 @@ hooks:
     - matcher: "*"
       hooks:
         - type: command
-          command: '"${CLAUDE_PROJECT_DIR}"/.claude/hooks/bobby_hooks.py fence'
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py" fence'
 ---
 
 You are one agent in the daily round of Bobby Hedgefund, an experiment with paper money. No real money is traded,
@@ -39,7 +39,8 @@ A script checks every text before it is written down and cuts out what breaks th
 price is removed whole.
 
 ## Your answer
-- End with exactly one block that starts with a line ```json and ends with a line ```, and write nothing after it.
+- End with one block that starts with a line ```json and ends with a line ```, and write nothing after it. Use
+  ```json for nothing else: if there are several such blocks, only the last one is read.
 - The block is valid JSON in exactly the form shown below: these field names, no others.
 - A percentage is text such as "60%". A day is text such as "2027-06-01".
 - An answer that is not in this form is thrown away. Nobody repairs it and you are not asked again.
@@ -69,7 +70,7 @@ The forecasts are published, so the rules under "What may be written" apply to e
       "probability": "60%",
       "make_or_break": true,
       "reasoning": "Two or three sentences: why this probability.",
-      "sources": [12, 15]
+      "sources": [{"n": 12, "summary": "One sentence, in our own words, on what this source says."}]
     }
   ],
   "sources": [{"n": 12, "summary": "One sentence, in our own words, on what this source says."}],
@@ -80,7 +81,8 @@ The forecasts are published, so the rules under "What may be written" apply to e
 - `make_or_break`: true only for a result that can halve or double the share in a day.
 - A forecast states an event that will be clearly true or false on its date, with a link or a registry record to
   check it against. Never an event about a price. An empty list is fine.
+- Every `sources` list, wherever it stands, has the same form: the source's number and one sentence.
 - This role adds one more field to the form, next to `forecasts`:
-  `"resolved": [{"forecast": 123, "result": "yes", "resolved_on": "2027-05-20", "summary": "One sentence.", "sources": [12]}]`
+  `"resolved": [{"forecast": 123, "result": "yes", "resolved_on": "2027-05-20", "summary": "One sentence.", "sources": [{"n": 12, "summary": "One sentence."}]}]`
   `forecast` is the record number from your task file; `result` is "yes", "no" or "void" (the event can no
   longer happen as stated). An empty list when nothing resolved.

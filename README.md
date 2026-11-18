@@ -72,7 +72,7 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the session preparation built** (`bobby-session prepare`; docs/decisions/0003, "Update 2026-11-18"; see "Session preparation" below). At a data cut-off it builds the folder the agents may read: per company what is new since the last session (SEC filings as plain text, changes in trial records, numbers worked out from saved prices), a screening list in batches, and a numbered list of every source with its fingerprint and the time it was saved. Only files saved before the cut-off are used; a file our own jobs made is admitted only when all of its inputs were saved before it. The companies that may not be named in public get no folder at all. Trial changes are linked to a company once the linking table exists; until the owner's check they are counted and left out. Tried on today's real data: 215 companies, 637 new filings, about a minute.
 
-2026-11-18: **the agent files and the reading fence built** (`.claude/agents/`, `.claude/hooks/`; docs/decisions/0009, "Update 2026-11-18"; see "Agents" below). Twelve agent files with a fixed model, effort and tool list (reading files only), all made from one role table in the code, so a role's instructions exist in one place. Four checks that Claude Code runs by itself: an agent reads only inside the session folder; an agent is started only with a prepared task text, once; the leading session changes no files during a round; and how a session began is noted. Outside a round they do nothing. All were tested on recorded inputs before being switched on; whether they fire in a real session is a pilot check.
+2026-11-18: **the agent files and the reading fence built** (`.claude/agents/`, `.claude/hooks/`; docs/decisions/0009, "Update 2026-11-18"; see "Agents" below). Twelve agent files with a fixed model, effort and tool list (reading files only), all made from one role table in the code, so a role's instructions exist in one place. Six checks that Claude Code runs by itself: an agent reads only inside the session folder, and not what belongs to another fund; an agent is started only with a prepared task text, once; during a round the leading session changes no files, messages or stops no agent, and uses the command line only for the round's own commands; and how a session began is noted. Outside a round they do nothing. All were tested on recorded inputs before being switched on; whether they fire in a real session is a pilot check.
 
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
@@ -274,8 +274,10 @@ Design: docs/decisions/0009 and 0003 (point 3).
   - *agent-start*: during a round an agent is started only with the exact sentence the script printed for a
     task, with that task's agent, once, without a model or effort chosen by hand;
   - *no-edits*: during a round the leading session changes no files;
+  - *hands-off*: during a round no agent is sent a message, and none is stopped before the script says so;
+  - *round-commands*: during a round the command line is only for `bobby-session <step>`, one at a time;
   - *session-start*: notes whether a session is new, cleared or resumed, for the fresh-session check.
-- **Outside a round the last three do nothing.** A round is active while `round-active.json` in the data folder
+- **Outside a round all but the fence do nothing** (and the fence exists only inside an agent). A round is active while `round-active.json` in the data folder
   names the running session and is younger than 90 minutes.
 - Refusals are noted in the round's folder, and later in the log.
 

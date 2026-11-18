@@ -9,13 +9,12 @@ import json
 import re
 from typing import Any
 
-from ..log import records
+from ..log import canon, records
 from ..log.records import RecordError, day, fields, many, maybe, one_of, pct, probability, text, whole, yes_no
 
 _BLOCK = re.compile(r"```json[ \t]*\n(.*?)\n```", re.DOTALL)
 SOURCE = fields({"n": whole(1), "summary": text(600)})
 LACKED = many(text(600), 0, 30)
-NUMBERS = many(whole(1), 0, 60)
 
 FORECAST = fields(
     {
@@ -25,7 +24,7 @@ FORECAST = fields(
         "probability": probability,
         "make_or_break": yes_no,
         "reasoning": text(2500),
-        "sources": NUMBERS,
+        "sources": many(SOURCE, 0, 60),
     }
 )
 RESOLVED = fields(
@@ -34,7 +33,7 @@ RESOLVED = fields(
         "result": one_of("yes", "no", "void"),
         "resolved_on": day,
         "summary": text(1000),
-        "sources": NUMBERS,
+        "sources": many(SOURCE, 0, 60),
     }
 )
 THESIS = fields(
@@ -106,21 +105,34 @@ def parse(final_text: str, kind: str) -> dict[str, Any]:
     """The answer's block of JSON, checked against the form of its kind."""
     if kind not in FORMS:
         raise AnswerError(f"unknown kind of answer: {kind}")
-    blocks = _BLOCK.findall(final_text)
-    if len(blocks) != 1:
-        raise AnswerError(f"the answer must hold exactly one block of JSON; this one holds {len(blocks)}")
-    if final_text[final_text.rindex("```") + 3 :].strip():
+    final_text = final_text.replace("\r\n", "\n")
+    blocks = list(_BLOCK.finditer(final_text))
+    if not blocks:
+        raise AnswerError("the answer holds no block of JSON")
+    last = blocks[-1]  # an earlier block is a draft; only the last one is the answer
+    if final_text[last.end() :].strip():
         raise AnswerError("there is text after the block of JSON")
     try:
-        found = json.loads(blocks[0], parse_float=_no_decimal)
-    except (ValueError, AnswerError):
-        raise AnswerError("the block is not valid JSON, or holds a number with a decimal point") from None
+        found = json.loads(last.group(1), parse_float=_no_decimal, object_pairs_hook=_no_twice)
+    except (ValueError, AnswerError, RecursionError):
+        raise AnswerError(
+            "the block is not valid JSON, or holds a number with a decimal point or a field name twice"
+        ) from None
     try:
         FORMS[kind](found, kind)
         if kind == "decisions":
             _decision_rules(found)
     except RecordError as exc:
         raise AnswerError(str(exc)) from None
+    except RecursionError:
+        raise AnswerError("the block is nested too deeply") from None
+    return found
+
+
+def _no_twice(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    found = dict(pairs)
+    if len(found) != len(pairs):
+        raise AnswerError("a field name twice")
     return found
 
 
@@ -143,3 +155,7 @@ def _decision_rules(answer: dict[str, Any]) -> None:
             raise RecordError(f"{where}: '{action}' needs a reason")
         if action == "reduce" and size is None:
             raise RecordError(f"{where}: 'reduce' needs a size")
+        if action == "sell" and size is not None:
+            raise RecordError(f"{where}: 'sell' sells the whole position and has no size; a part is a 'reduce'")
+        if size is not None and canon.pct_fraction(size) <= 0:
+            raise RecordError(f"{where}: a size of 0% is not an order")

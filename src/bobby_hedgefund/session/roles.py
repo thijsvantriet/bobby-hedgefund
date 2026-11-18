@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 TOOLS = "Read, Grep, Glob"
-FENCE = '"${CLAUDE_PROJECT_DIR}"/.claude/hooks/bobby_hooks.py fence'
+# Run through python3 by name, so that the check does not depend on the file being marked as a program. If the
+# file cannot be found at all, python3 itself ends with the code that refuses the tool.
+FENCE = 'python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/bobby_hooks.py" fence'
 HAIKU, OPUS, FABLE, SONNET = "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5"
 NEXT_DOWN = {FABLE: OPUS, OPUS: SONNET}  # "the next one down" when a model cannot be used (record 0009, point 2)
 ALIAS = {HAIKU: "haiku", OPUS: "opus", FABLE: "fable", SONNET: "sonnet"}  # what a start by hand has to name
@@ -45,7 +47,8 @@ A script checks every text before it is written down and cuts out what breaks th
 price is removed whole.
 
 ## Your answer
-- End with exactly one block that starts with a line ```json and ends with a line ```, and write nothing after it.
+- End with one block that starts with a line ```json and ends with a line ```, and write nothing after it. Use
+  ```json for nothing else: if there are several such blocks, only the last one is read.
 - The block is valid JSON in exactly the form shown below: these field names, no others.
 - A percentage is text such as "60%". A day is text such as "2027-06-01".
 - An answer that is not in this form is thrown away. Nobody repairs it and you are not asked again.
@@ -64,7 +67,7 @@ SECTION_FORM = """\
       "probability": "60%",
       "make_or_break": true,
       "reasoning": "Two or three sentences: why this probability.",
-      "sources": [12, 15]
+      "sources": [{"n": 12, "summary": "One sentence, in our own words, on what this source says."}]
     }
   ],
   "sources": [{"n": 12, "summary": "One sentence, in our own words, on what this source says."}],
@@ -75,6 +78,7 @@ SECTION_FORM = """\
 - `make_or_break`: true only for a result that can halve or double the share in a day.
 - A forecast states an event that will be clearly true or false on its date, with a link or a registry record to
   check it against. Never an event about a price. An empty list is fine.
+- Every `sources` list, wherever it stands, has the same form: the source's number and one sentence.
 """
 
 SECTION_NOTE = """\
@@ -164,7 +168,7 @@ ROLES: tuple[Role, ...] = (
         "resolved, record it under `resolved`.\n",
         "- This role adds one more field to the form, next to `forecasts`:\n"
         '  `"resolved": [{"forecast": 123, "result": "yes", "resolved_on": "2027-05-20", "summary": "One sentence.",'
-        ' "sources": [12]}]`\n'
+        ' "sources": [{"n": 12, "summary": "One sentence."}]}]`\n'
         '  `forecast` is the record number from your task file; `result` is "yes", "no" or "void" (the event can no\n'
         "  longer happen as stated). An empty list when nothing resolved.\n",
     ),
@@ -197,8 +201,9 @@ ROLES: tuple[Role, ...] = (
         '- Is a subgroup, a secondary goal or a "trend" being pushed forward in place of the main goal?\n'
         "Compare the announcement with the registry record and the earlier filings in the folder where you can.\n"
         'If the filing turns out not to be a results announcement, say so in your section and answer "unclear".\n'
-        + SECTION_NOTE
-        + "\n## The form of your answer\n"
+        "Your section goes into our own report on the company, which stays private; write it for the portfolio\n"
+        "managers. You give no forecasts.\n"
+        "\n## The form of your answer\n"
         "```json\n"
         "{\n"
         '  "cik": 1234567,\n'
@@ -249,13 +254,16 @@ ROLES: tuple[Role, ...] = (
             f"- {limits}\n"
             "- You may only buy a company that has a report in the session folder. Long only, no borrowing.\n"
             "- A size is the size of the trade as a percentage of the fund, never the weight to end up with. No trade\n"
-            "  below 0.5%. To sell a whole position, leave the size out.\n"
+            '  below 0.5%. "sell" always sells the whole position and has no size; to sell a part, use "reduce"\n'
+            "  with a size.\n"
             "- At most one order per company, and at most five orders a day. Doing nothing is a real decision: most\n"
             "  days there is no reason to trade.\n"
             "- A script enforces the limits; an order that breaks one is cut down or refused, and that is published.\n"
             f"{extra}"
             "Every buy or add needs a thesis in the fixed form: the claim; what we believe that others do not, and\n"
-            "why; the catalyst and its expected date; your probability that the thesis is right; the risks; and the\n"
+            "why; the catalyst and its expected date; the probability that the catalyst turns out the way the\n"
+            "thesis needs, by that date (an event that can be checked, so that the probability can be scored); the\n"
+            "risks; and the\n"
             'rule "we sell if ...". Write a sell rule you would really follow: it is checked later.\n'
             "Every reduce or sell needs a reason; say which sell rule was met if one was.\n"
             'Your thesis and reasons are published, so the rules under "What may be written" apply to every word.\n\n'
@@ -285,8 +293,8 @@ ROLES: tuple[Role, ...] = (
             "}\n"
             "```\n"
             '- `action` is "buy", "add", "reduce" or "sell". An empty list of decisions means: nothing today.\n'
-            "- `catalyst_date` may be left out when there is no date. `size_pct` is left out only for selling a\n"
-            "  whole position.\n",
+            "- `catalyst_date` may be left out when there is no date. `size_pct` is given for buy, add and reduce,\n"
+            "  never for sell.\n",
         )
         for fund, limits, extra in (
             (
