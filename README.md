@@ -58,6 +58,10 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **stream 2: SEC filings built** (docs/decisions/0008, "Update 2026-11-18 (2)"). The nightly archive run now also fetches, for every company of the universe, its filing list and each new filing of the followed kinds since 1 September 2026, as received. A weekly cross-check against the SEC's own daily list of filings, and a reading step for the items of an event report and the lines of an insider trade. Our own small reader is used; edgartools was not tried and stays the candidate for the quarterly reports of stream 4.
 
+2026-11-18: **stream 3: trial-record changes built** (`bobby-trials changes`, see "Trial-record changes" below). A nightly job reads every archived copy of every trial record and lists each change in a fixed set of fields (status, dates, phases, number of patients, primary outcomes, sponsor, results), with the two archived files the old and the new value come from. First run: 798 changes in 302 trials since the first copy of the registry of 2026-11-16; three were compared with the raw records by hand. With this, streams 0-3 are built.
+
+2026-11-18: **rules for the historical study drafted** (docs/study/RULES.md, status "proposed"): what it must deliver (base rates and the typical size of a price move), which past results are in it and how the list is made before any outcome is looked at, the measures, the time limit of six sessions. Nothing is downloaded or analysed until the owner says yes; four questions for the owner are at the end of that document.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -70,8 +74,9 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    newest one; about 220 companies), then `bobby-universe decisions <sheet>` and `bobby-universe linking`
    make the linking table. After that: the by-hand check of 20 companies for missed names, and record 0009 with
    the agent files (step 3).
-   Alongside: the historical study, limited to two weeks of work. Its AACT download is settled (0014): go ahead
-   under the download rules written there; choose which monthly copies to fetch first (all of them do not fit on the disk).
+   Stream 3 (trial-record changes) is built too.
+   Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
+   and wait for the owner's yes; its AACT download is settled (0014).
 3. Agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
    usage limits a session takes.
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026. Needed before it: streams 0-3, record 0009, the agent files, the decision log with its leak check, and the fund books.
