@@ -76,6 +76,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the daily round built** (`/bobbyhedgefund-day`, `bobby-session`; see "The daily round" below). The owner types one command in a fresh session; a script then runs step 1 before any model has read anything, and the session only runs the round's commands and starts the agents they name. Each agent's answer is taken by script from the agent's own record, with its exact model, effort and the tools it used; the step clock is kept by the script; every portfolio-manager round runs three times and a new position needs two of three. At the end the conversation is copied to the data folder and the usage is counted per role. A whole day runs as a test with recorded answers. Only the pilot runs: nothing is sent anywhere.
 
+2026-11-18: **a try-out of one whole day** (docs/pilot/DRY-RUN-2026-11.md). One round on the evening's saved data, Careful fund only, in a data folder of its own, with stand-in agents (the agent files are only loaded when a session starts); nothing of it counts. The round took 7.5 minutes of its 45: 21 agent runs, 10 forecasts, one decision on which all three runs agreed, a log of 13 records in one unbroken chain. The script threw away 11 of the 21 answers, 9 of them because a stand-in used a tool a real agent does not have. Afterwards one real agent file was tried: it ran on the model and effort of its file, and the reading check refused a read from inside the agent. Not measured: the share of the usage limits. Next: day 0 in a fresh session after the merge.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -90,8 +92,12 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    make the linking table. After that: the by-hand check of 20 companies for missed names.
    Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
    and wait for the owner's yes; its AACT download is settled (0014).
-3. **Now (Claude):** record 0009, agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
-   usage limits a session takes.
+3. ~~Record 0009, agent files, decision log, fund books, session preparation, the daily round and a try-out of
+   one day~~ (built 2026-11-18, seven pull requests). **Now (owner):** merge them in order; then **day 0**: open a
+   fresh session and type `/bobbyhedgefund-day` once (the first round with the real agent files, Careful fund,
+   pilot); then the one-week pilot with one fund, which measures how much of the usage limits a session takes.
+   Open before the pilot: the rule on `main` that refuses rewriting (record 0004), and a way to read the usage
+   percentages (a status-line helper, or `/usage` by hand).
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026. Needed before it: streams 0-3, record 0009, the agent files, the decision log with its leak check, and the fund books.
 5. In the first live weeks: the app, the alerts and the first monthly letter. A review with the owner every month.
 
