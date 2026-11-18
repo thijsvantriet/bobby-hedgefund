@@ -4,6 +4,9 @@ The archive holds one full copy of every company-linked record (the baseline) an
 the registry changed in the days before. Reading all pages oldest first and remembering a handful of fields per
 trial shows every change of those fields since the baseline. Only reading: nothing is downloaded or changed.
 
+What counts as a change: lists (phases, primary outcomes) are compared in order, so a re-ordering counts; a date
+that only becomes more exact ("2027-03" to "2027-03-15") counts, with the days it moved from the first of the month.
+
 The fields are fixed here, before any price is looked at, because the spec's one side-hypothesis (registry edits
 against later price moves, docs/SPEC.md section 4) is measured on them. Changing the list later is a change of
 that measure and must be written down as one.
@@ -106,6 +109,7 @@ class ChangeFinder:
     def __init__(self) -> None:
         self._last: dict[str, Seen] = {}
         self.copies = 0
+        self.older_copies_skipped = 0
 
     @property
     def trials(self) -> int:
@@ -121,6 +125,11 @@ class ChangeFinder:
             return []
         if before.fields == fields:
             return []  # the same copy again (nightly pages overlap), or a change in a field we do not follow
+        if posted and before.posted and posted < before.posted:
+            # An older version of the record that was saved later: comparing it would report a change and then
+            # the same change back. The newest version stays the one to compare with.
+            self.older_copies_skipped += 1
+            return []
         lines: list[dict[str, Any]] = []
         for name in FIELDS:
             old, new = before.fields.get(name), fields.get(name)
