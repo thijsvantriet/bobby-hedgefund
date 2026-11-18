@@ -371,8 +371,10 @@ KINDS: dict[str, Check] = {
     "dice_seed": _kind({"seed": hex64, "rule_version": text(40), "funds": whole(1), "per_fund": whole(1)}),
     "dice_draw": _kind(
         {"month": month, "covered": many(whole(1), 0, 2000), "rule_version": text(40), "seed_ref": whole(1)},
-        {"fills": sealed("price")},
+        {"orders": sealed("price")},  # the private file with the orders of the 1,000 funds, and its fingerprint
     ),
+    # One per trading day that was booked: the values of the funds and index funds at the close, all sealed.
+    "day_booked": _kind({"day": day, "rule_version": text(40), "values": sealed("price")}),
     "rules_draw": _kind(
         {"month": month, "chosen": many(whole(1), 0, 20), "rule_version": text(40)},
         {"why_empty": text(600)},
