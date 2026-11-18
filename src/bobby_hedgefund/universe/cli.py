@@ -7,7 +7,6 @@ Reads the archive, writes dated private files next to it. Downloads nothing and 
 from __future__ import annotations
 
 import argparse
-import csv
 import random
 import secrets
 import sys
@@ -17,9 +16,9 @@ from pathlib import Path
 
 from ..archive.cli import archive_root, data_dir
 from ..archive.store import iso, sha256_hex, utcnow
-from . import build, candidates, decisions, match, read_trials, review
+from . import build, candidates, current, decisions, match, read_trials, review
 from .inputs import InputError, Inputs
-from .output import OutputError, csv_text, free_label, plain_cell, write_new, write_new_bytes
+from .output import OutputError, csv_text, free_label, write_new, write_new_bytes
 from .read_sec import ReadError
 
 TRIAL_SOURCES = ("ctgov-baseline", "ctgov-updates")  # read together, in the order the pages were saved
@@ -92,35 +91,12 @@ def _collect_sponsors(inputs: Inputs) -> tuple[read_trials.SponsorCollector, int
     return collector, pages
 
 
-def _newest_universe() -> tuple[Path, list[match.Company]]:
-    """The newest universe file and the companies that are in the universe according to it."""
-    files = sorted(universe_dir().glob("*_universe.csv"), key=lambda p: (p.stat().st_mtime, p.name))
-    if not files:
-        raise InputError("no universe file yet: run `bobby-universe build` first")
-    path = files[-1]
-    try:
-        rows = list(csv.DictReader(path.read_text(encoding="utf-8").splitlines()))
-        companies = [
-            match.Company(
-                cik=int(r["cik"]),
-                name=plain_cell(r["name"]),
-                ticker=r["ticker_used"],
-                former_names=tuple(plain_cell(n) for n in r["former_names"].split(" | ") if n),
-            )
-            for r in rows
-            if r["in_universe"] == "yes"
-        ]
-    except (KeyError, ValueError, UnicodeDecodeError) as exc:
-        raise InputError(f"{path.name} is not a universe file ({type(exc).__name__})") from exc
-    return path, sorted(companies, key=lambda c: c.name.lower())
-
-
 def _file_line(path: Path) -> str:
     return f"{sha256_hex(path.read_bytes())}  {path.parent.name}/{path.name}\n"
 
 
 def cmd_match(_: argparse.Namespace) -> int:
-    universe_file, companies = _newest_universe()
+    universe_file, companies = current.newest_universe(universe_dir())
     inputs = Inputs(archive_root())
     collector, pages = _collect_sponsors(inputs)
     sponsors = collector.names()
@@ -209,7 +185,7 @@ def cmd_linking(_: argparse.Namespace) -> int:
 
 def cmd_missed_check(args: argparse.Namespace) -> int:
     """Draw companies at random for the by-hand search of record 0006, point 3.5."""
-    _, companies = _newest_universe()
+    _, companies = current.newest_universe(universe_dir())
     seed = args.seed if args.seed is not None else secrets.randbelow(10**9)
     drawn = random.Random(seed).sample(companies, min(args.count, len(companies)))
     now = decisions.current(decisions.load(linking_dir()))

@@ -1,4 +1,5 @@
-"""Command line for the archive: `bobby-archive run | baseline | sec-companies | sec-shares | verify | status`."""
+"""Command line for the archive: `bobby-archive <command>`: run, baseline, sec-companies, sec-shares, sec-filings,
+sec-crosscheck, verify, status."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import settings
-from . import sec, sec_shares, sources
+from . import sec, sec_filings, sec_shares, sources
 from .fetch import DEFAULT_USER_AGENT, Fetcher, FetchError
 from .store import Archive, ArchiveError, Busy, new_run_id, read_records
 
@@ -58,6 +59,37 @@ def _attempt(archive: Archive, source: str, run: str, job: Callable[[], dict[str
     return True
 
 
+def _universe_ciks() -> list[int] | None:
+    """The companies of the newest universe file; None when there is none yet."""
+    from ..universe import current  # here, not at the top: the universe code itself imports this module
+    from ..universe.inputs import InputError
+
+    try:
+        return [c.cik for c in current.newest_universe(data_dir() / "universe")[1]]
+    except InputError:
+        return None
+
+
+def _sec_filings_job(archive: Archive, run: str, **kwargs: Any) -> dict[str, Any]:
+    ciks = _universe_ciks()
+    if ciks is None:
+        return {"skipped": "no universe file yet"}
+    try:
+        fetcher = make_sec_fetcher()
+    except settings.SettingsError as exc:
+        raise sources.SourceError(str(exc)) from None  # a failure of this source only; the message has no value
+    return sec_filings.run_sec_filings(
+        archive,
+        fetcher,
+        run,
+        ciks=ciks,
+        since=sec_filings.FILINGS_FROM,
+        submissions_url=sec.SEC_SUBMISSIONS_URL,
+        filing_url=sec_filings.SEC_FILING_URL,
+        **kwargs,
+    )
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     jobs: dict[str, Callable[[Archive, Fetcher, str], dict[str, Any]]] = {}
     # Quick sources first; a publisher that needs minutes between requests goes last and holds nobody up.
@@ -68,6 +100,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     jobs[sources.CTGOV_UPDATES] = lambda a, f, r: sources.run_ctgov_updates(a, f, r, api=sources.CTGOV_API)
     for group in slow:
         jobs[group.source] = lambda a, f, r, g=group: sources.run_file_group(a, f, g, r)
+    # Last: the filings of the universe's companies. A few hundred requests, with a fetcher of its own.
+    jobs[sec_filings.FILINGS_SOURCE] = lambda a, f, r: _sec_filings_job(a, r)
     wanted = args.only or list(jobs)
     unknown = [name for name in wanted if name not in jobs]
     if unknown:
@@ -174,6 +208,59 @@ def cmd_sec_shares(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_sec_filings(args: argparse.Namespace) -> int:
+    """The same job as in the nightly run, by hand: for the first fetch, which takes long."""
+    if not _before_evening():
+        print("NOT RUN: too close to the nightly run; start it during the day")
+        return 1
+    run = new_run_id()
+    with Archive(archive_root()) as archive:
+        ok = _attempt(
+            archive,
+            sec_filings.FILINGS_SOURCE,
+            run,
+            lambda: _sec_filings_job(archive, run, limit=args.limit, keep_going=_before_evening),
+        )
+    return 0 if ok else 1
+
+
+def cmd_sec_crosscheck(args: argparse.Namespace) -> int:
+    from datetime import date, timedelta
+
+    if not _before_evening():
+        print("NOT RUN: too close to the nightly run; start it during the day")
+        return 1
+    ciks = _universe_ciks()
+    if ciks is None:
+        print("NOT RUN: no universe file yet")
+        return 1
+    try:
+        fetcher = make_sec_fetcher()
+    except settings.SettingsError as exc:
+        print(f"NOT RUN: {exc}")
+        return 1
+    # Up to the day before yesterday: yesterday's filings are fetched by tonight's run at the earliest.
+    last = date.today() - timedelta(days=2)
+    days = [last - timedelta(days=n) for n in range(args.days - 1, -1, -1)]
+    run = new_run_id()
+    with Archive(archive_root(), wait=args.wait) as archive:
+        ok = _attempt(
+            archive,
+            sec_filings.INDEX_SOURCE,
+            run,
+            lambda: sec_filings.run_crosscheck(
+                archive,
+                fetcher,
+                run,
+                ciks=ciks,
+                days=days,
+                since=sec_filings.FILINGS_FROM,
+                index_url=sec_filings.SEC_DAILY_INDEX_URL,
+            ),
+        )
+    return 0 if ok else 1
+
+
 def print_verify(root: Path, *, quick: bool) -> int:
     """Check one store of files (the archive, or the prices folder) and print the outcome."""
     with Archive(root, readonly=True) as archive:
@@ -257,6 +344,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_shares.add_argument("--limit", type=_at_least_one, metavar="N", help="stop after N requests (for a first try)")
     p_shares.set_defaults(func=cmd_sec_shares)
+    p_filings = sub.add_parser(
+        "sec-filings", help="filings of the universe's companies, by hand (the nightly run does the same job)"
+    )
+    p_filings.add_argument("--limit", type=_at_least_one, metavar="N", help="stop after N requests (for a first try)")
+    p_filings.set_defaults(func=cmd_sec_filings)
+    p_cross = sub.add_parser("sec-crosscheck", help="compare stored filings with the SEC's daily index (weekly)")
+    p_cross.add_argument("--days", type=_at_least_one, default=7, metavar="N", help="how many days back (default 7)")
+    p_cross.add_argument("--wait", type=float, default=0.0, metavar="SECONDS", help="wait for another archive command")
+    p_cross.set_defaults(func=cmd_sec_crosscheck)
     p_verify = sub.add_parser("verify", help="check every stored file against the manifest; writes nothing")
     p_verify.add_argument("--quick", action="store_true", help="check the manifest and file sizes only")
     p_verify.set_defaults(func=cmd_verify)
