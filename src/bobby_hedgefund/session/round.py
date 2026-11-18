@@ -161,9 +161,10 @@ def write_task(rnd: Round, name: str, role_name: str, lines: list[str], run: int
 def start_lines(rnd: Round, made: list[Task]) -> list[str]:
     """What the leading session is told: which agents to start, each with one fixed sentence. A task that has
     its result already (also "broke off") is not named again: a task is started once."""
-    made = [t for t in made if stored(rnd, t.task) is None]
+    started = {run.prompt for run in transcripts.agent_runs(Path(rnd.project), rnd.session_id)}
+    made = [t for t in made if stored(rnd, t.task) is None and t.prompt(rnd.session_dir) not in started]
     if not made:
-        return ["Nothing to start: every task of this step has its result already."]
+        return ["Nothing to start: every task of this step was started already or has its result."]
     out = [f"Start these {len(made)} agents, all at once, in the background. Use each sentence exactly as it stands:"]
     for t in made:
         if t.stand_in:
