@@ -119,29 +119,66 @@ bobby-prices purge                 # deletes every saved price; only for the day
 - A working day without prices counts as "market closed" only when it is more than four days old and is a regular
   US market holiday, or when the service said so twice. A recent day that looks half-filled is asked again.
 
-## Universe and linking table (stream 0, in progress)
-Design: docs/decisions/0006. Two commands read the archive and write dated files next to it; they download nothing
-and never replace a file (a second run on one day gets `-2` in its name). The results are private: they hold the
-XBI flag and are never committed.
+## Universe and linking table (stream 0)
+Design: docs/decisions/0006. The commands read the archive and the prices and write dated files next to them; they
+never replace a file (a second run on one day gets `-2` in its name). The results are private: they hold the XBI
+flag and numbers computed from prices, and are never committed.
 
 ```
 bobby-universe candidates          # companies that can enter the universe, before the filter on size and trading
+bobby-archive sec-shares           # monthly, by hand, after sec-companies: the candidates' reported share counts
+                                   # (about 45 minutes; run it again to continue; --limit N for a first try)
+bobby-universe build               # the universe: every candidate through the filter, with the numbers used
 bobby-universe sponsor-names       # every company-like sponsor name in the archived trial records (2 minutes)
+bobby-universe match               # suggested sponsor names per universe company: the review sheet for the owner
+bobby-universe decisions <sheet>   # take over the owner's decisions from the filled-in review sheet
+bobby-universe linking             # the linking table (company, sponsor names, trials) from the decisions so far
+bobby-universe missed-check        # draw 20 companies at random for a by-hand search for missed names
 ```
 
-- `~/bobby-hedgefund-data/universe/<date>_candidates.csv`: one line per company with one of our four industry
-  codes or a place in the XBI fund: SEC company number, name, tickers, industry code, the door it came through,
-  whether it reports as a foreign company (left out of version 1), former names, a check of its ticker against
-  the Nasdaq lists, and the name the fund's file gives it (the link to the fund is made by ticker, so the two names
-  can be compared by eye). A fund holding that cannot be linked to exactly one company goes to
+- `universe/<date>_candidates.csv`: one line per company with one of our four industry codes or a place in the
+  XBI fund: SEC company number, name, tickers, industry code, the door it came through, whether it reports as a
+  foreign company (left out of version 1), former names, a check of its ticker against the Nasdaq lists, and the
+  name the fund's file gives it. A fund holding that cannot be linked to exactly one company goes to
   `<date>_xbi-unmatched.csv` instead of being guessed. `<date>_inputs.txt` lists the archived files that were
   read, with their fingerprints.
-- `~/bobby-hedgefund-data/linking/<date>_sponsor-names.csv`: sponsor name as written in the registry, its classes,
-  number of trials, one example trial.
+- `universe/<date>_universe.csv`: every candidate with "in" or "out", **every** rule it fails, and the numbers
+  used with their dates: the share count and where it comes from, the last closing price, the market value, the
+  average traded per day over 60 trading days. The rules are those of record 0006: market value $300 million to
+  $10 billion, at least $2 million traded a day, share price at least $2, listed on Nasdaq or the New York Stock
+  Exchange, not a shell company, not a foreign filer, not marked "not biotech" by the owner. It refuses to run on
+  incomplete share counts or on prices older than a week.
+- `linking/<date>_review.xlsx`: the sheet the owner fills in. One grey line per company, under it the sponsor
+  names from the trial registry that may be the same company, with a column "decision" (yes / no / parent or
+  subsidiary; on the company line: not biotech). **Nothing is accepted automatically.** A read-only machine copy
+  (`<date>_review.csv`) is kept next to it, and a filled-in line is only taken over when it still agrees with that
+  copy, so a slip of the keyboard in another column cannot link a wrong name.
+- `linking/decisions.jsonl`: the owner's decisions, one per line; the file only ever grows. A changed mind is a
+  new line that points to the old one; every line carries the fingerprint of the line before it.
+- `linking/<date>_linking.csv`: the linking table as it follows from the decisions on that date: company, sponsor
+  name, relation, its trial numbers. Trials run by a partner under another sponsor name are missing until the
+  drug-name step is built.
+- `linking/<date>_sponsor-names.csv`: sponsor name as written in the registry, its classes, number of trials,
+  one example trial.
 - In these files a text that a spreadsheet would run as a formula (starting with `=`, `+`, `-` or `@`) has an
   apostrophe in front.
 
-Still to come: daily prices, the filter, name matching and the owner's check of the matches.
+## SEC filings (stream 2)
+Design: docs/decisions/0008. The nightly archive run fetches, for every company in the newest universe file, its
+filing list and each new filing of the kinds we follow, as the one complete text file, stored as received in the
+archive (`raw/sec-filings/`). Followed: event reports (8-K), share sales (S-3, 424B5), insider trades (Form 4),
+holders of more than 5% (Schedule 13D and 13G), quarterly and yearly reports (10-Q, 10-K), and their amendments;
+from 1 September 2026 on. One request a second; a refusal stops the job for that night.
+
+```
+bobby-archive sec-filings          # the same job by hand, for the first fetch (--limit N for a first try)
+bobby-archive sec-crosscheck       # weekly, by hand: compare with the SEC's own list of each day's filings
+bobby-filings recent --days 7      # what was stored: the items of each event report, the lines of insider trades
+```
+
+Reading (`src/bobby_hedgefund/filings/`) never touches the network: it takes the kind of filing, its dates, the
+items of an event report and the transactions of an insider trade from the stored file. The filings' own text
+belongs to the companies: it is only summarised and linked, never republished at length.
 
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with
