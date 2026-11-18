@@ -72,6 +72,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the session preparation built** (`bobby-session prepare`; docs/decisions/0003, "Update 2026-11-18"; see "Session preparation" below). At a data cut-off it builds the folder the agents may read: per company what is new since the last session (SEC filings as plain text, changes in trial records, numbers worked out from saved prices), a screening list in batches, and a numbered list of every source with its fingerprint and the time it was saved. Only files saved before the cut-off are used; a file our own jobs made is admitted only when all of its inputs were saved before it. The companies that may not be named in public get no folder at all. Trial changes are linked to a company once the linking table exists; until the owner's check they are counted and left out. Tried on today's real data: 215 companies, 637 new filings, 47 seconds.
 
+2026-11-18: **the agent files and the reading fence built** (`.claude/agents/`, `.claude/hooks/`; docs/decisions/0009, "Update 2026-11-18"; see "Agents" below). Twelve agent files with a fixed model, effort and tool list (reading files only), all made from one role table in the code, so a role's instructions exist in one place. Four checks that Claude Code runs by itself: an agent reads only inside the session folder; an agent is started only with a prepared task text, once; the leading session changes no files during a round; and how a session began is noted. Outside a round they do nothing. All were tested on recorded inputs before being switched on; whether they fire in a real session is a pilot check.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -252,6 +254,27 @@ bobby-session prepare              # build today's session folder at the data cu
   trial file says "not linked yet" and the changes are only counted.
 - **Who gets a deep analysis** (`session/select.py`, the order of the spec): holdings with news, then what the
   screening flagged, then a catalyst within 60 days, then the rest in a fixed rotation.
+
+## Agents
+Design: docs/decisions/0009 and 0003 (point 3).
+
+- **`.claude/agents/bobby-*.md`**: screening (Haiku), the weekly check on the screening, four analysts, the results
+  reader, bull and bear (Opus, high effort), one portfolio manager per AI fund (Fable, high effort). Every file
+  has `tools: Read, Grep, Glob` (no web, no command line, no way to start another agent), no project briefing, a
+  full model name and a fixed effort. Each ends in a fixed form of answer that a script reads and checks.
+- **One source.** The files are checked copies of `src/bobby_hedgefund/session/roles.py`; a test fails when they
+  differ. To change a role, change it there, run `roles.write_files`, and review the difference: the fingerprint
+  of the file goes into every log record that agent contributes to.
+- **`.claude/hooks/bobby_hooks.py`**, run by Claude Code itself:
+  - *fence* (named in every agent file): an agent may read only inside the session folder; links are followed
+    first, a search must name a folder, and anything it cannot judge is refused;
+  - *agent-start*: during a round an agent is started only with the exact sentence the script printed for a
+    task, with that task's agent, once, without a model or effort chosen by hand;
+  - *no-edits*: during a round the leading session changes no files;
+  - *session-start*: notes whether a session is new, cleared or resumed, for the fresh-session check.
+- **Outside a round the last three do nothing.** A round is active while `round-active.json` in the data folder
+  names the running session and is younger than 90 minutes.
+- Refusals are noted in the round's folder, and later in the log.
 
 ## Decision log
 Design: docs/decisions/0004 and 0009. Until the funds start only the **pilot** log exists, in

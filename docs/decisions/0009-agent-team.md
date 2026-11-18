@@ -233,7 +233,27 @@ Each has a default that the pilot runs with.
 7. whether the usage percentages reach a script through the status line, the one place Claude Code gives them to
    (spec, section 7).
 
-## Revisit
+## Update 2026-11-18: how the files and the checks are built
+- **One role table** (`src/bobby_hedgefund/session/roles.py`) holds every role's model, effort and full text; the
+  twelve files in `.claude/agents/` are checked copies of it. Tests check, per file: only documented field
+  names, the tool list `Read, Grep, Glob`, a full model name, the effort, no project briefing, the reading check,
+  and that the example answer in the file is one the script accepts.
+- **The reading check sits in each agent file** (as a check before every tool use), not in the project's
+  settings, so it exists only while that agent runs. It follows links before it judges a path, refuses a search
+  without a folder, and refuses when no round is active.
+- **Three more checks are in the project's settings** (`.claude/settings.json`): the start of an agent, changes to
+  files by the leading session, and a note of how each session began. The first two do nothing unless the data
+  folder holds a marker that names the running session and is younger than 90 minutes; the third only writes a
+  line. So ordinary work in this repository is never touched by them.
+- **A stand-in** (point 3): when the agent files cannot be used because they were made in the running session,
+  the script writes the role's instructions into the task file and names the general agent, the model and the
+  effort it must be started with; the start check accepts exactly that.
+- **Answers** (`session/answers.py`): exactly one block in the fixed form, nothing after it, no number with a
+  decimal point; at most five orders and one per company for a portfolio manager. A message about a refused
+  answer says what is wrong, never what the answer said.
+- Not confirmed by any test here, because they need a real session: that Claude Code runs these checks inside an
+  agent and names the agent (pilot check 4), and that a check in an agent file applies to every tool.
+
 Revisit: by 2027-01, or after the pilot week, or when a new Claude Code version changes agent files, hooks or the
 layout of session records, or when a new model replaces one named in a file.
 
