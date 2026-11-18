@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from ..archive import sec_shares
-from ..archive.sec_shares import CONCEPTS, SHARES_SOURCE, shares_name
+from ..archive.sec_shares import SHARES_SOURCE, shares_name
 from ..prices import read as prices
 from . import candidates, read_shares
 from .inputs import InputError, Inputs
@@ -122,27 +122,33 @@ def price_ticker(ticker: str, known: set[str]) -> str | None:
 
 
 def share_count(arch: Inputs, cik: int, batch: str, as_of: date) -> tuple[read_shares.ShareCount | None, str]:
-    """The newest usable share count of a company among the answers stored for this batch, and a note."""
-    found: list[read_shares.ShareCount] = []
-    for taxonomy, _ in CONCEPTS:
+    """The newest usable share count of a company among the answers stored for this batch, and a note. A count
+    on one day (cover page, balance sheet) goes before the average over a period, which is only a stand-in."""
+    found: dict[str, read_shares.ShareCount] = {}
+    for key in sec_shares.KEYS:
         recs = [
             r
-            for r in arch.files(SHARES_SOURCE, shares_name(cik, taxonomy))
+            for r in arch.files(SHARES_SOURCE, shares_name(cik, key))
             if isinstance(r.get("meta"), dict) and r["meta"].get("batch") == batch
         ]
         if recs:
-            count = read_shares.newest(arch.read(recs[-1]), taxonomy)
+            count = read_shares.newest(arch.read(recs[-1]), key)
             if count is not None:
-                found.append(count)
-    if not found:
-        asked = sec_shares.not_reported(arch.records, batch)
-        if all((cik, taxonomy) in asked for taxonomy, _ in CONCEPTS):
-            return None, "no share count reported for the company as a whole"
-        return None, "no usable share count in the SEC's answers"
-    best = max(found, key=lambda c: (c.as_of, c.filed, c.source == "cover page"))
-    if as_of - best.as_of > MAX_SHARES_AGE:
-        return None, f"newest share count is of {best.as_of.isoformat()}: too old"
-    return best, best.note
+                found[key] = count
+    fresh = {key: c for key, c in found.items() if as_of - c.as_of <= MAX_SHARES_AGE}
+    counts = [c for key, c in fresh.items() if key != "weighted"]
+    if counts:
+        best = max(counts, key=lambda c: (c.as_of, c.filed, c.source == "cover page"))
+        return best, best.note
+    if "weighted" in fresh:
+        return fresh["weighted"], fresh["weighted"].note
+    if found:
+        newest = max(found.values(), key=lambda c: c.as_of)
+        return None, f"newest share count is of {newest.as_of.isoformat()}: too old"
+    asked = sec_shares.not_reported(arch.records, batch)
+    if all((cik, key) in asked for key in sec_shares.KEYS):
+        return None, "no share count reported for the company as a whole"
+    return None, "no usable share count in the SEC's answers"
 
 
 def build(
@@ -250,6 +256,9 @@ def build(
     result.counts = {
         "sec_batch": batch,
         "share_counts_complete": shares_complete,
+        "share_count_is_an_average_over_a_period": sum(
+            bool(x.count) and x.count.source == "average over the period" for x in result.lines
+        ),
         "price_days": f"{days[0].isoformat()} to {last_day.isoformat()}",
         "check_split_between_count_and_filing": sum("CHECK:" in x.shares_note for x in result.lines),
         "companies_with_several_priced_tickers": sum(len(x.priced_tickers) > 1 for x in result.lines),

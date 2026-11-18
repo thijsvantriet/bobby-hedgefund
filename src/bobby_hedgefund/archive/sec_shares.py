@@ -18,14 +18,21 @@ from .store import Archive
 
 SHARES_SOURCE = "sec-shares"
 SEC_CONCEPT_URL = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}/{taxonomy}/{tag}.json"
-# Two places where a company reports its number of shares: the cover page of a report, and its balance sheet.
-# Both are asked for; the reader takes the newer one. The service only holds figures that a company reports for
-# the company as a whole, so a company that reports each share class apart may have neither.
-CONCEPTS = (("dei", "EntityCommonStockSharesOutstanding"), ("us-gaap", "CommonStockSharesOutstanding"))
+# Three figures, each (our short name, the SEC's group of figures, the figure's name): the share count on the cover
+# page of a report; the one on the balance sheet; and the average number of shares over the reported period, which
+# nearly every company reports and which the reader uses only when the other two are missing. The service only
+# holds figures that a company reports for the company as a whole, so a company that reports each share class apart
+# may lack the first two. The short name is what the stored lines carry as "taxonomy".
+CONCEPTS = (
+    ("dei", "dei", "EntityCommonStockSharesOutstanding"),
+    ("us-gaap", "us-gaap", "CommonStockSharesOutstanding"),
+    ("weighted", "us-gaap", "WeightedAverageNumberOfSharesOutstandingBasic"),
+)
+KEYS = tuple(key for key, _, _ in CONCEPTS)
 
 
-def shares_name(cik: int, taxonomy: str) -> str:
-    return f"shares-{taxonomy}-cik{cik:010d}.json"
+def shares_name(cik: int, key: str) -> str:
+    return f"shares-{key}-cik{cik:010d}.json"
 
 
 # This many "not found" answers in a row mean the address is wrong or the service moved, not that all these
@@ -66,6 +73,7 @@ def batch_complete(archive_records: list[dict[str, Any]], batch: str) -> bool:
         and isinstance(r.get("meta"), dict)
         and r["meta"].get("batch") == batch
         and r["meta"].get("complete") is True
+        and r["meta"].get("figures") == list(KEYS)  # a run from before a figure was added does not count
         for r in archive_records
     )
 
@@ -102,14 +110,17 @@ def run_sec_shares(
     """
     done = _done(archive, batch)
     todo = [
-        (cik, taxonomy, tag) for cik in sorted(set(ciks)) for taxonomy, tag in CONCEPTS if (cik, taxonomy) not in done
+        (cik, key, taxonomy, tag)
+        for key, taxonomy, tag in CONCEPTS  # figure by figure: the two main ones for all companies come first
+        for cik in sorted(set(ciks))
+        if (cik, key) not in done
     ]
     asked = stored = missing = odd = odd_in_a_row = missing_in_a_row = 0
-    for cik, taxonomy, tag in todo:
+    for cik, key, taxonomy, tag in todo:
         if (limit is not None and asked >= limit) or not keep_going():
             break
         url = concept_url.format(cik=cik, taxonomy=taxonomy, tag=tag)
-        meta = {"batch": batch, "cik": cik, "taxonomy": taxonomy}
+        meta = {"batch": batch, "cik": cik, "taxonomy": key}
         asked += 1
         try:
             resp = _get(fetcher, url, pause)
@@ -144,7 +155,7 @@ def run_sec_shares(
         odd_in_a_row = 0
         archive.store(
             SHARES_SOURCE,
-            shares_name(cik, taxonomy),
+            shares_name(cik, key),
             resp.body,
             run=run,
             compress=True,
@@ -162,5 +173,6 @@ def run_sec_shares(
         "odd": odd,
         "had_already": len(set(ciks)) * len(CONCEPTS) - len(todo),
         "left": left,
+        "figures": list(KEYS),
         "complete": left == 0 and odd == 0,
     }

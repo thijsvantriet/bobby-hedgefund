@@ -53,10 +53,11 @@ def store_shares(archive: Archive, cik: int, taxonomy: str, body: bytes, batch: 
 def finish_shares(archive: Archive, not_reported: tuple[int, ...] = (), batch: str = "b1") -> None:
     """What a finished `sec-shares` run leaves behind: a note per figure a company does not report, and the run."""
     for cik in not_reported:
-        for taxonomy, _ in sec_shares.CONCEPTS:
-            meta = {"batch": batch, "cik": cik, "taxonomy": taxonomy, "not_reported": True}
+        for key in sec_shares.KEYS:
+            meta = {"batch": batch, "cik": cik, "taxonomy": key, "not_reported": True}
             archive.record_run(sec_shares.SHARES_SOURCE, "s1", "note", meta=meta)
-    archive.record_run(sec_shares.SHARES_SOURCE, "s1", "ok", meta={"batch": batch, "complete": True})
+    done = {"batch": batch, "complete": True, "figures": list(sec_shares.KEYS)}
+    archive.record_run(sec_shares.SHARES_SOURCE, "s1", "ok", meta=done)
 
 
 def store_prices(prices_root: Path, per_ticker: dict[str, tuple[float, float]], days: list[date], skip=()) -> None:
@@ -267,7 +268,7 @@ def test_build_without_prices_says_so(root: Path, capsys) -> None:  # noqa: F811
 @pytest.fixture
 def shares_site(site):
     site.url = site.base + "/concept/CIK{cik:010d}/{taxonomy}/{tag}.json"
-    for taxonomy, tag in sec_shares.CONCEPTS:
+    for _, taxonomy, tag in sec_shares.CONCEPTS:
         site.add(f"/concept/CIK0000000101/{taxonomy}/{tag}.json", {"body": concept(101, tag, [("2026-10-31", 5e7)])})
     site.add(
         "/concept/CIK0000000103/dei/EntityCommonStockSharesOutstanding.json",
@@ -291,13 +292,13 @@ def test_share_counts_are_stored_and_a_missing_figure_is_noted_and_not_asked_aga
         other_batch = sec_shares.run_sec_shares(
             archive, fetcher, "r3", ciks=[101], batch="b2", concept_url=shares_site.url
         )
-    assert first["stored"] == 3 and first["not_found"] == 1 and first["complete"] and first["companies"] == 2
-    assert again["asked"] == 0 and again["had_already"] == 4
+    assert first["stored"] == 4 and first["not_found"] == 2 and first["complete"] and first["companies"] == 2
+    assert again["asked"] == 0 and again["had_already"] == 6
     assert (
-        waits == [1.0] * 6 and other_batch["asked"] == 2
+        waits == [1.0] * 9 and other_batch["asked"] == 3
     )  # a new batch asks again; unchanged files are not stored twice
     rows = [json.loads(x) for x in (tmp_path / "manifest.jsonl").read_text().splitlines()]
-    assert sum(r["kind"] == "file" for r in rows) == 3 and sum(r["kind"] == "unchanged" for r in rows) == 2
+    assert sum(r["kind"] == "file" for r in rows) == 4 and sum(r["kind"] == "unchanged" for r in rows) == 3
     assert all(r["path"].startswith("raw/sec-shares/") for r in rows if r["kind"] == "file")
 
 
@@ -318,7 +319,7 @@ def test_a_strange_answer_is_not_stored_and_is_asked_again(shares_site, tmp_path
 def test_a_refusal_stops_the_job_and_limit_stops_early(shares_site, tmp_path: Path, fetcher, status: int) -> None:
     with Archive(tmp_path) as archive:
         limited = fetch(archive, fetcher, shares_site, limit=1)
-        assert limited["asked"] == 1 and limited["left"] == 3 and not limited["complete"]
+        assert limited["asked"] == 1 and limited["left"] == 5 and not limited["complete"]
         shares_site.add("/concept/CIK0000000101/us-gaap/CommonStockSharesOutstanding.json", {"status": status})
         with pytest.raises(FetchError):
             fetch(archive, fetcher, shares_site, "r2")
@@ -329,7 +330,7 @@ def test_a_refusal_stops_the_job_and_limit_stops_early(shares_site, tmp_path: Pa
 
 def test_many_strange_answers_in_a_row_stop_the_job(shares_site, tmp_path: Path, fetcher, monkeypatch) -> None:
     monkeypatch.setattr(sec_shares, "MAX_ODD_IN_A_ROW", 2)
-    for taxonomy, tag in sec_shares.CONCEPTS:
+    for _, taxonomy, tag in sec_shares.CONCEPTS:
         shares_site.add(f"/concept/CIK0000000101/{taxonomy}/{tag}.json", {"body": b"<html>"})
     with Archive(tmp_path) as archive, pytest.raises(SourceError):
         fetch(archive, fetcher, shares_site, ciks=[101])
@@ -362,7 +363,7 @@ def test_sec_shares_command_asks_for_the_candidates_of_the_newest_batch(
     monkeypatch.setattr(archive_cli, "make_sec_fetcher", lambda: made)
     assert archive_cli.main(["sec-shares"]) == 0
     asked = {int(h.split("CIK")[1][:10]) for h in shares_site.hits}
-    assert asked == {101, 102, 103, 104, 106, 108} and len(shares_site.hits) == 12
+    assert asked == {101, 102, 103, 104, 106, 108} and len(shares_site.hits) == 18
     out = capsys.readouterr().out
     assert "ok      sec-shares" in out and "test-host" not in out
     everything = b"".join(p.read_bytes() for p in root.rglob("*") if p.is_file())
@@ -386,3 +387,35 @@ def test_purge_replaces_universe_files_by_copies_without_the_price_columns(world
     assert "20.0" not in (folder / f"{today}_universe-without-prices.csv").read_text()
     assert (folder / f"{today}_universe-inputs.txt").exists() and (world / "manifest.jsonl").exists()
     assert prices_cli.main(["purge", "--yes-delete-everything"]) == 0  # nothing left to do
+
+
+def test_the_average_over_a_period_is_used_only_when_no_count_on_a_day_is_usable(root: Path) -> None:  # noqa: F811
+    def weighted(cik: int, rows: list[tuple[str, str, float]]) -> bytes:
+        facts = [
+            {"start": a, "end": b, "val": v, "accn": "a9", "form": "10-Q", "filed": "2026-11-05"} for a, b, v in rows
+        ]
+        doc = {"cik": cik, "tag": "W", "taxonomy": "us-gaap", "units": {"shares": facts}}
+        return json.dumps(doc).encode()
+
+    quarter_and_year_so_far = [("2026-01-01", "2026-09-30", 40e6), ("2026-07-01", "2026-09-30", 50e6)]
+    with Archive(root) as archive:
+        store_shares(archive, 101, "dei", concept(101, "E", [("2012-09-30", 9e6)]))  # far too old
+        store_shares(archive, 101, "weighted", weighted(101, quarter_and_year_so_far))
+        store_shares(archive, 103, "dei", concept(103, "E", [("2026-10-31", 50e6)]))
+        store_shares(archive, 103, "weighted", weighted(103, [("2026-07-01", "2026-09-30", 1e6)]))  # not needed
+        finish_shares(archive)
+    store_prices(root.parent / "prices", PRICES, working_days(60))
+    found = lines(root)
+    alfa = found[101]
+    assert alfa.in_universe and alfa.shares == 50e6 and alfa.count is not None
+    assert alfa.count.source == "average over the period" and "not a count on one day" in alfa.shares_note
+    assert found[103].shares == 50e6 and found[103].count is not None and found[103].count.source == "cover page"
+
+
+def test_a_finished_run_from_before_a_figure_was_added_does_not_count_as_complete(root: Path) -> None:  # noqa: F811
+    with Archive(root) as archive:
+        old = {"batch": "b1", "complete": True}  # the first version asked for two figures and wrote no list of them
+        archive.record_run(sec_shares.SHARES_SOURCE, "s0", "ok", meta=old)
+        assert not sec_shares.batch_complete(archive.records, "b1")
+        finish_shares(archive)
+        assert sec_shares.batch_complete(archive.records, "b1")
