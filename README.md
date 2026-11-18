@@ -188,6 +188,27 @@ Reading (`src/bobby_hedgefund/filings/`) never touches the network: it takes the
 items of an event report and the transactions of an insider trade from the stored file. The filings' own text
 belongs to the companies: it is only summarised and linked, never republished at length.
 
+## Trial-record changes (stream 3)
+A timer runs `bobby-trials changes` every night at 01:15, after the archive run. It downloads nothing: it reads
+every archived copy of every trial record, oldest first, and lists each change in a fixed set of fields, with the
+old and the new value and the two archived files they were read from.
+
+```
+bobby-trials changes               # by hand; a few minutes; writes only changes no earlier run wrote
+```
+
+- Followed fields: overall status, why stopped, start date, primary completion date, completion date, phases,
+  number of patients, primary outcomes (measure and time frame), lead sponsor, has results, results first posted.
+  For a date the line also says how many days it moved. The list is fixed in
+  `src/bobby_hedgefund/trials/changes.py`: the spec's one side-hypothesis (registry edits against later price
+  moves, docs/SPEC.md section 4) is measured on it, so changing it later is a change of that measure.
+- `~/bobby-hedgefund-data/trial-changes/<date>_changes.jsonl`: one line per change. Each run writes only what
+  is new; all the dated files together are the full list since the first copy of the registry (2026-11-16). A
+  night without news writes nothing. `<date>_changes-inputs.txt` lists the archived files that were read.
+- Shown this way is what the registry *posted*; a change is seen on the night its record was archived.
+- An archived page or record that cannot be read is counted and reported once (phone message "Bobby trials"),
+  not every night.
+
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with
 its reasoning and time, the day it was filled, the score of every forecast, and a regular plain-language report.
