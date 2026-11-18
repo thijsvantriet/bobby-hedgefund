@@ -191,14 +191,44 @@ Command: `bobby-session prepare` (README, "Session preparation").
 - **What an agent can read about a company:** who it is, what is new, the new filings as plain text, the changes
   in its trial records, numbers from saved prices marked private, and our own last report. Nothing else: the
   saved-files lists, the price files and the universe file themselves are not in the folder.
+- **What counts as new** is what no earlier session was shown: every earlier session's list of inputs is read,
+  and a filing or a change in a trial record that is in one of them is not shown again. So an item that a job
+  found late (a download or a comparison that ran after the session it belonged to) is still shown once. It must
+  be saved before the cut-off and be no older than three days before the last session; older ones are counted
+  and left out.
+- **A change in a trial record is not taken on trust.** The page it names must be in the saved-files list, saved
+  at the time the line says, before the cut-off; otherwise the line is left out and counted.
+- **Filings a company makes as a holder.** A company's list of filings also holds what it files as an owner of
+  another company's shares. Such a filing is marked "filed as a holder of another company", shows its parties,
+  and does not by itself send the company to the screening.
 - **Left out in one place:** companies in the universe through the XBI fund only (record 0009, open point 2).
+  Their names are also taken out of every text that is copied into the folder (a filing of another company can
+  name them) and replaced by "[a company that is not named]". The private list of those names only grows: a
+  company once on it stays, and names added by hand are kept. A universe file that marks no such company at all
+  gets a warning.
+- **The folder is built under another name** and gets its own name in one step when it is complete, so a
+  preparation that stops half-way leaves nothing that could be taken for a session folder.
+- **Our own earlier report** on a company is copied in only when it is of an earlier session day; a link is not
+  followed.
+- **A move of the share "since the last session"** is measured against the newest price day that session could
+  see, not against the calendar: the final copy of a day's prices arrives a day or two later.
 - **Found on the way.** (1) The first big download of filings was saved in one go, so everything in it looked
   new; a filing counts as news only when it was also filed around the last session (three days of margin). (2)
   The price service marks the newest day "delayed" until the next morning's download, and the books use final
   copies only: on a morning session the numbers are from two trading days before, and a fill is booked one
   session later than the calendar alone would allow. No rule is broken by that; the pilot shows whether it
-  matters. (3) The first run on real data: 215 companies, 637 new filings, 37 MB, 47 seconds. A normal day will
-  have a few dozen filings.
+  matters. (3) The first run on real data: 215 companies, 637 new filings, 37 MB, about a minute (a quarterly
+  report is several megabytes; turning them into plain text with a parser took most of the time, so that is
+  done with patterns now). A normal day will have a few dozen filings. (4) Known and not solved here: a filing
+  that two companies file together is saved once, under the first, so the second does not get it (stream 2).
+
+**Review.** A reviewer agent (Opus) read the code and found no way for anything saved after the cut-off to get
+into the folder, but said "fix first" for other things, all worked in above: the rule for a move of the share
+compared against the wrong day, so it would never have fired in a morning session; trial changes found late
+were dropped for good; filings made as a holder were shown as the company's own; the private list was rebuilt
+from scratch each day; a half-built folder blocked the day for good; reports were copied without a check on
+their day; a time without a zone crashed; a trial-change line was trusted as it stood; the list of tasks could
+be changed unnoticed.
 
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),

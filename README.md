@@ -70,7 +70,7 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the fund books built** (`bobby-funds`; docs/decisions/0005, "Update 2026-11-18"; see "Fund books" below). The books are recomputed from the decision log: a fill is a logged fact and is never worked out again. Booking walks through every trading day since the last one booked and follows the rules of record 0005 to the cent (whole shares, sells before buys, buys cut in proportion, the 0.5% minimum, the five-day wait, the 30% brake). The risk limits are checked in code when a decision is made, and a refused or reduced order is logged. Share splits and takeovers for cash and for shares are booked; the rarer events are refused until built. The Dice fund is complete (a draw anyone can repeat from fingerprints, 1,000 funds in private files); the Rules fund has its selection rule but holds nothing until streams 4 and 5 give it its inputs. Tried on the real saved prices with made-up orders: 75 trading days, 23 fills, one real share split, 1,000 Dice funds, and a full recomputation equal to the cent. No broker, no real order: paper money only.
 
-2026-11-18: **the session preparation built** (`bobby-session prepare`; docs/decisions/0003, "Update 2026-11-18"; see "Session preparation" below). At a data cut-off it builds the folder the agents may read: per company what is new since the last session (SEC filings as plain text, changes in trial records, numbers worked out from saved prices), a screening list in batches, and a numbered list of every source with its fingerprint and the time it was saved. Only files saved before the cut-off are used; a file our own jobs made is admitted only when all of its inputs were saved before it. The companies that may not be named in public get no folder at all. Trial changes are linked to a company once the linking table exists; until the owner's check they are counted and left out. Tried on today's real data: 215 companies, 637 new filings, 47 seconds.
+2026-11-18: **the session preparation built** (`bobby-session prepare`; docs/decisions/0003, "Update 2026-11-18"; see "Session preparation" below). At a data cut-off it builds the folder the agents may read: per company what is new since the last session (SEC filings as plain text, changes in trial records, numbers worked out from saved prices), a screening list in batches, and a numbered list of every source with its fingerprint and the time it was saved. Only files saved before the cut-off are used; a file our own jobs made is admitted only when all of its inputs were saved before it. The companies that may not be named in public get no folder at all. Trial changes are linked to a company once the linking table exists; until the owner's check they are counted and left out. Tried on today's real data: 215 companies, 637 new filings, about a minute.
 
 2026-11-18: **the agent files and the reading fence built** (`.claude/agents/`, `.claude/hooks/`; docs/decisions/0009, "Update 2026-11-18"; see "Agents" below). Twelve agent files with a fixed model, effort and tool list (reading files only), all made from one role table in the code, so a role's instructions exist in one place. Four checks that Claude Code runs by itself: an agent reads only inside the session folder; an agent is started only with a prepared task text, once; the leading session changes no files during a round; and how a session began is noted. Outside a round they do nothing. All were tested on recorded inputs before being switched on; whether they fire in a real session is a pilot check.
 
@@ -245,11 +245,14 @@ bobby-session prepare              # build today's session folder at the data cu
   agents name their sources by these numbers; the session's first log record carries the fingerprint of this list.
 - **Screening:** `screening/batch-NN.md` with a short digest per company that has news, 25 a file. Companies
   without any new item are listed in `no-news.txt` by the script and are sent to no model.
-- **What counts as new:** saved after the last session's cut-off. A filing that was filed more than three days
-  before that and only fetched now is left out (and counted). A move of the share of 15% or more since the last
-  session counts as an item by itself.
+- **What counts as new:** what no earlier session was shown (their lists of inputs are read), saved before the
+  cut-off. A filing or a change older than three days before the last session that was only fetched now is left
+  out (and counted). A move of the share of 15% or more since the prices the last session saw counts as an item
+  by itself. A filing a company made as a holder of another company's shares is marked as such and is no news
+  about the company itself.
 - **Not in the folder at all:** the companies that are in the universe through the XBI fund only (record 0009,
-  open point 2). Their names go to a private list that the log and the publish script use as a last check.
+  open point 2). Their names go to a private list that only grows; they are taken out of every text copied into
+  the folder, and the log and the publish script use the list as a last check.
 - **Trials** are linked through the linking table once the owner's check has made one; until then each company's
   trial file says "not linked yet" and the changes are only counted.
 - **Who gets a deep analysis** (`session/select.py`, the order of the spec): holdings with news, then what the

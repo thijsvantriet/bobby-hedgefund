@@ -3,8 +3,8 @@ block starts on a new line; a table row becomes one line with its cells separate
 
 from __future__ import annotations
 
+import html
 import re
-from html.parser import HTMLParser
 
 _BLOCK = frozenset(
     [
@@ -33,35 +33,27 @@ _BLOCK = frozenset(
         "center",
     ]
 )
-_SKIP = frozenset(("script", "style", "head", "ix:header", "xbrli:context", "xbrli:unit"))
 _SPACES = re.compile("[ \t\r\f\v\xa0]+")  # \xa0: the space that does not break a line
 _BLANK_LINES = re.compile(r"\n\s*\n\s*(?:\n\s*)+")
 _BINARY_START = re.compile(rb"^\s*begin \d{3} ")
 
 
-class _Text(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.parts: list[str] = []
-        self.skip = 0
+_DROPPED = re.compile(
+    r"<(script|style|head|ix:header)\b[^>]*>.*?</\1\s*>|<!--.*?-->", re.DOTALL | re.IGNORECASE
+)  # with all that is inside them
+_CELL = re.compile(r"<t[dh]\b[^>]*>", re.IGNORECASE)
+_BLOCK_TAG = re.compile(r"</?(?:" + "|".join(sorted(_BLOCK)) + r")\b[^>]*>", re.IGNORECASE)
+_TAG = re.compile(r"<[^<>]{0,2000}>")
+_LOOKS_LIKE_HTML = re.compile(r"<(?:html|body|div|p|table|font|span|br)\b", re.IGNORECASE)
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in _SKIP:
-            self.skip += 1
-        elif tag in _BLOCK:
-            self.parts.append("\n")
-        elif tag in ("td", "th"):
-            self.parts.append(" | ")
 
-    def handle_endtag(self, tag: str) -> None:
-        if tag in _SKIP:
-            self.skip = max(0, self.skip - 1)
-        elif tag in _BLOCK:
-            self.parts.append("\n")
-
-    def handle_data(self, data: str) -> None:
-        if not self.skip:
-            self.parts.append(data)
+def strip_tags(raw: str) -> str:
+    """The text of a page without its tags. Done with patterns, not with a parser: a quarterly report is several
+    megabytes, and a parser written in Python takes most of a minute over a day's filings."""
+    raw = _DROPPED.sub(" ", raw)
+    raw = _CELL.sub(" | ", raw)
+    raw = _BLOCK_TAG.sub("\n", raw)
+    return html.unescape(_TAG.sub("", raw))
 
 
 def is_binary(data: bytes) -> bool:
@@ -71,15 +63,12 @@ def is_binary(data: bytes) -> bool:
 
 def to_text(data: bytes) -> str:
     """Plain text of a document. A document without tags is returned as it is, tidied."""
-    raw = data.decode("utf-8", errors="replace") if b"\xc3" in data[:20000] else data.decode("latin-1")
-    if "<" in raw and re.search(r"<(?:html|body|div|p|table|font|span|br)\b", raw, re.IGNORECASE):
-        parser = _Text()
-        try:
-            parser.feed(raw)
-            parser.close()
-        except Exception:  # a broken page: what was read up to there is still worth having
-            pass
-        raw = "".join(parser.parts)
+    try:
+        raw = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raw = data.decode("cp1252", errors="replace")  # the other encoding filings come in
+    if "<" in raw and _LOOKS_LIKE_HTML.search(raw):
+        raw = strip_tags(raw)
     lines = [_SPACES.sub(" ", line).strip(" |") for line in raw.split("\n")]
     text = "\n".join(line.strip() for line in lines)
     return _BLANK_LINES.sub("\n\n", text).strip() + "\n"

@@ -126,6 +126,8 @@ def test_a_filing_document_becomes_plain_text() -> None:
     # The head with its title, scripts and styles goes; a table row becomes one line.
     assert plaintext.to_text(html) == "First line & more\n\nCash | 100\n\nDebt | 20\n\nLast\n"
     assert plaintext.to_text(b"Plain  text\r\n\r\n\r\n\r\nSecond") == "Plain text\n\nSecond\n"
+    curly = "The company\u2019s drug"
+    assert plaintext.to_text(curly.encode("utf-8")) == curly + "\n" == plaintext.to_text(curly.encode("cp1252"))
     assert plaintext.is_binary(b"\nbegin 644 logo.jpg\nM_]C") and not plaintext.is_binary(
         b"<html>begin the trial</html>"
     )
@@ -175,59 +177,32 @@ def test_the_newest_admitted_file_goes_by_its_name_never_by_the_date_of_the_file
 # ---------------------------------------------------------------- the session folder
 
 
+def shown_earlier(data: Path, day: str, lines: list[dict]) -> None:
+    """An earlier session's folder, with what its list of inputs showed."""
+    folder = data / "pilot" / "sessions" / day
+    folder.mkdir(parents=True)
+    (folder / "session.json").write_text("{}\n")
+    (folder / "inputs.jsonl").write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+
 def test_the_session_folder_holds_only_what_was_saved_before_the_cut_off(data: Path) -> None:
     main = "<p>Cash was $245.3 million.</p>"
+    evening = datetime(2027, 2, 2, 23, tzinfo=UTC)
+    items = "Regulation FD Disclosure;Financial Statements and Exhibits"
     sha = store_filing(
-        data,
-        101,
-        "0000000101-27-000001",
-        "8-K",
-        "2027-02-02",
-        datetime(2027, 2, 2, 23, tzinfo=UTC),
-        items="Regulation FD Disclosure;Financial Statements and Exhibits",
-        main=main,
-        extra=PRESS,
+        data, 101, "0000000101-27-000001", "8-K", "2027-02-02", evening, items=items, main=main, extra=PRESS
     )
-    store_filing(
-        data,
-        101,
-        "0000000101-27-000002",
-        "8-K",
-        "2027-02-03",
-        datetime(2027, 2, 3, 9, tzinfo=UTC),
-        main="<p>After the cut-off.</p>",
-    )
-    store_filing(
-        data,
-        102,
-        "0000000102-27-000001",
-        "10-Q",
-        "2026-11-05",
-        datetime(2027, 2, 2, 23, tzinfo=UTC),
-        main="<p>Fetched late.</p>",
-    )
-    store_filing(
-        data,
-        103,
-        "0000000103-27-000001",
-        "8-K",
-        "2027-02-01",
-        datetime(2027, 2, 1, 23, tzinfo=UTC),
-        main="<p>Before the last session.</p>",
-    )
-    store_filing(
-        data,
-        999,
-        "0000000999-27-000001",
-        "8-K",
-        "2027-02-02",
-        datetime(2027, 2, 2, 23, tzinfo=UTC),
-        main="<p>Not in the universe.</p>",
-    )
+    late = datetime(2027, 2, 3, 9, tzinfo=UTC)
+    store_filing(data, 101, "0000000101-27-000002", "8-K", "2027-02-03", late, main="<p>After the cut-off.</p>")
+    store_filing(data, 102, "0000000102-27-000001", "10-Q", "2026-11-05", evening, main="<p>Fetched late.</p>")
+    monday = datetime(2027, 2, 1, 23, tzinfo=UTC)
+    store_filing(data, 103, "0000000103-27-000001", "8-K", "2027-02-01", monday, main="<p>Shown yesterday.</p>")
+    shown_earlier(data, "2027-02-02", [{"n": 2, "kind": "sec filing", "accession": "0000000103-27-000001"}])
+    store_filing(data, 999, "0000000999-27-000001", "8-K", "2027-02-02", evening, main="<p>Not in the universe.</p>")
     store_day(data / "prices", WED, {"AAA": (1.0, 1.0)})  # stored on Thursday: after the cut-off
     done = run(data)
     folder = done.folder
-    assert folder == data / "pilot" / "sessions" / "2027-02-03"
+    assert folder == data / "pilot" / "sessions" / "2027-02-03" and not list(folder.parent.glob(".*partial*"))
     assert done.counts["filings"] == 1 and done.counts["filings_saved_late_and_left_out"] == 1
     assert done.counts["price_day"] == "2027-02-02" and done.counts["companies"] == 4
     (text_file,) = (folder / "companies" / "101" / "filings").iterdir()
@@ -245,16 +220,26 @@ def test_the_session_folder_holds_only_what_was_saved_before_the_cut_off(data: P
     )
     assert not (folder / "companies" / "999").exists()
     everything = b"".join(p.read_bytes() for p in folder.rglob("*") if p.is_file())
-    assert b"After the cut-off" not in everything and b"Fetched late" not in everything
+    for absent in (b"After the cut-off", b"Fetched late", b"Shown yesterday"):
+        assert absent not in everything
     lines = [json.loads(line) for line in (folder / "inputs.jsonl").read_text().splitlines()]
-    assert [(line["n"], line["kind"]) for line in lines] == [(1, "universe"), (2, "sec filing"), (3, "prices")]
-    by_kind = {line["kind"]: line for line in lines}
-    assert by_kind["sec filing"]["sha256"] == sha and by_kind["sec filing"]["stored"] == "2027-02-02T23:00:00Z"
+    assert [(line["n"], line["kind"]) for line in lines] == [
+        (1, "universe"),
+        (2, "sec filing"),
+        (3, "prices"),
+        (4, "prices"),
+    ]
+    filed = lines[1]
     assert (
-        by_kind["sec filing"]["link"]
-        == "https://www.sec.gov/Archives/edgar/data/101/000000010127000001/0000000101-27-000001-index.htm"
+        filed["sha256"] == sha
+        and filed["stored"] == "2027-02-02T23:00:00Z"
+        and filed["accession"] == "0000000101-27-000001"
     )
-    assert by_kind["prices"]["day"] == "2027-02-02" and by_kind["prices"]["copy"] == "final"
+    assert (
+        filed["link"] == "https://www.sec.gov/Archives/edgar/data/101/000000010127000001/0000000101-27-000001-index.htm"
+    )
+    # Every price day a number was worked out from is listed: the last one, and the one the last session saw.
+    assert [(line["day"], line["copy"]) for line in lines[2:]] == [("2027-02-02", "final"), ("2027-02-01", "final")]
     assert done.inputs_sha256 == sha256_hex((folder / "inputs.jsonl").read_bytes())
     stored = json.loads((folder / "session.json").read_text())
     assert stored["cutoff"] == "2027-02-03T08:00:00Z" and stored["inputs_sha256"] == done.inputs_sha256
@@ -270,7 +255,9 @@ def test_what_is_new_per_company_and_the_screening_list(data: Path) -> None:
     folder = done.folder
     company = (folder / "companies" / "101" / "company.md").read_text()
     assert company.startswith("# Aaa Therapeutics Inc\nTicker: AAA    SEC company number: 101\n")
-    assert "the share moved +20.0% since the last session" in company  # 10 on Monday's close, 12 on Tuesday's
+    assert (
+        "the share moved +20.0% since the prices the last session saw" in company
+    )  # 10 on Monday's close, 12 on Tuesday's
     numbers = (folder / "companies" / "101" / "numbers.md").read_text()
     assert (
         "PRIVATE" in numbers
@@ -310,29 +297,45 @@ def test_companies_that_may_not_be_named_get_no_folder_and_go_on_the_private_lis
     )
 
 
+def page(data: Path, name: str, when: datetime) -> str:
+    """A saved page of the trial registry; returns its path in the archive."""
+    with Archive(data / "archive") as archive:
+        return archive.store("ctgov-updates", name, name.encode(), run="r", when=when, compress=True)["path"]
+
+
+def change(nct: str, path: str, saved: datetime, **more) -> dict:
+    estimated = {"date": "2027-03", "type": "ESTIMATED"}
+    base = {"nct": nct, "field": "primary_completion_date", "old": estimated, "new": {**estimated, "date": "2027-09"}}
+    return {**base, "moved_days": 184, "new_file": path, "new_saved": iso(saved), "new_posted": "2027-02-02", **more}
+
+
+LINKING = "cik,company,sponsor_name,relation,trials,as_lead,trial_numbers\n"
+
+
+def linking_table(data: Path, label: str, made: str, rows: str) -> None:
+    folder = data / "linking"
+    folder.mkdir(exist_ok=True)
+    (folder / f"{label}_linking.csv").write_text(LINKING + rows)
+    (folder / f"{label}_linking-inputs.txt").write_text(f"# linking table\n# made: {made}\n")
+
+
 def test_trial_changes_wait_for_the_linking_table_and_use_it_once_it_may_be_used(data: Path, tmp_path: Path) -> None:
+    night = datetime(2027, 2, 2, 22, 30, tzinfo=UTC)
+    a, b = page(data, "p1.json", night), page(data, "p2.json", datetime(2027, 2, 3, 9, tzinfo=UTC))
+    c = page(data, "p3.json", night)
+    stopped = {"field": "overall_status", "old": "RECRUITING", "new": "TERMINATED", "moved_days": None}
+    lines = [
+        change("NCT00000001", a, night),
+        change("NCT00000002", b, datetime(2027, 2, 3, 9, tzinfo=UTC)),  # saved after the cut-off
+        change("NCT00000003", c, night, **stopped),
+        change("NCT00000004", "raw/ctgov-updates/never-saved.json.xz", night),  # names a page nobody saved
+        change(
+            "NCT00000001", a, datetime(2027, 2, 2, 21, tzinfo=UTC), field="enrollment"
+        ),  # another time than the page's
+    ]
     changes = data / "trial-changes"
     changes.mkdir()
-    change = {
-        "nct": "NCT00000001",
-        "field": "primary_completion_date",
-        "old": {"date": "2027-03", "type": "ESTIMATED"},
-        "new": {"date": "2027-09", "type": "ESTIMATED"},
-        "moved_days": 184,
-        "new_file": "raw/ctgov-updates/x.json.xz",
-        "new_saved": "2027-02-02T22:30:00Z",
-        "new_posted": "2027-02-02",
-    }
-    late = {**change, "nct": "NCT00000002", "new_saved": "2027-02-03T09:00:00Z"}
-    other = {
-        **change,
-        "nct": "NCT00000003",
-        "field": "overall_status",
-        "old": "RECRUITING",
-        "new": "TERMINATED",
-        "moved_days": None,
-    }
-    (changes / "2027-02-03_changes.jsonl").write_text("".join(json.dumps(c) + "\n" for c in (change, late, other)))
+    (changes / "2027-02-03_changes.jsonl").write_text("".join(json.dumps(line) + "\n" for line in lines))
     first = run(data)
     assert (
         first.counts["trial_changes"] == 2
@@ -340,15 +343,11 @@ def test_trial_changes_wait_for_the_linking_table_and_use_it_once_it_may_be_used
         and not first.counts["linking_table"]
     )
     assert "not linked yet" in (first.folder / "companies" / "101" / "trials.md").read_text()
+    assert any("2 trial change(s) name a page that the saved-files list does not confirm" in n for n in first.notes)
     # The owner's check is done: a linking table exists. One made after the cut-off is passed over.
-    linking = data / "linking"
-    linking.mkdir()
-    table = "cik,company,sponsor_name,relation,trials,as_lead,trial_numbers\n"
-    table += "101,Aaa,Aaa Tx,yes,2,2,NCT00000001 NCT00000002\n105,Eee,Eee,yes,1,1,NCT00000003\n"
-    (linking / "2027-02-02_linking.csv").write_text(table)
-    (linking / "2027-02-02_linking-inputs.txt").write_text("# linking table\n# made: 2027-02-02T12:00:00Z\n")
-    (linking / "2027-02-04_linking.csv").write_text(table.replace("101,Aaa", "102,Bbb"))
-    (linking / "2027-02-04_linking-inputs.txt").write_text("# linking table\n# made: 2027-02-04T12:00:00Z\n")
+    rows = "101,Aaa,Aaa Tx,yes,2,2,NCT00000001 NCT00000002\n105,Eee,Eee,yes,1,1,NCT00000003\n"
+    linking_table(data, "2027-02-02", "2027-02-02T12:00:00Z", rows)
+    linking_table(data, "2027-02-04", "2027-02-04T12:00:00Z", rows.replace("101,Aaa", "102,Bbb"))
     second = prep.prepare(
         data_dir=data, mode_root=tmp_path / "second", session_day=WED, start_time=CUTOFF, cutoff=CUTOFF, since=SINCE
     )
@@ -363,23 +362,187 @@ def test_trial_changes_wait_for_the_linking_table_and_use_it_once_it_may_be_used
     assert kinds.count("trial record") == 1 and "linking table" in kinds
 
 
-def test_our_own_newest_report_is_copied_in_and_no_usable_universe_stops_everything(data: Path) -> None:
+def test_a_trial_change_found_late_is_still_shown_once_and_never_twice(data: Path) -> None:
+    # The page was saved on Monday night, before Tuesday's session; the job that compares records only ran later.
+    monday_night = datetime(2027, 2, 1, 22, 30, tzinfo=UTC)
+    a = page(data, "p1.json", monday_night)
+    linking_table(data, "2027-02-01", "2027-02-01T12:00:00Z", "101,Aaa,Aaa Tx,yes,1,1,NCT00000001\n")
+    changes = data / "trial-changes"
+    changes.mkdir()
+    (changes / "2027-02-03_changes.jsonl").write_text(json.dumps(change("NCT00000001", a, monday_night)) + "\n")
+    first = run(data)
+    assert (
+        "NCT00000001" in (first.folder / "companies" / "101" / "trials.md").read_text()
+    )  # saved before `since`, yet new
+    thursday = datetime(2027, 2, 4, 8, tzinfo=UTC)
+    second = run(data, session_day=date(2027, 2, 4), start_time=thursday, cutoff=thursday, since=CUTOFF)
+    assert "No change" in (second.folder / "companies" / "101" / "trials.md").read_text()  # shown on Wednesday
+    odd = change("NCT00000009", a, monday_night, new="line one\nline two [7] " + "x" * 400)
+    assert "\n" not in prep.change_line(odd) and "[7]" not in prep.change_line(odd) and len(prep.change_line(odd)) < 500
+
+
+def test_our_own_newest_report_of_an_earlier_day_is_copied_in(data: Path, tmp_path: Path) -> None:
     reports = data / "pilot" / "reports" / "101"
     reports.mkdir(parents=True)
     (reports / "2027-01-20.md").write_text("old report\n")
-    (reports / "2027-02-01.md").write_text("newest report\n")
+    (reports / "2027-02-01.md").write_text("newest earlier report\n")
+    (reports / "2027-02-03.md").write_text("a report of today: from a round that broke off\n")
+    (reports / "2027-02-05.md").write_text("a report from the future\n")
+    (reports / "notes.md").write_text("not a report\n")
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("private\n")
+    (data / "pilot" / "reports" / "102").mkdir()
+    (data / "pilot" / "reports" / "102" / "2027-02-01.md").symlink_to(outside)
     done = run(data)
-    assert (done.folder / "companies" / "101" / "report.md").read_text() == "newest report\n"
-    assert not (done.folder / "companies" / "102" / "report.md").exists()
+    assert (done.folder / "companies" / "101" / "report.md").read_text() == "newest earlier report\n"
+    assert not (done.folder / "companies" / "102" / "report.md").exists()  # a link is not followed
+    assert not (done.folder / "companies" / "103" / "report.md").exists()
+
+
+def test_times_must_be_in_order_and_carry_their_zone_and_no_usable_universe_stops_everything(
+    data: Path, monkeypatch, capsys
+) -> None:
+    early = datetime(2027, 1, 1, tzinfo=UTC)
     with pytest.raises(prep.PrepareError, match="no universe file may be used"):
-        prep.prepare(
-            data_dir=data,
-            mode_root=data / "early",
-            session_day=WED,
-            start_time=CUTOFF,
-            cutoff=datetime(2027, 1, 1, tzinfo=UTC),
-            since=SINCE,
+        run(data, cutoff=early, since=early - timedelta(days=1))
+    with pytest.raises(prep.PrepareError, match="must lie before"):
+        run(data, since=CUTOFF)
+    with pytest.raises(prep.PrepareError, match="without a time zone"):
+        run(data, cutoff=datetime(2027, 2, 3, 8))
+    monkeypatch.setenv("BOBBY_DATA_DIR", str(data))
+    monkeypatch.setattr(cli, "utcnow", lambda: datetime(2027, 2, 3, 8, 0, 5, tzinfo=UTC))
+    assert cli.main(["prepare", "--day", "2027-02-03", "--cutoff", "2027-02-03T08:00"]) == 1
+    assert "must carry its time zone" in capsys.readouterr().out
+    assert not (data / "pilot" / "sessions").exists() or not list((data / "pilot" / "sessions").iterdir())
+
+
+def test_a_preparation_that_stops_half_way_leaves_no_session_folder_and_the_next_one_works(
+    data: Path, monkeypatch
+) -> None:
+    real = prep.write_new
+
+    def breaks(path: Path, text: str) -> None:
+        if path.name == "session.json":
+            raise OSError("disk full")
+        real(path, text)
+
+    monkeypatch.setattr(prep, "write_new", breaks)
+    with pytest.raises(OSError):
+        run(data)
+    sessions = data / "pilot" / "sessions"
+    assert not (sessions / "2027-02-03").exists() and len(list(sessions.glob(".2027-02-03.partial-*"))) == 1
+    monkeypatch.setattr(prep, "write_new", real)
+    done = run(data)
+    assert (done.folder / "session.json").exists() and not list(sessions.glob(".*partial*"))
+
+
+FORM4 = "<SEC-DOCUMENT>{acc}.txt : 20270202\n<SEC-HEADER>{acc}.hdr.sgml : 20270202\nACCESSION NUMBER:\t\t{acc}\nCONFORMED SUBMISSION TYPE:\t4\nFILED AS OF DATE:\t\t20270202\nREPORTING-OWNER:\n\tOWNER DATA:\n\t\tCOMPANY CONFORMED NAME:\t\t\t{owner}\nISSUER:\n\tCOMPANY DATA:\n\t\tCOMPANY CONFORMED NAME:\t\t\t{issuer}\n</SEC-HEADER>\n</SEC-DOCUMENT>\n"  # noqa: E501
+
+
+def store_raw(data: Path, cik: int, accession: str, form: str, body: str, when: datetime) -> None:
+    meta = {"cik": cik, "accession": accession, "form": form, "filed": "2027-02-02"}
+    with Archive(data / "archive") as archive:
+        archive.store(
+            "sec-filings",
+            f"filing-{accession}.txt",
+            body.encode(),
+            run="r",
+            when=when,
+            compress=True,
+            info={"meta": meta},
         )
+
+
+def test_a_filing_a_company_makes_as_a_holder_of_another_is_marked_and_is_no_news_about_itself(data: Path) -> None:
+    evening = datetime(2027, 2, 2, 23, tzinfo=UTC)
+    held = FORM4.format(acc="0000000102-27-000007", owner="Bbb Bio Inc", issuer=HIDDEN[2])
+    own = FORM4.format(acc="0000000103-27-000008", owner="Jane Example", issuer="CCC PHARMA INC")
+    store_raw(data, 102, "0000000102-27-000007", "4", held, evening)
+    store_raw(data, 103, "0000000103-27-000008", "4", own, evening)
+    done = run(data)
+    text = next((done.folder / "companies" / "102" / "filings").iterdir()).read_text()
+    assert "NOTE: this company filed this as a holder of ANOTHER company's shares" in text
+    assert "Parties: reporting owner: Bbb Bio Inc; issuer: [a company that is not named]" in text  # and not by name
+    assert "as a holder of another" in (done.folder / "companies" / "102" / "company.md").read_text()
+    own_text = next((done.folder / "companies" / "103" / "filings").iterdir()).read_text()
+    assert "NOTE:" not in own_text and "issuer: CCC PHARMA INC" in own_text
+    stored = json.loads((done.folder / "session.json").read_text())
+    assert stored["with_news"] == [101, 103]  # 101 by its price move; 102's holder filing sends it to no screening
+    assert "102\n" in (done.folder / "screening" / "no-news.txt").read_text()
+    assert done.counts["private_names_taken_out_of_texts"] == 1
+
+
+def test_a_name_that_may_not_be_public_is_taken_out_of_every_text_the_agents_read(data: Path) -> None:
+    main = f"<p>We compete with {HIDDEN[2]} (Nasdaq: {HIDDEN[1]}) and with Eee Hidden Devices.</p>"
+    store_filing(
+        data, 101, "0000000101-27-000001", "8-K", "2027-02-02", datetime(2027, 2, 2, 23, tzinfo=UTC), main=main
+    )
+    reports = data / "pilot" / "reports" / "101"
+    reports.mkdir(parents=True)
+    (reports / "2027-02-01.md").write_text("An earlier report that mentions Eee Hidden Devices Inc.\n")
+    done = run(data)
+    everything = b"".join(p.read_bytes() for p in done.folder.rglob("*") if p.is_file())
+    assert b"Hidden" not in everything and b"EEE" not in everything
+    assert b"We compete with [a company that is not named] ([a company that is not named]) and with" in everything
+    assert done.counts["private_names_taken_out_of_texts"] == 4
+
+
+def test_the_private_list_only_grows_and_keeps_names_added_by_hand(data: Path, tmp_path: Path) -> None:
+    private = data / "pilot" / "private-names.tsv"
+    private.parent.mkdir(parents=True)
+    private.write_text(
+        f"# by hand\n{HIDDEN[0]}\t{HIDDEN[1]}\told name\tEeeDevice|Hidden Dx\n777\tOLD\tWas Hidden Once Inc\n"
+    )
+    done = run(data)
+    lines = [line.split("\t") for line in private.read_text().splitlines() if not line.startswith("#")]
+    assert lines == [
+        [str(HIDDEN[0]), HIDDEN[1], HIDDEN[2], "EeeDevice|Hidden Dx"],
+        ["777", "OLD", "Was Hidden Once Inc"],
+    ]
+    assert done.counts["on_the_private_list"] == 2 and not any("marks no company" in n for n in done.notes)
+    # A universe file that marks nobody is suspicious: say so.
+    path = data / "universe" / "2027-02-01_universe.csv"
+    path.write_text(path.read_text().replace("xbi only", "own code"))
+    again = prep.prepare(
+        data_dir=data, mode_root=tmp_path / "other", session_day=WED, start_time=CUTOFF, cutoff=CUTOFF, since=SINCE
+    )
+    assert any("marks no company as in through the XBI fund only" in n for n in again.notes)
+    # On the first root the company stays hidden even so: it was on the list.
+    third = run(
+        data,
+        session_day=date(2027, 2, 4),
+        start_time=CUTOFF + timedelta(days=1),
+        cutoff=CUTOFF + timedelta(days=1),
+        since=CUTOFF,
+    )
+    assert HIDDEN[0] not in third.companies and not (third.folder / "companies" / str(HIDDEN[0])).exists()
+
+
+def test_a_move_of_the_share_is_measured_against_the_prices_the_last_session_saw(tmp_path: Path) -> None:
+    # As in real life: the final copy of a day's prices is stored two mornings later.
+    data = tmp_path / "data"
+    universe_file(data)
+    store_splits(data / "prices", [])
+    flat = {"AAA": (10.0, 10.0), "BBB": (20.0, 20.0), "CCC": (5.0, 5.0)}
+    two_later = {
+        date(2027, 1, 28): datetime(2027, 2, 1, 6, tzinfo=UTC),
+        date(2027, 1, 29): datetime(2027, 2, 2, 6, tzinfo=UTC),
+        MON: datetime(2027, 2, 3, 6, tzinfo=UTC),
+    }
+    store_day(data / "prices", date(2027, 1, 28), flat, when=two_later[date(2027, 1, 28)])
+    store_day(data / "prices", date(2027, 1, 29), flat, when=two_later[date(2027, 1, 29)])
+    store_day(data / "prices", MON, {**flat, "AAA": (10.0, 13.0)}, when=two_later[MON])
+    done = run(data)  # Wednesday 08:00; Tuesday's session (08:00) had seen the prices of Friday the 29th
+    numbers = (done.folder / "companies" / "101" / "numbers.md").read_text()
+    assert (
+        "as of the close of 2027-02-01" in numbers
+        and "Change since the prices the last session saw (2027-01-29): +30.0%" in numbers
+    )
+    assert json.loads((done.folder / "session.json").read_text())["with_news"] == [101]
+    # A session that sees no newer price day than the one before it reports no move at all.
+    same = run(data, session_day=date(2027, 2, 4), start_time=CUTOFF, cutoff=CUTOFF + timedelta(hours=1), since=CUTOFF)
+    assert "Change since" not in (same.folder / "companies" / "101" / "numbers.md").read_text()
+    assert json.loads((same.folder / "session.json").read_text())["with_news"] == []
 
 
 def test_screening_goes_in_batches_of_25(data: Path, monkeypatch) -> None:
@@ -477,6 +640,10 @@ def test_a_task_file_is_written_once_and_a_change_to_it_is_noticed(tmp_path: Pat
     assert not tasks.unchanged(tmp_path, made)
     path.unlink()
     assert not tasks.unchanged(tmp_path, made)
+    with open(tmp_path / "tasks" / "index.jsonl", "a") as fh:  # a second line for a task: the list was tampered with
+        fh.write(json.dumps({**again.__dict__, "sha256": "0" * 64}) + "\n")
+    with pytest.raises(tasks.TaskError, match="twice"):
+        tasks.load(tmp_path)
     for bad in ("../escape", "Has Capitals", "", "a/b"):
         with pytest.raises(tasks.TaskError):
             tasks.write(tmp_path, bad, "bobby-x", "text")
