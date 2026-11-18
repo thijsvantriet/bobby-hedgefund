@@ -1,4 +1,4 @@
-"""Command line for the universe and linking table: `bobby-universe candidates | sponsor-names`.
+"""Command line for the universe and linking table: `bobby-universe candidates | build | sponsor-names`.
 
 Reads the archive, writes dated private files next to it. Downloads nothing and changes nothing in the archive.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..archive.cli import archive_root, data_dir
 from ..archive.store import iso, utcnow
-from . import candidates, read_trials
+from . import build, candidates, read_trials
 from .inputs import InputError, Inputs
 from .output import OutputError, csv_text, free_label, write_new
 from .read_sec import ReadError
@@ -51,6 +51,25 @@ def cmd_candidates(args: argparse.Namespace) -> int:
     for key, value in result.counts.items():
         print(f"{key:28} {value}")
     print(f"written: {folder / f'{label}_candidates.csv'}")
+    return 0
+
+
+def prices_root() -> Path:
+    return data_dir() / "prices"
+
+
+def cmd_build(_: argparse.Namespace) -> int:
+    arch, price_inputs = Inputs(archive_root()), Inputs(prices_root())
+    result = build.build(arch, price_inputs)
+    folder = universe_dir()
+    label = free_label(date.today(), [(folder, "universe.csv"), (folder, "universe-inputs.txt")])
+    text = _inputs_text("universe", result.counts, arch)
+    text += "# files read from the prices folder (fingerprint, path):\n" + price_inputs.listing()
+    write_new(folder / f"{label}_universe-inputs.txt", text)
+    write_new(folder / f"{label}_universe.csv", csv_text(build.HEADER, (line.row() for line in result.lines)))
+    for key, value in result.counts.items():
+        print(f"{key:44} {value}")
+    print(f"written: {folder / f'{label}_universe.csv'}")
     return 0
 
 
@@ -99,6 +118,9 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-partial", action="store_true", help="also run while the SEC company files are incomplete (a try-out)"
     )
     p_cand.set_defaults(func=cmd_candidates)
+    sub.add_parser(
+        "build", help="the universe: the candidates put through the filter on size, trading and price"
+    ).set_defaults(func=cmd_build)
     sub.add_parser("sponsor-names", help="distinct company-like sponsor names in the trial records").set_defaults(
         func=cmd_sponsor_names
     )

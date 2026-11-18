@@ -1,4 +1,4 @@
-"""Command line for the archive: `bobby-archive run | baseline | sec-companies | verify | status`."""
+"""Command line for the archive: `bobby-archive run | baseline | sec-companies | sec-shares | verify | status`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import settings
-from . import sec, sources
+from . import sec, sec_shares, sources
 from .fetch import DEFAULT_USER_AGENT, Fetcher, FetchError
 from .store import Archive, ArchiveError, Busy, new_run_id, read_records
 
@@ -139,6 +139,41 @@ def cmd_sec_companies(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_sec_shares(args: argparse.Namespace) -> int:
+    from ..universe import candidates  # here, not at the top: the universe code itself imports this module
+    from ..universe.inputs import InputError, Inputs
+    from ..universe.read_sec import ReadError
+
+    if not _before_evening():
+        print("NOT RUN: too close to the nightly run; start it during the day")
+        return 1
+    try:
+        fetcher = make_sec_fetcher()
+        found = candidates.build(Inputs(archive_root()))
+    except (settings.SettingsError, InputError, ReadError) as exc:
+        print(f"NOT RUN: {exc}")
+        return 1
+    ciks = [c.cik for c in found.candidates]
+    run = new_run_id()
+    with Archive(archive_root()) as archive:
+        ok = _attempt(
+            archive,
+            sec_shares.SHARES_SOURCE,
+            run,
+            lambda: sec_shares.run_sec_shares(
+                archive,
+                fetcher,
+                run,
+                ciks=ciks,
+                batch=str(found.counts["sec_batch"]),
+                concept_url=sec_shares.SEC_CONCEPT_URL,
+                limit=args.limit,
+                keep_going=_before_evening,
+            ),
+        )
+    return 0 if ok else 1
+
+
 def print_verify(root: Path, *, quick: bool) -> int:
     """Check one store of files (the archive, or the prices folder) and print the outcome."""
     with Archive(root, readonly=True) as archive:
@@ -217,6 +252,11 @@ def main(argv: list[str] | None = None) -> int:
     p_sec_how.add_argument("--new", action="store_true", help="start a fresh batch although one is unfinished")
     p_sec.add_argument("--limit", type=_at_least_one, metavar="N", help="stop after N companies (for a first try)")
     p_sec.set_defaults(func=cmd_sec_companies)
+    p_shares = sub.add_parser(
+        "sec-shares", help="reported share counts of the candidate companies (monthly, by hand, after sec-companies)"
+    )
+    p_shares.add_argument("--limit", type=_at_least_one, metavar="N", help="stop after N requests (for a first try)")
+    p_shares.set_defaults(func=cmd_sec_shares)
     p_verify = sub.add_parser("verify", help="check every stored file against the manifest; writes nothing")
     p_verify.add_argument("--quick", action="store_true", help="check the manifest and file sizes only")
     p_verify.set_defaults(func=cmd_verify)
