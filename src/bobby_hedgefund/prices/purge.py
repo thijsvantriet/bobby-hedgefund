@@ -4,6 +4,8 @@ deletes downloaded files, and it can only delete the prices folder inside the da
 
 from __future__ import annotations
 
+import csv
+import io
 import shutil
 from pathlib import Path
 
@@ -36,6 +38,34 @@ def _remove_leftovers(data_dir: Path) -> int:
             shutil.rmtree(left)
             removed += 1
     return removed
+
+
+UNIVERSE_FOLDER = "universe"
+# Columns of a universe file that hold a price or a number computed from prices (docs/decisions/0006, point 6).
+PRICE_COLUMNS = frozenset({"last_close", "market_value", "avg_traded_per_day"})
+
+
+def strip_universe_files(data_dir: Path) -> list[str]:
+    """Replace every universe file by a copy without the columns that come from prices: who was in and out, and
+    why, stays (record 0006). The copy is written first, under a new name; then the original is removed."""
+    folder = data_dir / UNIVERSE_FOLDER
+    if folder.is_symlink():
+        raise PurgeError("the universe folder is a link to somewhere else; nothing was deleted there")
+    done: list[str] = []
+    for path in sorted(folder.glob("*_universe.csv")) if folder.is_dir() else []:
+        if path.is_symlink() or not path.is_file():
+            continue
+        with open(path, encoding="utf-8", newline="") as fh:
+            rows = list(csv.reader(fh))
+        keep = [i for i, name in enumerate(rows[0]) if name not in PRICE_COLUMNS] if rows else []
+        copy = path.with_name(path.name.removesuffix(".csv") + "-without-prices.csv")
+        if not copy.exists():  # left by an interrupted purge: complete, because it is written in one step
+            out = io.StringIO()
+            csv.writer(out, lineterminator="\n").writerows([row[i] for i in keep if i < len(row)] for row in rows)
+            write_new(copy, out.getvalue())
+        path.unlink()
+        done.append(path.name)
+    return done
 
 
 def purge(data_dir: Path) -> tuple[Path | None, int]:

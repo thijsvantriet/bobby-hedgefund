@@ -290,3 +290,20 @@ def test_sec_shares_command_asks_for_the_candidates_of_the_newest_batch(
     assert b"test-host" not in everything
     monkeypatch.setattr(archive_cli, "_before_evening", lambda: False)
     assert archive_cli.main(["sec-shares"]) == 1
+
+
+def test_purge_replaces_universe_files_by_copies_without_the_price_columns(world: Path, capsys) -> None:
+    from bobby_hedgefund.prices import cli as prices_cli
+
+    assert cli.main(["build"]) == 0
+    folder = world.parent / "universe"
+    today = date.today().isoformat()
+    assert prices_cli.main(["purge", "--yes-delete-everything"]) == 0
+    assert "universe files: 1 replaced" in capsys.readouterr().out
+    assert not (folder / f"{today}_universe.csv").exists() and not (world.parent / "prices").exists()
+    rows = list(csv.DictReader((folder / f"{today}_universe-without-prices.csv").read_text().splitlines()))
+    assert {r["cik"]: r["in_universe"] for r in rows}["101"] == "yes"
+    assert "market_value" not in rows[0] and "last_close" not in rows[0] and "avg_traded_per_day" not in rows[0]
+    assert "20.0" not in (folder / f"{today}_universe-without-prices.csv").read_text()
+    assert (folder / f"{today}_universe-inputs.txt").exists() and (world / "manifest.jsonl").exists()
+    assert prices_cli.main(["purge", "--yes-delete-everything"]) == 0  # nothing left to do

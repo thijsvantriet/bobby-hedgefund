@@ -164,13 +164,16 @@ def cmd_purge(args: argparse.Namespace) -> int:
         print("To go ahead: add --yes-delete-everything")
         return 1
     note, files = purge.purge(data_dir())
+    stripped = purge.strip_universe_files(data_dir())
+    if stripped:
+        print(f"universe files: {len(stripped)} replaced by a copy without the price columns")
     if note is None:
         print("nothing to delete: there is no prices folder")
         return 0
     print(f"deleted: the prices folder with {files} files. What was removed is listed in {note}")
     print("Still to do by hand (docs/decisions/0007, point 4): older copies in the machine's backup must be gone")
-    print("within 90 days, and other files that hold prices (universe numbers, private fund books) are not")
-    print("covered by this command yet.")
+    print("within 90 days. Later places that hold prices (private fund books, session folders) are not covered")
+    print("by this command yet.")
     return 0
 
 
