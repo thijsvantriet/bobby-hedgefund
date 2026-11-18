@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,16 @@ def filing_list(cik: int) -> dict:
 
 def manifest(root: Path) -> list[dict]:
     return [json.loads(x) for x in (root / "manifest.jsonl").read_text().splitlines()]
+
+
+REAL_BEFORE_EVENING = cli._before_evening
+LOCAL = frozenset({"127.0.0.1"})  # the fake site's host, in place of the SEC's hosts
+
+
+@pytest.fixture(autouse=True)
+def daytime(monkeypatch):
+    # the command refuses to run late in the evening; tests must pass at any hour
+    monkeypatch.setattr(cli, "_before_evening", lambda: True)
 
 
 @pytest.fixture
@@ -74,6 +85,7 @@ def test_stores_ticker_file_and_one_filing_list_per_listed_company(sec_site, tmp
         "listed_companies": 3,
         "fetched": 3,
         "not_found": 0,
+        "odd": 0,
         "had_already": 0,
         "left": 0,
         "complete": True,
@@ -96,7 +108,7 @@ def test_stores_ticker_file_and_one_filing_list_per_listed_company(sec_site, tmp
 def test_header_is_client_name_plus_contact_and_the_contact_is_stored_nowhere(
     sec_site, tmp_path: Path, waits, capsys
 ) -> None:
-    fetcher = sec.sec_fetcher(CONTACT, timeout=5, backoff=(), sleep=waits.append)
+    fetcher = sec.sec_fetcher(CONTACT, allowed_hosts=LOCAL, timeout=5, backoff=(), sleep=waits.append)
     sec_site.add("/submissions/CIK0000320193.json", {"status": 403, "body": b"denied"})
     with Archive(tmp_path) as archive:
         ok = cli._attempt(archive, sec.SEC_SOURCE, "r1", lambda: run(archive, fetcher, sec_site))
@@ -106,6 +118,47 @@ def test_header_is_client_name_plus_contact_and_the_contact_is_stored_nowhere(
     assert b"test-host" not in everything and b"someone" not in everything
     out = capsys.readouterr()
     assert "test-host" not in out.out + out.err and "FAILED  sec" in out.out
+    assert "test-host" not in repr(fetcher) and "someone" not in repr(fetcher)
+
+
+def test_the_contact_is_not_shown_when_the_network_fails_or_the_code_itself_breaks(
+    sec_site, tmp_path: Path, waits, capsys
+) -> None:
+    fetcher = sec.sec_fetcher(CONTACT, allowed_hosts=LOCAL, timeout=5, backoff=(1.0,), sleep=waits.append)
+    sec_site.add("/files/tickers.json", {"body": tickers(), "cut": True})  # the connection drops, twice
+    with Archive(tmp_path) as archive:
+        assert not cli._attempt(archive, sec.SEC_SOURCE, "r1", lambda: run(archive, fetcher, sec_site))
+
+        def broken() -> dict:
+            raise RuntimeError(f"a bug that mentions the fetcher: {fetcher!r}")
+
+        assert not cli._attempt(archive, sec.SEC_SOURCE, "r2", broken)
+    everything = b"".join(p.read_bytes() for p in tmp_path.rglob("*") if p.is_file())
+    out = capsys.readouterr()
+    assert b"test-host" not in everything and "test-host" not in out.out + out.err
+    assert set(sec_site.user_agents) == {f"public-data-archiver {CONTACT}"}
+
+
+def test_the_header_never_travels_to_another_host(sec_site, tmp_path: Path, waits) -> None:
+    fetcher = sec.sec_fetcher(CONTACT, allowed_hosts=LOCAL, timeout=5, backoff=(), sleep=waits.append)
+    elsewhere = sec_site.base.replace("127.0.0.1", "localhost")  # the same fake server under another host name
+    sec_site.add("/elsewhere", {"body": tickers()})
+    sec_site.add("/files/tickers.json", {"status": 302, "headers": {"Location": elsewhere + "/elsewhere"}})
+    with Archive(tmp_path) as archive, pytest.raises(FetchError):
+        run(archive, fetcher, sec_site)
+    assert sec_site.hits == ["/files/tickers.json"]  # the redirect was not followed
+    with pytest.raises(FetchError, match="not on the list"):
+        fetcher.get(elsewhere + "/elsewhere")  # and a direct request to another host is refused too
+    assert sec_site.hits == ["/files/tickers.json"]
+    assert sec.sec_fetcher(CONTACT).allowed_hosts == {"www.sec.gov", "data.sec.gov"}
+
+
+def test_a_redirect_within_the_allowed_host_is_followed(sec_site, tmp_path: Path, waits) -> None:
+    fetcher = sec.sec_fetcher(CONTACT, allowed_hosts=LOCAL, timeout=5, backoff=(), sleep=waits.append)
+    sec_site.add("/moved", {"body": tickers()})
+    sec_site.add("/files/tickers.json", {"status": 302, "headers": {"Location": sec_site.base + "/moved"}})
+    with Archive(tmp_path) as archive:
+        assert run(archive, fetcher, sec_site)["complete"] is True
 
 
 @pytest.mark.parametrize("status", [429, 403])
@@ -126,6 +179,7 @@ def test_a_refusal_stops_the_job_at_once_and_resume_continues(
             "listed_companies": 3,
             "fetched": 2,
             "not_found": 0,
+            "odd": 0,
             "had_already": 1,
             "left": 0,
             "complete": True,
@@ -163,12 +217,83 @@ def test_a_company_the_data_service_does_not_know_is_noted_and_not_asked_again(
     assert sec_site.hits.count("/submissions/CIK0000320193.json") == 1
 
 
-def test_a_filing_list_of_another_company_is_not_stored(sec_site, tmp_path: Path, fetcher) -> None:
-    sec_site.add("/submissions/CIK0000320193.json", filing_list(999))
+def test_an_odd_answer_is_noted_not_stored_and_does_not_block_the_batch(sec_site, tmp_path: Path, fetcher) -> None:
+    sec_site.add("/submissions/CIK0000320193.json", filing_list(999), filing_list(320193))
     with Archive(tmp_path) as archive:
-        with pytest.raises(SourceError):
-            run(archive, fetcher, sec_site)
-        assert [r["meta"].get("cik") for r in archive.records] == [None, 5000]
+        summary = run(archive, fetcher, sec_site)
+        assert summary["fetched"] == 2 and summary["odd"] == 1 and summary["complete"] is True
+        files = [r["meta"].get("cik") for r in archive.records if r["kind"] == "file"]
+        assert files == [None, 5000, 1000045]
+        notes = [r["meta"] for r in archive.records if r["kind"] == "run" and r["status"] == "note"]
+        assert notes == [{"batch": "r1", "odd_cik": 320193}]
+        # the batch was not closed by a run line in this test, so a resume asks the odd one again
+        summary = run(archive, fetcher, sec_site, name="r2", resume=True)
+        assert summary["fetched"] == 1 and summary["odd"] == 0 and summary["had_already"] == 2
+
+
+def test_many_odd_answers_in_a_row_stop_the_job(sec_site, tmp_path: Path, fetcher, monkeypatch) -> None:
+    monkeypatch.setattr(sec, "MAX_ODD_IN_A_ROW", 2)
+    for cik in (5000, 320193, 1000045):
+        sec_site.add(f"/submissions/CIK{cik:010d}.json", {"body": b"<html>please wait</html>"})
+    with Archive(tmp_path) as archive, pytest.raises(SourceError, match="in a row"):
+        run(archive, fetcher, sec_site)
+    assert len(sec_site.hits) == 3  # ticker file and two companies; the third is not asked
+
+
+def test_an_open_batch_is_not_dropped_by_accident(sec_site, tmp_path: Path, fetcher) -> None:
+    with Archive(tmp_path) as archive:
+        run(archive, fetcher, sec_site, limit=1)
+        hits = len(sec_site.hits)
+        with pytest.raises(SourceError, match="--resume"):
+            run(archive, fetcher, sec_site, name="r2")
+        assert len(sec_site.hits) == hits  # refused before any request
+        assert run(archive, fetcher, sec_site, name="r3", new=True)["batch"] == "r3"
+
+
+def test_the_job_stops_before_the_evening_and_can_be_resumed(sec_site, tmp_path: Path, fetcher) -> None:
+    answers = iter([True, False])
+    with Archive(tmp_path) as archive:
+        summary = run(archive, fetcher, sec_site, keep_going=lambda: next(answers))
+        assert summary["fetched"] == 1 and summary["left"] == 2 and summary["complete"] is False
+        assert run(archive, fetcher, sec_site, name="r2", resume=True)["complete"] is True
+
+
+def test_late_in_the_evening_the_command_does_not_start(sec_site, tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("BOBBY_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(cli, "_before_evening", lambda: False)
+    monkeypatch.setattr(sec, "SEC_TICKERS_URL", sec_site.tickers_url)
+    assert cli.main(["sec-companies"]) == 1
+    assert "NOT RUN" in capsys.readouterr().out and sec_site.hits == [] and not (tmp_path / "data").exists()
+
+
+def test_before_evening_reads_the_clock() -> None:
+    def at(hour: int, minute: int):
+        return lambda: time.struct_time((2026, 11, 18, hour, minute, 0, 2, 322, 0))
+
+    assert REAL_BEFORE_EVENING(at(9, 0)) and REAL_BEFORE_EVENING(at(22, 29))
+    assert not REAL_BEFORE_EVENING(at(22, 30)) and not REAL_BEFORE_EVENING(at(23, 45))
+
+
+def test_limit_must_be_one_or_more(sec_site, tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("BOBBY_DATA_DIR", str(tmp_path / "data"))
+    for bad in ("0", "-3"):
+        with pytest.raises(SystemExit):
+            cli.main(["sec-companies", "--limit", bad])
+    with pytest.raises(SystemExit):
+        cli.main(["sec-companies", "--resume", "--new"])
+    assert sec_site.hits == []
+
+
+def test_status_shows_the_run_not_a_note_inside_it(sec_site, tmp_path: Path, monkeypatch, fetcher, capsys) -> None:
+    monkeypatch.setenv("BOBBY_DATA_DIR", str(tmp_path / "data"))
+    del sec_site.routes["/submissions/CIK0001000045.json"]  # the last company answers 404: a note is written
+    with Archive(tmp_path / "data" / "archive") as archive:
+        assert cli._attempt(archive, sec.SEC_SOURCE, "r1", lambda: run(archive, fetcher, sec_site))
+        archive.record_run(sec.SEC_SOURCE, "r2", "note", meta={"batch": "r1", "missing_cik": 1})
+    capsys.readouterr()
+    assert cli.main(["status"]) == 0
+    line = next(x for x in capsys.readouterr().out.splitlines() if x.startswith("sec "))
+    assert " ok;" in line and "note" not in line
 
 
 def test_an_unchanged_filing_list_is_not_stored_twice(sec_site, tmp_path: Path, fetcher) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -92,7 +93,26 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+# The company files take hours and hold the archive's lock. The nightly run starts at 23:30 and must get the lock:
+# no new request after this local time; the batch is then finished the next day with --resume.
+SEC_LAST_REQUEST = (22, 30)
+
+
+def _before_evening(now: Callable[[], time.struct_time] = time.localtime) -> bool:
+    return (now().tm_hour, now().tm_min) < SEC_LAST_REQUEST
+
+
+def _at_least_one(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return value
+
+
 def cmd_sec_companies(args: argparse.Namespace) -> int:
+    if not _before_evening():
+        print("NOT RUN: too close to the nightly run; start it during the day")
+        return 1
     try:
         fetcher = make_sec_fetcher()
     except settings.SettingsError as exc:
@@ -111,7 +131,9 @@ def cmd_sec_companies(args: argparse.Namespace) -> int:
                 tickers_url=sec.SEC_TICKERS_URL,
                 submissions_url=sec.SEC_SUBMISSIONS_URL,
                 resume=args.resume,
+                new=args.new,
                 limit=args.limit,
+                keep_going=_before_evening,
             ),
         )
     return 0 if ok else 1
@@ -141,7 +163,7 @@ def cmd_status(_: argparse.Namespace) -> int:
     stored: dict[str, int] = {}
     for rec in records:
         source = str(rec.get("source"))
-        if rec.get("kind") == "run":
+        if rec.get("kind") == "run" and rec.get("status") != "note":  # a note is a remark inside a run
             last[source] = rec
             if rec.get("status") in ("ok", "skip"):
                 last_ok[source] = str(rec.get("ts"))
@@ -181,8 +203,10 @@ def main(argv: list[str] | None = None) -> int:
     p_sec = sub.add_parser(
         "sec-companies", help="SEC ticker file and the filing list of every listed company (monthly, by hand; hours)"
     )
-    p_sec.add_argument("--resume", action="store_true", help="continue an interrupted or limited batch")
-    p_sec.add_argument("--limit", type=int, metavar="N", help="stop after N new filing lists (for a first try)")
+    p_sec_how = p_sec.add_mutually_exclusive_group()
+    p_sec_how.add_argument("--resume", action="store_true", help="continue an interrupted or limited batch")
+    p_sec_how.add_argument("--new", action="store_true", help="start a fresh batch although one is unfinished")
+    p_sec.add_argument("--limit", type=_at_least_one, metavar="N", help="stop after N companies (for a first try)")
     p_sec.set_defaults(func=cmd_sec_companies)
     p_verify = sub.add_parser("verify", help="check every stored file against the manifest; writes nothing")
     p_verify.add_argument("--quick", action="store_true", help="check the manifest and file sizes only")

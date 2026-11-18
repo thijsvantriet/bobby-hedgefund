@@ -128,13 +128,23 @@ far inside the SEC's limit of 10 requests a second, and no bulk download is used
 
 **How it is built** (`src/bobby_hedgefund/archive/sec.py`, command `bobby-archive sec-companies`):
 - the header is `public-data-archiver` followed by the contact address; the address is read by
-  `src/bobby_hedgefund/settings.py` from the environment or the local `.env`, and a test checks that it reaches no
-  stored file, manifest line, printed line or error text;
+  `src/bobby_hedgefund/settings.py` from the environment or the local `.env`. Tests check that it reaches no
+  stored file, manifest line or printed line when the SEC refuses, when the connection drops and when our own code
+  fails, and that it is not shown when the fetcher itself is printed;
+- the header only ever goes to `www.sec.gov` and `data.sec.gov`: a redirect to any other host is refused, because
+  a redirect carries the header along;
 - a pause of one second before every request; "too many requests" and "forbidden" end the job at once, and
-  `--resume` continues the same batch later;
+  `--resume` continues the same batch later. While a batch is unfinished, a fresh one starts only with `--new`;
 - every file is stored as received under the archive source `sec`, with the batch and the company number in its
   manifest line; a filing list that did not change since the last batch is not stored twice;
-- the job is started by hand. It holds the archive's lock while it runs, so it is run during the day, not at 23:30.
+- a company the data service does not know, or one whose answer is not its filing list, gets a note in the
+  manifest and the job goes on; ten such answers in a row stop it;
+- the job is started by hand. It holds the archive's lock while it runs, and the nightly run at 23:30 needs that
+  lock: the command sends no new request after 22:30 local time and does not start after that time. What is left
+  is fetched the next day with `--resume`.
+
+A reviewer agent read the code before the pull request; its findings (the redirect rule, the odd answer that could
+block a batch, the evening stop, the `--new` rule) are worked in.
 
 ## Sources
 - SEC, [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data) (read 2026-11-17)

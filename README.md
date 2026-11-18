@@ -77,7 +77,8 @@ bobby-archive verify               # re-reads every file and checks it against i
 bobby-archive run                  # run the daily download by hand
 bobby-archive baseline             # one-time full copy of the trial records (--resume if interrupted)
 bobby-archive sec-companies        # monthly, by hand, during the day: SEC ticker file and filing lists (hours;
-                                   # --limit N for a first try, --resume to continue)
+                                   # --limit N for a first try, --resume to continue; no new request after
+                                   # 22:30, so the nightly run is never kept waiting)
 ```
 
 The nightly job runs an installed snapshot of the program, not this folder. After changing the archive code (merged
