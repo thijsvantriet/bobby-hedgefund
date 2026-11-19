@@ -186,7 +186,9 @@ def fields(required: dict[str, Check], optional: dict[str, Check] | None = None)
             if name in required:
                 continue
             if name not in extra:
-                _fail(where, f"unknown field '{name}'")
+                # Only a short, plain name is repeated in the message: a made-up field name can hold anything.
+                plain = isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_]{1,30}", name)
+                _fail(where, f"unknown field '{name}'" if plain else "unknown field")
             extra[name](item, f"{where}/{name}")
 
     return check
