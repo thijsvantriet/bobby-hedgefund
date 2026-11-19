@@ -1,6 +1,6 @@
 # 0009. Agent team: roles, models, how versions are logged, repeated decisions
 Date: 2026-11-18
-Status: proposed (accepted when the owner merges it)
+Status: accepted (2026-11-19, the owner merged it with the recommendations under "Open points for the owner")
 
 ## Context
 The spec fixes who is on the team and which model each role gets (`docs/SPEC.md`, section 3), and record 0003
@@ -201,7 +201,7 @@ Fixed here because the agents' instructions and the log's checks (record 0004, p
    the task, allowed and logged by the script.
 
 ## Open points for the owner
-Each has a default that the pilot runs with.
+Each has a default that the pilot runs with. Decided 2026-11-19: the owner took all three recommendations.
 1. **Three runs always (option A), or only when the first run wants to buy (option B)?** Recommended: A, as the
    spec says. The pilot measures what it costs; the spec already lists "no repeated decisions" as the second step
    when usage is too high.
