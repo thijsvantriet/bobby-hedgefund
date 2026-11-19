@@ -78,6 +78,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **a try-out of one whole day** (docs/pilot/DRY-RUN-2026-11.md). One round on the evening's saved data, Careful fund only, in a data folder of its own, with stand-in agents (the agent files are only loaded when a session starts); nothing of it counts. The round took 7.5 minutes of its 45: 21 agent runs, 10 forecasts, one decision on which all three runs agreed, a log of 13 records in one unbroken chain. The script threw away 11 of the 21 answers, 8 of them because a stand-in used a tool a real agent does not have. Afterwards one real agent file was tried: it ran on the model and effort of its file, and the reading check refused a read from inside the agent. Not measured: the share of the usage limits. Next: day 0 in a fresh session after the merge.
 
+2026-11-19: **all of it merged into main** (PRs #19-#26) and record 0009 accepted with its three recommendations (always three manager runs; the six XBI-only companies are never analysed; a 40-word quote limit). The try-out's data folder is deleted; its report stays in docs/pilot/. From now on every Claude Code session in this repository runs the round's small checks (`.claude/settings.json`); outside a round they let everything through.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -93,8 +95,8 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
    and wait for the owner's yes; its AACT download is settled (0014).
 3. ~~Record 0009, agent files, decision log, fund books, session preparation, the daily round and a try-out of
-   one day~~ (built 2026-11-18, seven pull requests). **Now (owner):** merge them in order; then **day 0**: open a
-   fresh session and type `/bobbyhedgefund-day` once (the first round with the real agent files, Careful fund,
+   one day~~ (built 2026-11-18; merged 2026-11-19, PRs #19-#26; record 0009 accepted). **Now (owner):** **day 0**:
+   open a fresh session and type `/bobbyhedgefund-day` once (the first round with the real agent files, Careful fund,
    pilot); then the one-week pilot with one fund, which measures how much of the usage limits a session takes.
    Open before the pilot: the rule on `main` that refuses rewriting (record 0004), and a way to read the usage
    percentages (a status-line helper, or `/usage` by hand).
