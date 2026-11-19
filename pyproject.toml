@@ -15,7 +15,9 @@ dependencies = [
 [project.scripts]
 bobby-archive = "bobby_hedgefund.archive.cli:main"
 bobby-filings = "bobby_hedgefund.filings.cli:main"
+bobby-log = "bobby_hedgefund.log.cli:main"
 bobby-prices = "bobby_hedgefund.prices.cli:main"
+bobby-publish = "bobby_hedgefund.log.cli:publish_main"
 bobby-trials = "bobby_hedgefund.trials.cli:main"
 bobby-universe = "bobby_hedgefund.universe.cli:main"
 

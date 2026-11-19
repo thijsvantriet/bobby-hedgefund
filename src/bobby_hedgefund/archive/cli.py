@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .. import settings
+from .. import paths, settings
 from . import sec, sec_filings, sec_shares, sources
 from .fetch import DEFAULT_USER_AGENT, Fetcher, FetchError
 from .store import Archive, ArchiveError, Busy, new_run_id, read_records
@@ -19,7 +19,7 @@ from .store import Archive, ArchiveError, Busy, new_run_id, read_records
 
 def data_dir() -> Path:
     """Where the archive lives: outside the repository, inside the home folder that is backed up every night."""
-    return Path(os.environ.get("BOBBY_DATA_DIR") or Path.home() / "bobby-hedgefund-data")
+    return paths.data_dir()
 
 
 def archive_root() -> Path:

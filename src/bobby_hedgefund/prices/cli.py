@@ -168,14 +168,21 @@ def cmd_purge(args: argparse.Namespace) -> int:
         print(f"universe files: {len(stripped)} replaced by a copy without the price columns")
     for name in left:
         print(f"STILL HOLDS PRICES, look at it by hand: universe/{name}")
+    private_note, counts = purge.purge_private(data_dir())
+    for name, count in counts.items():
+        print(
+            f"deleted: {name}/ with {count} files (private log content, fund books, sessions, reports, conversations)"
+        )
+    if private_note is not None:
+        print(f"What was removed there is listed in {private_note}")
+        print("The public log stays; `bobby-log verify` now reports its sealed content as deleted under record 0007.")
     note, files = purge.purge(data_dir())
     if note is None:
         print("nothing to delete: there is no prices folder")
         return 1 if left else 0
     print(f"deleted: the prices folder with {files} files. What was removed is listed in {note}")
     print("Still to do by hand (docs/decisions/0007, point 4): older copies in the machine's backup must be gone")
-    print("within 90 days. Later places that hold prices (private fund books, session folders) are not covered")
-    print("by this command yet.")
+    print("within 90 days, and Claude Code's own records of the sessions must not be kept longer than its default.")
     return 1 if left else 0
 
 

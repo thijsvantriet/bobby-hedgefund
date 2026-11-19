@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import shutil
 from pathlib import Path
 
@@ -118,3 +119,93 @@ def purge(data_dir: Path) -> tuple[Path | None, int]:
             "run the purge again to finish it"
         ) from exc
     return note, len(on_disk)
+
+
+# Everything else that holds prices (docs/decisions/0007, point 4): the private half of the decision log, the
+# private fund books, the session folders, the reports and the saved conversations, of the real run and the pilot.
+PRIVATE_FOLDERS = ("log-private", "books", "sessions", "reports", "conversations")
+PRIVATE_ROOTS = ("", "pilot")
+LOG_PRIVATE = "log-private"
+DELETED_MARK = "DELETED-0007"
+
+
+def _records_in_head(root: Path) -> int:
+    """The number of records the log of this root has, read from its HEAD file; 0 when there is none."""
+    try:
+        head = json.loads((root / "staging" / "HEAD").read_text(encoding="utf-8"))
+        return int(head["records"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0
+
+
+def _leave_marker(root: Path, stamp_text: str) -> None:
+    """The marker that tells `bobby-log verify` up to which record the private content was deleted on purpose."""
+    folder = root / LOG_PRIVATE
+    folder.mkdir(mode=0o700, exist_ok=True)
+    marker = folder / DELETED_MARK
+    if not marker.exists():
+        write_new(
+            marker,
+            f"upto {_records_in_head(root)}\ncontent deleted under docs/decisions/0007, point 4, on {stamp_text}\n",
+        )
+
+
+def purge_private(data_dir: Path) -> tuple[Path | None, dict[str, int]]:
+    """Remove the private folders that hold prices. Returns the note that lists what was removed (folder names
+    and file counts, nothing else) and the number of files per folder; (None, {}) when there was nothing.
+
+    The public log stays: its sealed fingerprints then have no content any more. A marker is left in the place
+    of the log's private folder, so that `bobby-log verify` reports "content deleted under record 0007" and not
+    damage. Each folder is set aside under another name in one step and then deleted; running the purge again
+    finishes an interrupted one, the marker included."""
+    if data_dir.is_symlink():
+        raise PurgeError("the data folder is a link to somewhere else; nothing was deleted")
+    stamp = utcnow()
+    counts: dict[str, int] = {}
+    todo: list[tuple[Path, Path, str]] = []
+    for root_name in PRIVATE_ROOTS:
+        root = data_dir / root_name if root_name else data_dir
+        if root.is_symlink():
+            raise PurgeError(f"the folder {root_name}/ is a link to somewhere else; nothing was deleted")
+        if not root.is_dir():
+            continue
+        for left in sorted(root.glob(".*-purging-private-*")):
+            if left.is_dir() and not left.is_symlink():
+                if left.name.startswith(f".{LOG_PRIVATE}-"):
+                    _leave_marker(root, iso(stamp))  # the earlier purge stopped before it could leave one
+                shutil.rmtree(left)
+        for name in PRIVATE_FOLDERS:
+            target = root / name
+            if target.is_symlink():
+                raise PurgeError(f"{root_name or '.'}/{name} is a link to somewhere else; nothing was deleted")
+            if target.resolve().parent != root.resolve():
+                raise PurgeError(f"{root_name or '.'}/{name} is not where it should be; nothing was deleted")
+            if not target.is_dir():
+                continue
+            files = sum(1 for p in target.rglob("*") if p.is_file() and p.name != DELETED_MARK)
+            if files == 0:
+                continue
+            counts[f"{root_name + '/' if root_name else ''}{name}"] = files
+            todo.append((root, target, name))
+    if not todo:
+        return None, counts
+    lines = [
+        "# Deleted under docs/decisions/0007, point 4: the private files that hold prices",
+        f"# when: {iso(stamp)}",
+        "# folder, number of files:",
+        *[f"{name}  {count}" for name, count in counts.items()],
+    ]
+    note = data_dir / NOTES_FOLDER / f"{stamp:%Y%m%dT%H%M%SZ}_private.txt"
+    write_new(note, "\n".join(lines) + "\n")  # the note exists before anything is removed
+    for root, target, name in todo:
+        aside = target.with_name(f".{name}-purging-private-{stamp:%Y%m%dT%H%M%SZ}")
+        target.rename(aside)
+        if name == LOG_PRIVATE:
+            _leave_marker(root, iso(stamp))  # a new marker: after a second purge it names the newest record
+        try:
+            shutil.rmtree(aside)
+        except OSError as exc:
+            raise PurgeError(
+                f"{name} was set aside but not fully deleted ({type(exc).__name__}); run the purge again to finish it"
+            ) from exc
+    return note, counts
