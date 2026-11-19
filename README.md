@@ -64,6 +64,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: streams 0-3 merged into `main` (PRs #15, #16, #17) and installed: prices every morning (07:30, again 12:30), SEC filings inside the nightly archive run, trial-record changes at 01:15. 272 tests pass; three reviewer runs (Opus) before the merge, their findings worked in. Checked after the install: archive and prices pass their fingerprint check.
 
+2026-11-18: **record 0009 drafted** (docs/decisions/0009, "proposed" until the owner merges it): the agent team as files with a fixed model, effort and tool list; model and effort are read by script from each agent run's own record and compared with the file; an agent's answer is taken from that record too, so the session that starts the agents cannot change it; every portfolio-manager round runs three times. Checked against the Claude Code documentation; seven points that documentation could not settle are listed as pilot checks. Three open points for the owner, each with a default.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
