@@ -68,6 +68,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **the decision log built** (`bobby-log`, `bobby-publish`; docs/decisions/0004, "Update 2026-11-18"; see "Decision log" below). Lines that are only ever added, each with the fingerprint of the line before it, also across day files; content that may not be public (everything from prices) goes to a private file and the public line shows only its fingerprint; written text is checked for long quotes, prices and untraceable amounts before a line is written; the publish script only adds to `track-record/` and refuses everything else. Tried in a scratch folder: a changed, removed, re-ordered and lost line and changed private content are each caught. Only the pilot mode is switched on: nothing is sent to GitHub, and the real log stays off until the owner's go.
 
+2026-11-18: **the fund books built** (`bobby-funds`; docs/decisions/0005, "Update 2026-11-18"; see "Fund books" below). The books are recomputed from the decision log: a fill is a logged fact and is never worked out again. Booking walks through every trading day since the last one booked and follows the rules of record 0005 to the cent (whole shares, sells before buys, buys cut in proportion, the 0.5% minimum, the five-day wait, the 30% brake). The risk limits are checked in code when a decision is made, and a refused or reduced order is logged. Share splits and takeovers for cash and for shares are booked; the rarer events are refused until built. The Dice fund is complete (a draw anyone can repeat from fingerprints, 1,000 funds in private files); the Rules fund has its selection rule but holds nothing until streams 4 and 5 give it its inputs. Tried on the real saved prices with made-up orders: 75 trading days, 23 fills, one real share split, 1,000 Dice funds, and a full recomputation equal to the cent. No broker, no real order: paper money only.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -248,6 +250,43 @@ bobby-publish day 2026-11-30       # the day's one commit (pilot: in a repositor
 - The fixed form of a line: field names in alphabetical order, no spaces, letters outside the basic English set as
   codes, and no number with a decimal point (money is whole cents, a percentage is text such as `2.5%`).
 - Live mode refuses to run until a file named `LIVE` exists in the data folder: the owner's go.
+
+## Fund books
+Design: docs/decisions/0005. **Paper money only: there is no broker and no real order; a trade is a line in our own
+log.** Everything these commands compute comes from prices and stays in the data folder.
+
+```
+bobby-funds start --funds careful,rules,dice   # start funds with $1,000,000 of paper money each
+bobby-funds book                   # book fills, share splits, takeovers and the values since the last booked day
+bobby-funds draw                   # first session of a month: the Rules and Dice funds are drawn anew
+bobby-funds check                  # recompute every stored value from the log and the saved prices
+bobby-funds status                 # positions, cash and waiting orders (private: for your own screen only)
+bobby-funds event --kind "cash takeover" --cik ... --effective ... --filing <SEC link> --cash-per-share 12.50
+```
+
+- **The log is the only truth.** Positions, cash and values are added up from its records; `check` does that
+  again from scratch and compares with what was stored, to the cent.
+- **Booking** goes trading day by trading day, also over days without a session. It stops at a trading day whose
+  price file is not stored yet, at a day newer than the saved list of share splits, and before the day of a
+  session whose time of publication the log does not hold yet (its orders have no fill day until then).
+- **The fill day** follows from when the day's publication was received (docs/decisions/0003): the first trading
+  day whose opening is at least 30 minutes later, and never the session's own day when it started at or after
+  14:00 Amsterdam time. The days the exchange is closed are a hand-made list in `funds/calendar.py`, copied from
+  the exchange's page; it covers 2026 and 2027 and must be extended for later years.
+- **Limits in code**, checked when a decision is made, with waiting orders counted as filled: at most 5% per stock
+  (8% for Bold), 25 positions, 3 positions with a make-or-break result within 30 days (8 for Bold), only covered
+  companies of the universe, nothing bought at 30% or more below the fund's own highest value, no trade below
+  0.5%, one order per company in a round. The public log does not name that 30% rule when it stops a buy, and
+  seals a size that follows from what a position is worth: both would give a return away.
+- **Company events.** Share splits come from the saved list of splits and are marked "not checked against the
+  filing". A takeover is entered by hand from its SEC filing with `bobby-funds event` and booked in the next round.
+- **Dice.** For fund number n, every covered company gets the SHA-256 of the text made of the starting number,
+  the month (`2027-02`), n and the company's SEC number, each on its own line; the fund holds the 20 with the
+  lowest fingerprints. The public log holds the starting number and each month's covered list; the funds' orders,
+  fills and values are in private files whose fingerprints are logged (sealed).
+- **Rules** holds nothing until a file with the months of cash and the catalysts exists (streams 4 and 5); its
+  exact rules, like those of Dice, are fixed in record 0010.
+- The index funds XBI, IBB and URTH are bought on day one and held; their values are stored privately only.
 
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with

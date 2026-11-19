@@ -32,17 +32,23 @@ FILL_RULE_PILOT = (
     "publication. Pilot trades do not count."
 )
 EVENT_KINDS = ("trial result", "fda decision", "other regulator decision", "company event", "other")
+# A limit that can only be reached through the fund's own value (the brake: 30% below its highest value) is not
+# named in public: it would say what the fund's return is (docs/decisions/0007, point 6). The public line says
+# "a limit on the fund's value"; which one is in the sealed part.
+VALUE_LIMIT = "a limit on the fund's value"
+VALUE_CANCELLED = "cancelled by a limit on the fund's value"
 LIMITS = (
     "per-stock limit",
     "25 positions",
     "make-or-break limit",
     "not on the covered list",
     "not in the universe",
-    "brake",
+    VALUE_LIMIT,
     "nothing to sell",
     "below the smallest trade",
+    "one order per company a round",
 )
-CLOSED = ("lapsed", "replaced", "cancelled by the brake", "too small", "nothing to sell", "company left")
+CLOSED = ("lapsed", "replaced", VALUE_CANCELLED, "too small", "nothing to sell", "company left")
 COMPANY_EVENTS = ("split", "cash takeover", "share takeover", "cash dividend", "new ticker or name")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
@@ -345,7 +351,9 @@ KINDS: dict[str, Check] = {
             "company": COMPANY,
             "limit": one_of(*LIMITS),
             "asked_pct": pct,
-            "allowed_pct": pct,
+            # Sealed when the room that was left follows from what the position is worth today: with the size that
+            # was bought it would give the share's return away. Public when it follows from the limit alone.
+            "allowed_pct": sealable(pct),
         },
         {"basis": sealed("price")},
     ),
@@ -386,8 +394,10 @@ KINDS: dict[str, Check] = {
     "dice_seed": _kind({"seed": hex64, "rule_version": text(40), "funds": whole(1), "per_fund": whole(1)}),
     "dice_draw": _kind(
         {"month": month, "covered": many(whole(1), 0, 2000), "rule_version": text(40), "seed_ref": whole(1)},
-        {"fills": sealed("price")},
+        {"orders": sealed("price")},  # the private file with the orders of the 1,000 funds, and its fingerprint
     ),
+    # One per trading day that was booked: the values of the funds and index funds at the close, all sealed.
+    "day_booked": _kind({"day": day, "rule_version": text(40), "values": sealed("price")}),
     "rules_draw": _kind(
         {"month": month, "chosen": many(whole(1), 0, 20), "rule_version": text(40)},
         {"why_empty": text(600)},
