@@ -66,6 +66,18 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-18: **record 0009 drafted** (docs/decisions/0009, "proposed" until the owner merges it): the agent team as files with a fixed model, effort and tool list; model and effort are read by script from each agent run's own record and compared with the file; an agent's answer is taken from that record too, so the session that starts the agents cannot change it; every portfolio-manager round runs three times. Checked against the Claude Code documentation; seven points that documentation could not settle are listed as pilot checks. Three open points for the owner, each with a default.
 
+2026-11-18: **the decision log built** (`bobby-log`, `bobby-publish`; docs/decisions/0004, "Update 2026-11-18"; see "Decision log" below). Lines that are only ever added, each with the fingerprint of the line before it, also across day files; content that may not be public (everything from prices) goes to a private file and the public line shows only its fingerprint; written text is checked for long quotes, prices and untraceable amounts before a line is written; the publish script only adds to `track-record/` and refuses everything else. Tried in a scratch folder: a changed, removed, re-ordered and lost line and changed private content are each caught. Only the pilot mode is switched on: nothing is sent to GitHub, and the real log stays off until the owner's go.
+
+2026-11-18: **the fund books built** (`bobby-funds`; docs/decisions/0005, "Update 2026-11-18"; see "Fund books" below). The books are recomputed from the decision log: a fill is a logged fact and is never worked out again. Booking walks through every trading day since the last one booked and follows the rules of record 0005 to the cent (whole shares, sells before buys, buys cut in proportion, the 0.5% minimum, the five-day wait, the 30% brake). The risk limits are checked in code when a decision is made, and a refused or reduced order is logged. Share splits and takeovers for cash and for shares are booked; the rarer events are refused until built. The Dice fund is complete (a draw anyone can repeat from fingerprints, 1,000 funds in private files); the Rules fund has its selection rule but holds nothing until streams 4 and 5 give it its inputs. Tried on the real saved prices with made-up orders: 75 trading days, 23 fills, one real share split, 1,000 Dice funds, and a full recomputation equal to the cent. No broker, no real order: paper money only.
+
+2026-11-18: **the session preparation built** (`bobby-session prepare`; docs/decisions/0003, "Update 2026-11-18"; see "Session preparation" below). At a data cut-off it builds the folder the agents may read: per company what is new since the last session (SEC filings as plain text, changes in trial records, numbers worked out from saved prices), a screening list in batches, and a numbered list of every source with its fingerprint and the time it was saved. Only files saved before the cut-off are used; a file our own jobs made is admitted only when all of its inputs were saved before it. The companies that may not be named in public get no folder at all. Trial changes are linked to a company once the linking table exists; until the owner's check they are counted and left out. Tried on today's real data: 215 companies, 637 new filings, about a minute.
+
+2026-11-18: **the agent files and the reading fence built** (`.claude/agents/`, `.claude/hooks/`; docs/decisions/0009, "Update 2026-11-18"; see "Agents" below). Twelve agent files with a fixed model, effort and tool list (reading files only), all made from one role table in the code, so a role's instructions exist in one place. Six checks that Claude Code runs by itself: an agent reads only inside the session folder, and not what belongs to another fund; an agent is started only with a prepared task text, once; during a round the leading session changes no files, messages or stops no agent, and uses the command line only for the round's own commands; and how a session began is noted. Outside a round they do nothing. All were tested on recorded inputs before being switched on; whether they fire in a real session is a pilot check.
+
+2026-11-18: **the daily round built** (`/bobbyhedgefund-day`, `bobby-session`; see "The daily round" below). The owner types one command in a fresh session; a script then runs step 1 before any model has read anything, and the session only runs the round's commands and starts the agents they name. Each agent's answer is taken by script from the agent's own record, with its exact model, effort and the tools it used; the step clock is kept by the script; every portfolio-manager round runs three times and a new position needs two of three. At the end the conversation is copied to the data folder and the usage is counted per role. A whole day runs as a test with recorded answers. Only the pilot runs: nothing is sent anywhere.
+
+2026-11-18: **a try-out of one whole day** (docs/pilot/DRY-RUN-2026-11.md). One round on the evening's saved data, Careful fund only, in a data folder of its own, with stand-in agents (the agent files are only loaded when a session starts); nothing of it counts. The round took 7.5 minutes of its 45: 21 agent runs, 10 forecasts, one decision on which all three runs agreed, a log of 13 records in one unbroken chain. The script threw away 11 of the 21 answers, 8 of them because a stand-in used a tool a real agent does not have. Afterwards one real agent file was tried: it ran on the model and effort of its file, and the reading check refused a read from inside the agent. Not measured: the share of the usage limits. Next: day 0 in a fresh session after the merge.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -80,8 +92,12 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    make the linking table. After that: the by-hand check of 20 companies for missed names.
    Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
    and wait for the owner's yes; its AACT download is settled (0014).
-3. **Now (Claude):** record 0009, agent files, decision log and fund books; then the one-week pilot with one fund, which measures how much of the
-   usage limits a session takes.
+3. ~~Record 0009, agent files, decision log, fund books, session preparation, the daily round and a try-out of
+   one day~~ (built 2026-11-18, seven pull requests). **Now (owner):** merge them in order; then **day 0**: open a
+   fresh session and type `/bobbyhedgefund-day` once (the first round with the real agent files, Careful fund,
+   pilot); then the one-week pilot with one fund, which measures how much of the usage limits a session takes.
+   Open before the pilot: the rule on `main` that refuses rewriting (record 0004), and a way to read the usage
+   percentages (a status-line helper, or `/usage` by hand).
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026. Needed before it: streams 0-3, record 0009, the agent files, the decision log with its leak check, and the fund books.
 5. In the first live weeks: the app, the alerts and the first monthly letter. A review with the owner every month.
 
@@ -216,6 +232,175 @@ bobby-trials changes               # by hand; a few minutes; writes only changes
 - Shown this way is what the registry *posted*; a change is seen on the night its record was archived.
 - An archived page or record that cannot be read is counted and reported once (phone message "Bobby trials"),
   not every night.
+
+## Session preparation
+Design: docs/decisions/0003 (point 1) and 0009. The first thing a daily round does, before any model has read
+anything.
+
+```
+bobby-session prepare              # build today's session folder at the data cut-off (now)
+```
+
+- **Where:** `~/bobby-hedgefund-data/pilot/sessions/<date>/` (never in git; it holds numbers from prices and text
+  from filings). Made once per day and never changed; its files are read-only.
+- **Only what was saved before the data cut-off.** A saved file counts by the time in its line of the saved-files
+  list, never by a date of the file system. A file our own jobs made (the universe, the linking table) is used
+  only when every file in its own list of inputs was saved before the cut-off.
+- **Per company** (`companies/<SEC number>/`): `company.md` (who it is, what is new since the last session),
+  `numbers.md` (worked out by script from saved prices; private), `trials.md`, the new filings as plain text
+  (the form itself and its press releases), and our own newest report on it.
+- **`inputs.jsonl`**: one numbered line per source with its fingerprint, the time it was saved and its link. The
+  agents name their sources by these numbers; the session's first log record carries the fingerprint of this list.
+- **Screening:** `screening/batch-NN.md` with a short digest per company that has news, 25 a file. Companies
+  without any new item are listed in `no-news.txt` by the script and are sent to no model.
+- **What counts as new:** what no earlier session was shown (their lists of inputs are read), saved before the
+  cut-off. A filing or a change older than three days before the last session that was only fetched now is left
+  out (and counted). A move of the share of 15% or more since the prices the last session saw counts as an item
+  by itself. A filing a company made as a holder of another company's shares is marked as such and is no news
+  about the company itself.
+- **Not in the folder at all:** the companies that are in the universe through the XBI fund only (record 0009,
+  open point 2). Their names go to a private list that only grows; they are taken out of every text copied into
+  the folder, and the log and the publish script use the list as a last check.
+- **Trials** are linked through the linking table once the owner's check has made one; until then each company's
+  trial file says "not linked yet" and the changes are only counted.
+- **Who gets a deep analysis** (`session/select.py`, the order of the spec): holdings with news, then what the
+  screening flagged, then a catalyst within 60 days, then the rest in a fixed rotation.
+
+## The daily round
+Design: docs/SPEC.md section 1; docs/decisions/0003 and 0009. **Pilot only for now: pilot trades do not count,
+and nothing is sent to GitHub.**
+
+**The owner's one action:** open a fresh session in this folder (a new one, or `/clear`) and type
+`/bobbyhedgefund-day`. Everything after that runs by itself. The command refuses in a session that is not fresh,
+in one that has done a round before, when the day already has a round, when last night's jobs did not run, when
+the project folder has changes that are not committed, and while a file named `STOP` is in the data folder.
+
+```
+bobby-session start --session-id <id>   # step 1 (the command runs this itself, before any model reads anything)
+bobby-session book                 # step 2: fills, company events and values since the last session
+bobby-session screening            # step 3: prints the agents to start; then: bobby-session collect screening
+bobby-session analysts             # step 4: who gets a deep analysis; then: collect analysts (joins the report)
+bobby-session debate               # step 5, Debate fund only: bull and bear, two rounds; then: collect debate
+bobby-session managers             # step 5: three runs per AI fund; then: collect managers
+bobby-session decide               # step 6: two of three, the limits, the day's records (final from here)
+bobby-session publish              # steps 7 and 8: the day page and the commit (pilot: on this machine only)
+bobby-session end                  # step 9: copy of the conversation, usage per role, the summary
+bobby-session clock                # the minute of the round and what is still allowed
+bobby-session end --abort          # after a round that broke off: switch its checks off (one restart is allowed)
+bobby-session canary               # first pilot days: one agent tries to read outside the folder; must be refused
+```
+
+- **The session decides nothing.** It runs these commands and starts the agents they print, each with one fixed
+  sentence. A script takes every answer from the agent's own record and checks: the starting sentence, that
+  nothing else was said to it, the tools it used and where, its model and effort against its agent file, and
+  the form of the answer. An answer that fails any of these is thrown away; nothing is repaired or retyped.
+- **The step clock is the script's:** no new deep analysis after minute 20; an analyst's answer after minute 28
+  waits for the next session; a portfolio manager's answer after minute 38 is "no decision today: out of time";
+  hard stop at 45. At most four deep analyses, or two on a day with weekly or monthly extras.
+- **Three runs per fund.** A new position needs at least two of three, at the smallest size among them, with
+  that run's thesis. Everything else follows run number 1. One readable answer is enough for selling, not for
+  buying. The log records what each run said.
+- **Where things go** (all in `~/bobby-hedgefund-data/pilot/`, never in git): `sessions/<date>/` (what the agents
+  may read, plus `round/` with the day's reports and each fund's own file), `rounds/<date>/` (the round's state,
+  the collected answers, the minutes per step, `usage.json`), `reports/<SEC number>/<date>.md` (our reports: a
+  company with a report is on the covered list), `conversations/<date>_<session>/` (the copy of the session's
+  records, with fingerprints; completed at the start of the next round), `staging/` and `track-record-repo/`
+  (the log, the day pages and the pilot's local commits).
+- **One restart** after a round broke off, in a new fresh session; it keeps the first start time and data
+  cut-off. A second break makes the day a skipped day.
+- **Usage** is counted from the session's own records: runs, model, effort, tokens and seconds per role, minutes
+  per step, how often the three runs agreed. The share of the five-hour and weekly limits is only given by Claude
+  Code to the status line; reading it by script is an open point for the owner (docs/pilot/).
+
+## Agents
+Design: docs/decisions/0009 and 0003 (point 3).
+
+- **`.claude/agents/bobby-*.md`**: screening (Haiku), the weekly check on the screening, four analysts, the results
+  reader, bull and bear (Opus, high effort), one portfolio manager per AI fund (Fable, high effort). Every file
+  has `tools: Read, Grep, Glob` (no web, no command line, no way to start another agent), no project briefing, a
+  full model name and a fixed effort. Each ends in a fixed form of answer that a script reads and checks.
+- **One source.** The files are checked copies of `src/bobby_hedgefund/session/roles.py`; a test fails when they
+  differ. To change a role, change it there, run `roles.write_files`, and review the difference: the fingerprint
+  of the file goes into every log record that agent contributes to.
+- **`.claude/hooks/bobby_hooks.py`**, run by Claude Code itself:
+  - *fence* (named in every agent file): an agent may read only inside the session folder; links are followed
+    first, a search must name a folder, and anything it cannot judge is refused;
+  - *agent-start*: during a round an agent is started only with the exact sentence the script printed for a
+    task, with that task's agent, once, without a model or effort chosen by hand;
+  - *no-edits*: during a round the leading session changes no files;
+  - *hands-off*: during a round no agent is sent a message, and none is stopped before the script says so;
+  - *round-commands*: during a round the command line is only for `bobby-session <step>`, one at a time;
+  - *session-start*: notes whether a session is new, cleared or resumed, for the fresh-session check.
+- **Outside a round all but the fence do nothing** (and the fence exists only inside an agent). A round is active while `round-active.json` in the data folder
+  names the running session and is younger than 90 minutes.
+- Refusals are noted in the round's folder, and later in the log.
+
+## Decision log
+Design: docs/decisions/0004 and 0009. Until the funds start only the **pilot** log exists, in
+`~/bobby-hedgefund-data/pilot/` (never in git, never sent anywhere); the real one starts with the owner's go.
+
+```
+bobby-log verify                   # re-check the whole chain of fingerprints and the private files; writes nothing
+bobby-log verify --dir <folder>    # the same for a copy of track-record/ (anyone can run this; public half only)
+bobby-log show --day 2026-11-30    # print records (--open also shows sealed content: private)
+bobby-log head                     # the newest fingerprint and the number of records
+bobby-publish plan                 # what publishing would do; writes nothing
+bobby-publish day 2026-11-30       # the day's one commit (pilot: in a repository inside the pilot folder)
+```
+
+- `staging/`: the public files as they are prepared, exactly the tree that is placed in `track-record/`:
+  `log/<year>/<month>/<date>.jsonl` (one record per line), `HEAD` (newest fingerprint and number of records),
+  `forecasts.csv` (only grows; an outcome is a new line).
+- `log-private/`: per record with sealed content one file with that content and the random values. Falls under
+  the deletion rule for prices (`bobby-prices purge`); after it `verify` reports "content deleted under record
+  0007" instead of damage.
+- **The fingerprint of a record** is the SHA-256 of: the fingerprint of the record before it, a line-feed, and the
+  bytes of the line. The first record starts from a fixed value: the SHA-256 of the text
+  `bobby-hedgefund decision log, format 1, live` (for the pilot the last word is `pilot`, so a pilot record can
+  never be placed in the real log).
+- **A sealed field** shows the SHA-256 of: a random value (64 characters), a line-feed, and the content written in
+  the log's fixed form. Example to check a program against: random value sixty-four zeros and the content
+  `"12.34"` give this fingerprint (sha256): `2c8629da9624bda7b55097b55a1f701433a8d067599434728e2f7fd1b28d4f21`.
+- The fixed form of a line: field names in alphabetical order, no spaces, letters outside the basic English set as
+  codes, and no number with a decimal point (money is whole cents, a percentage is text such as `2.5%`).
+- Live mode refuses to run until a file named `LIVE` exists in the data folder: the owner's go.
+
+## Fund books
+Design: docs/decisions/0005. **Paper money only: there is no broker and no real order; a trade is a line in our own
+log.** Everything these commands compute comes from prices and stays in the data folder.
+
+```
+bobby-funds start --funds careful,rules,dice   # start funds with $1,000,000 of paper money each
+bobby-funds book                   # book fills, share splits, takeovers and the values since the last booked day
+bobby-funds draw                   # first session of a month: the Rules and Dice funds are drawn anew
+bobby-funds check                  # recompute every stored value from the log and the saved prices
+bobby-funds status                 # positions, cash and waiting orders (private: for your own screen only)
+bobby-funds event --kind "cash takeover" --cik ... --effective ... --filing <SEC link> --cash-per-share 12.50
+```
+
+- **The log is the only truth.** Positions, cash and values are added up from its records; `check` does that
+  again from scratch and compares with what was stored, to the cent.
+- **Booking** goes trading day by trading day, also over days without a session. It stops at a trading day whose
+  price file is not stored yet, at a day newer than the saved list of share splits, and before the day of a
+  session whose time of publication the log does not hold yet (its orders have no fill day until then).
+- **The fill day** follows from when the day's publication was received (docs/decisions/0003): the first trading
+  day whose opening is at least 30 minutes later, and never the session's own day when it started at or after
+  14:00 Amsterdam time. The days the exchange is closed are a hand-made list in `funds/calendar.py`, copied from
+  the exchange's page; it covers 2026 and 2027 and must be extended for later years.
+- **Limits in code**, checked when a decision is made, with waiting orders counted as filled: at most 5% per stock
+  (8% for Bold), 25 positions, 3 positions with a make-or-break result within 30 days (8 for Bold), only covered
+  companies of the universe, nothing bought at 30% or more below the fund's own highest value, no trade below
+  0.5%, one order per company in a round. The public log does not name that 30% rule when it stops a buy, and
+  seals a size that follows from what a position is worth: both would give a return away.
+- **Company events.** Share splits come from the saved list of splits and are marked "not checked against the
+  filing". A takeover is entered by hand from its SEC filing with `bobby-funds event` and booked in the next round.
+- **Dice.** For fund number n, every covered company gets the SHA-256 of the text made of the starting number,
+  the month (`2027-02`), n and the company's SEC number, each on its own line; the fund holds the 20 with the
+  lowest fingerprints. The public log holds the starting number and each month's covered list; the funds' orders,
+  fills and values are in private files whose fingerprints are logged (sealed).
+- **Rules** holds nothing until a file with the months of cash and the catalysts exists (streams 4 and 5); its
+  exact rules, like those of Dice, are fixed in record 0010.
+- The index funds XBI, IBB and URTH are bought on day one and held; their values are stored privately only.
 
 ## Track record
 None yet: the funds have not started. The plan is to publish it in this repository: every decision of every fund with

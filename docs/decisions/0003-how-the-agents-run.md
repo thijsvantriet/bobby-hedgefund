@@ -178,6 +178,110 @@ Revisit: by 2027-03, or when Anthropic changes its consumer terms or the usage r
 Claude Code version changes how sessions or agent files work, or when the pilot shows that a fresh session cannot be
 told apart reliably.
 
+## Update 2026-11-18: how the session folder is built
+Command: `bobby-session prepare` (README, "Session preparation").
+- **The cut-off in practice.** A saved file is taken when the time in its line of the saved-files list lies
+  before the cut-off; every file is re-checked against its fingerprint when it is read. A file our own jobs made
+  has no such line: it is taken only when its own list of inputs says it was made before the cut-off and every
+  file in that list was saved before it. The newest usable file is chosen by the date in its name, never by a
+  date of the file system.
+- **The list of inputs** (`inputs.jsonl`) numbers every source: the universe file, each new filing, each trial
+  record behind a change, the price file the numbers come from. The session's first log record carries the
+  fingerprint of this list (record 0004), so it can be shown later what a session could read.
+- **What an agent can read about a company:** who it is, what is new, the new filings as plain text, the changes
+  in its trial records, numbers from saved prices marked private, and our own last report. Nothing else: the
+  saved-files lists, the price files and the universe file themselves are not in the folder.
+- **What counts as new** is what no earlier session was shown: every earlier session's list of inputs is read,
+  and a filing or a change in a trial record that is in one of them is not shown again. So an item that a job
+  found late (a download or a comparison that ran after the session it belonged to) is still shown once. It must
+  be saved before the cut-off and be no older than three days before the last session; older ones are counted
+  and left out.
+- **A change in a trial record is not taken on trust.** The page it names must be in the saved-files list, saved
+  at the time the line says, before the cut-off; otherwise the line is left out and counted.
+- **Filings a company makes as a holder.** A company's list of filings also holds what it files as an owner of
+  another company's shares. Such a filing is marked "filed as a holder of another company", shows its parties,
+  and does not by itself send the company to the screening.
+- **Left out in one place:** companies in the universe through the XBI fund only (record 0009, open point 2).
+  Their names are also taken out of every text that is copied into the folder (a filing of another company can
+  name them) and replaced by "[a company that is not named]". The private list of those names only grows: a
+  company once on it stays, and names added by hand are kept. A universe file that marks no such company at all
+  gets a warning.
+- **The folder is built under another name** and gets its own name in one step when it is complete, so a
+  preparation that stops half-way leaves nothing that could be taken for a session folder.
+- **Our own earlier report** on a company is copied in only when it is of an earlier session day; a link is not
+  followed.
+- **A move of the share "since the last session"** is measured against the newest price day that session could
+  see, not against the calendar: the final copy of a day's prices arrives a day or two later.
+- **Found on the way.** (1) The first big download of filings was saved in one go, so everything in it looked
+  new; a filing counts as news only when it was also filed around the last session (three days of margin). (2)
+  The price service marks the newest day "delayed" until the next morning's download, and the books use final
+  copies only: on a morning session the numbers are from two trading days before, and a fill is booked one
+  session later than the calendar alone would allow. No rule is broken by that; the pilot shows whether it
+  matters. (3) The first run on real data: 215 companies, 637 new filings, 37 MB, about a minute (a quarterly
+  report is several megabytes; turning them into plain text with a parser took most of the time, so that is
+  done with patterns now). A normal day will have a few dozen filings. (4) Known and not solved here: a filing
+  that two companies file together is saved once, under the first, so the second does not get it (stream 2).
+
+**Review.** A reviewer agent (Opus) read the code and found no way for anything saved after the cut-off to get
+into the folder, but said "fix first" for other things, all worked in above: the rule for a move of the share
+compared against the wrong day, so it would never have fired in a morning session; trial changes found late
+were dropped for good; filings made as a holder were shown as the company's own; the private list was rebuilt
+from scratch each day; a half-built folder blocked the day for good; reports were copied without a check on
+their day; a time without a zone crashed; a trial-change line was trusted as it stood; the list of tasks could
+be changed unnoticed.
+
+## Update 2026-11-18 (2): how the round is built
+Commands: `/bobbyhedgefund-day` and `bobby-session` (README, "The daily round").
+- **The command** is a skill that only typing starts. Its first line runs `bobby-session start` and puts the
+  output in front of the model; when that script refuses, Claude Code drops the whole command and the model
+  sees nothing of it.
+- **A fresh session** is one whose last noted beginning is "new" or "cleared" (noted by a check at the start of
+  every session). A session that was resumed, shortened or copied, or of which nothing is noted, is refused.
+- **Refusals and stop-file changes** are noted in the data folder at once and written to the log as the first
+  records of the next round that starts.
+- **The fill day in the pilot.** The time of the pilot's local commit stands in for the time GitHub received the
+  publication; the next round reads it and writes it into its first record. A fill can never lie before its
+  decision: should a clock ever put the receipt before the session's own start, the start counts.
+- **The copy of the conversation** is made at the end of the round and once more, complete, at the start of the
+  next one; the fingerprint of the complete copy goes into that round's first record.
+- **Not built in this step:** the real round (it refuses: only the pilot runs), reading GitHub's receipt time,
+  the weekly summary, the monthly letter and the monthly re-run of the universe. The weekly check on the
+  screening has its agent file but no step yet. The model fallback of record 0009 (one new start on the next
+  model down) has its check but no command that allows it yet: when a model cannot be used, that task has no
+  answer, which for a portfolio manager means "no decision today".
+
+**Review.** A reviewer agent (Opus) tried the code with made-up cases and said "fix first". Worked in, each
+with a test:
+- a round that was published but whose last step never ran (terminal closed, the marker run out) no longer
+  stops the books of the next day: the next round reads the publication itself, and `bobby-session end` ends
+  such a round also without its marker;
+- the day's records are written once: a second `decide` after a failure halfway is refused, because a record
+  in the log is final; and nothing is decided while a manager's answer may still come;
+- a message sent to a running agent is now counted in the two forms Claude Code really stores it in (the test
+  used a third form that does not occur);
+- after the one restart no task is handed out twice: tasks of the session that broke off get the result "broke
+  off", and a step that is asked again names the same tasks;
+- a debate ends when one side gave no readable case;
+- a start that stopped before the session folder was made is carried on with its first times and does not use
+  up the restart; every refusal is noted, whatever caused it; the day's first record is written on a restart
+  when the first start never wrote it;
+- a second session cannot take a round over while the first one's records changed in the last two minutes;
+- a finished copy of a conversation is never made again, and the session that broke off is copied too;
+- the usage per role counts every agent run of the session, also late ones;
+- the leading session no longer waits by itself: the collecting command waits, and stops at the step's time;
+- the log now also holds what each of the three runs said about a company that got no order.
+
+A second review (Opus) of these fixes found two of them incomplete; worked in, with tests:
+- the deciding step no longer refuses after a failure halfway (that would have left the day without records for
+  good): it carries on and writes only what is still missing, and a record refused for one fund does not stop
+  the others;
+- a start that stopped before its folder was made counts as a new start of the session that carries on; it keeps
+  the first times only when it is retried within five minutes, so a day is not lost to a clock that ran on;
+- a task whose agent is already running is not named again, an empty copy of a conversation is not kept as
+  final, and the usage counts real agent starts only.
+Left as it is (low): a leading session that has been silent for more than two minutes can be taken over by a new
+start; the collecting command waits at most 90 seconds, so a working session is never that quiet.
+
 ## Sources
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),
