@@ -230,6 +230,58 @@ from scratch each day; a half-built folder blocked the day for good; reports wer
 their day; a time without a zone crashed; a trial-change line was trusted as it stood; the list of tasks could
 be changed unnoticed.
 
+## Update 2026-11-18 (2): how the round is built
+Commands: `/bobbyhedgefund-day` and `bobby-session` (README, "The daily round").
+- **The command** is a skill that only typing starts. Its first line runs `bobby-session start` and puts the
+  output in front of the model; when that script refuses, Claude Code drops the whole command and the model
+  sees nothing of it.
+- **A fresh session** is one whose last noted beginning is "new" or "cleared" (noted by a check at the start of
+  every session). A session that was resumed, shortened or copied, or of which nothing is noted, is refused.
+- **Refusals and stop-file changes** are noted in the data folder at once and written to the log as the first
+  records of the next round that starts.
+- **The fill day in the pilot.** The time of the pilot's local commit stands in for the time GitHub received the
+  publication; the next round reads it and writes it into its first record. A fill can never lie before its
+  decision: should a clock ever put the receipt before the session's own start, the start counts.
+- **The copy of the conversation** is made at the end of the round and once more, complete, at the start of the
+  next one; the fingerprint of the complete copy goes into that round's first record.
+- **Not built in this step:** the real round (it refuses: only the pilot runs), reading GitHub's receipt time,
+  the weekly summary, the monthly letter and the monthly re-run of the universe. The weekly check on the
+  screening has its agent file but no step yet. The model fallback of record 0009 (one new start on the next
+  model down) has its check but no command that allows it yet: when a model cannot be used, that task has no
+  answer, which for a portfolio manager means "no decision today".
+
+**Review.** A reviewer agent (Opus) tried the code with made-up cases and said "fix first". Worked in, each
+with a test:
+- a round that was published but whose last step never ran (terminal closed, the marker run out) no longer
+  stops the books of the next day: the next round reads the publication itself, and `bobby-session end` ends
+  such a round also without its marker;
+- the day's records are written once: a second `decide` after a failure halfway is refused, because a record
+  in the log is final; and nothing is decided while a manager's answer may still come;
+- a message sent to a running agent is now counted in the two forms Claude Code really stores it in (the test
+  used a third form that does not occur);
+- after the one restart no task is handed out twice: tasks of the session that broke off get the result "broke
+  off", and a step that is asked again names the same tasks;
+- a debate ends when one side gave no readable case;
+- a start that stopped before the session folder was made is carried on with its first times and does not use
+  up the restart; every refusal is noted, whatever caused it; the day's first record is written on a restart
+  when the first start never wrote it;
+- a second session cannot take a round over while the first one's records changed in the last two minutes;
+- a finished copy of a conversation is never made again, and the session that broke off is copied too;
+- the usage per role counts every agent run of the session, also late ones;
+- the leading session no longer waits by itself: the collecting command waits, and stops at the step's time;
+- the log now also holds what each of the three runs said about a company that got no order.
+
+A second review (Opus) of these fixes found two of them incomplete; worked in, with tests:
+- the deciding step no longer refuses after a failure halfway (that would have left the day without records for
+  good): it carries on and writes only what is still missing, and a record refused for one fund does not stop
+  the others;
+- a start that stopped before its folder was made counts as a new start of the session that carries on; it keeps
+  the first times only when it is retried within five minutes, so a day is not lost to a clock that ran on;
+- a task whose agent is already running is not named again, an empty copy of a conversation is not kept as
+  final, and the usage counts real agent starts only.
+Left as it is (low): a leading session that has been silent for more than two minutes can be taken over by a new
+start; the collecting command waits at most 90 seconds, so a working session is never that quiet.
+
 ## Sources
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),

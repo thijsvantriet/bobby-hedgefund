@@ -45,6 +45,8 @@ ignore = ["PTH123"]  # open() is fine next to Path
 [tool.ruff.lint.per-file-ignores]
 # Recorded inputs for the round's checks: one case per line reads better than wrapped lines.
 "tests/test_agents.py" = ["E501"]
+"tests/test_round.py" = ["E501"]
+"tests/roundkit.py" = ["E501"]
 
 [tool.pyright]
 include = ["src"]

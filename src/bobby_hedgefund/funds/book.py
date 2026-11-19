@@ -63,7 +63,10 @@ class Books:
         todo = orders if orders is not None else [o for f in self.funds.values() for o in f.orders.values()]
         for order in todo:
             if order.due is None and order.decided in self.received and order.decided in self.starts:
-                order.due = calendar.fill_day(self.received[order.decided], self.starts[order.decided])
+                start = self.starts[order.decided]
+                # A publication cannot have been received before its session began; should a clock ever say
+                # so, the session's own start counts, so that a fill can never lie before its decision.
+                order.due = calendar.fill_day(max(self.received[order.decided], start), start)
 
 
 # What the daily booking writes. After a crash in the middle of a day these records exist without the day's own
