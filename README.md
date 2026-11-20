@@ -82,7 +82,7 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-20: **day 0 run** (`/bobbyhedgefund-day`, pilot, the real agent files). The round took 4 minutes of its 45: 18 agent runs (8 screening, 10 analyst), 156 companies judged and 35 marked for a deep look, 2 analysed in depth, 26 forecasts, 4.27 million tokens by the script's count (most of them read from the cache). One screening answer was refused because it held no block of JSON, so 25 companies were not judged. No fund had been started, so no portfolio manager ran and nothing was decided; the script could not read the usage percentages. **Owner: day 0 does not count as a pilot day.** The Careful fund was started in the pilot afterwards; the five pilot sessions start on Monday 2026-11-23.
 
-2026-11-20: **the linking table exists** (docs/decisions/0006, "Update 2026-11-20"). The owner changed how the review sheet is judged: Claude gathers the evidence and decides the lines it is sure about, the owner decides only the doubtful ones. 281 of the 311 suggestions are decided (205 yes, 35 parent or subsidiary, 41 no); the table links 204 companies to 4,537 trials. 30 lines wait for the owner, 26 of them former names of merged shells. LibreOffice Calc was installed to open the sheet.
+2026-11-20: **the linking table exists** (docs/decisions/0006, "Update 2026-11-20"). The owner changed how the review sheet is judged: Claude gathers the evidence and decides the lines it is sure about, the owner decides only the doubtful ones. 281 of the 311 suggestions are decided (205 yes, 35 parent or subsidiary, 41 no); the table links 204 companies to 4,537 trials. LibreOffice Calc was installed to open the sheet. The same day the owner agreed with Claude's recommendations on the 30 doubtful lines (26 former names of merged shells: not linked; 4 linked), so all 311 are decided: the table now links 204 companies to 4,703 trials. The owner also marked 18 companies "not biotech" (no medicines of their own in trials); the universe, built again, has 204 companies.
 
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
@@ -93,9 +93,9 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    (0007, 0008). Stream 0, parts 1 and 2 (the SEC company files, the candidate list and the sponsor
    names), stream 1 (daily prices), the filter, the name matching and stream 2 (SEC filings) are built.
    Stream 3 (trial-record changes) is built too; all four streams run (merged 2026-11-18).
-   The linking table is made (2026-11-20: 281 of 311 suggestions decided, 204 companies linked).
-   **Waiting for the owner:** a yes or no on the 30 doubtful lines Claude passed on. After that: the by-hand
-   check of 20 companies for missed names, which Claude prepares.
+   The linking table is made (2026-11-20: all 311 suggestions decided, 204 companies linked to 4,703 trials).
+   Next: the by-hand check of 20 companies for missed names, which Claude prepares, and a match run for the
+   one company that newly came into the universe.
    Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
    and wait for the owner's yes; its AACT download is settled (0014).
 3. ~~Record 0009, agent files, decision log, fund books, session preparation, the daily round and a try-out of

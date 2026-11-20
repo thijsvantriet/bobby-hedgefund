@@ -266,6 +266,16 @@ wrong link shows up as trials that do not fit the company, which the analysts se
   legal company, but its trials belong to the business before the merger. Recommendation: do not link them.
 - 4 are cases where the company's recent history could not be confirmed from the files.
 
+**The owner's answers, 2026-11-20.** The owner agreed with all recommendations. The 26 shell names got a no; the
+4 uncertain lines were linked (3 as parent or subsidiary, 1 as yes). All 311 suggestions are now decided: 206 yes,
+38 parent or subsidiary, 67 no. The linking table has 244 sponsor names for 204 companies and 4,703 trials.
+The owner also marked 18 companies "not biotech": 2 that are not in health care at all, and 16 that have no
+medicines of their own in trials (medical tests, lab supplies and services, food and animal products, drugstore
+products, licensed technology). *Why:* their prices move on sales, not on trials and approvals, which is what the
+analysts read. Generics makers and companies that live on income from other companies' drugs stay in. The universe
+was built again the same day: 204 companies (221 before; 18 marked out, 1 came in through the filter and still
+needs its sponsor names matched).
+
 The former-name warning on the sheet proved its worth: two names that looked identical to a former name were in
 fact a different, later company.
 
