@@ -80,6 +80,10 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-19: **all of it merged into main** (PRs #19-#26) and record 0009 accepted with its three recommendations (always three manager runs; the six XBI-only companies are never analysed; a 40-word quote limit). The try-out's data folder is deleted; its report stays in docs/pilot/. From now on every Claude Code session in this repository runs the round's small checks (`.claude/settings.json`); outside a round they let everything through.
 
+2026-11-20: **day 0 run** (`/bobbyhedgefund-day`, pilot, the real agent files). The round took 4 minutes of its 45: 18 agent runs (8 screening, 10 analyst), 156 companies judged and 35 marked for a deep look, 2 analysed in depth, 26 forecasts, 4.27 million tokens by the script's count (most of them read from the cache). One screening answer was refused because it held no block of JSON, so 25 companies were not judged. No fund had been started, so no portfolio manager ran and nothing was decided; the script could not read the usage percentages. **Owner: day 0 does not count as a pilot day.** The Careful fund was started in the pilot afterwards; the five pilot sessions start on Monday 2026-11-23.
+
+2026-11-20: **the linking table exists** (docs/decisions/0006, "Update 2026-11-20"). The owner changed how the review sheet is judged: Claude gathers the evidence and decides the lines it is sure about, the owner decides only the doubtful ones. 281 of the 311 suggestions are decided (205 yes, 35 parent or subsidiary, 41 no); the table links 204 companies to 4,537 trials. The same day the owner agreed with Claude's recommendations on the 30 doubtful lines (26 former names of merged shells: not linked; 4 linked), so all 311 are decided: the table now links 204 companies to 4,703 trials. The owner also marked 18 companies "not biotech" (no medicines of their own in trials); the universe, built again, has 204 companies.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -89,15 +93,16 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    (0007, 0008). Stream 0, parts 1 and 2 (the SEC company files, the candidate list and the sponsor
    names), stream 1 (daily prices), the filter, the name matching and stream 2 (SEC filings) are built.
    Stream 3 (trial-record changes) is built too; all four streams run (merged 2026-11-18).
-   **Waiting for the owner:** fill in the review sheet of suggested matches (`linking/<date>_review.xlsx`, the
-   newest one; 221 companies), then `bobby-universe decisions <sheet>` and `bobby-universe linking`
-   make the linking table. After that: the by-hand check of 20 companies for missed names.
+   The linking table is made (2026-11-20: all 311 suggestions decided, 204 companies linked to 4,703 trials).
+   Next: the by-hand check of 20 companies for missed names, which Claude prepares, and a match run for the
+   one company that newly came into the universe.
    Alongside: the historical study, limited to two weeks of work. Its rules are drafted (docs/study/RULES.md)
    and wait for the owner's yes; its AACT download is settled (0014).
 3. ~~Record 0009, agent files, decision log, fund books, session preparation, the daily round and a try-out of
-   one day~~ (built 2026-11-18; merged 2026-11-19, PRs #19-#26; record 0009 accepted). **Now (owner):** **day 0**:
-   open a fresh session and type `/bobbyhedgefund-day` once (the first round with the real agent files, Careful fund,
-   pilot); then the one-week pilot with one fund, which measures how much of the usage limits a session takes.
+   one day~~ (built 2026-11-18; merged 2026-11-19, PRs #19-#26; record 0009 accepted). ~~Day 0~~ (run 2026-11-20, without a fund; it does not
+   count as a pilot day). **Now (owner):** the pilot week (spec, section 7), from Monday 2026-11-23: a fresh session
+   and `/bobbyhedgefund-day` on five working days. Days 1-3 the Careful fund alone (started 2026-11-20); before day 4
+   the other two AI funds are started, after the owner's yes; at the end the owner reads `/usage` once.
    Open before the pilot: the rule on `main` that refuses rewriting (record 0004), and a way to read the usage
    percentages (a status-line helper, or `/usage` by hand).
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026. Needed before it: streams 0-3, record 0009, the agent files, the decision log with its leak check, and the fund books.

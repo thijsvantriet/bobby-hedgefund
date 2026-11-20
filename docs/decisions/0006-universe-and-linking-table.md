@@ -244,6 +244,41 @@ above (the first version would have counted a split twice for a balance-sheet co
 the ticker choice, the SEC's name tags, a stop when the share-count service answers "not found" many times in a
 row (then the address is wrong, not the companies), and names with line breaks or control characters.
 
+## Update 2026-11-20: who judges the review sheet
+
+**What changed.** The record gave the whole review sheet to the owner. On opening it the owner pointed out that the
+job asks for a judgement about 221 companies he does not know, so a yes from him would check nothing. From now on:
+- Claude gathers the evidence for every line and decides the lines it is sure about. The evidence is what the
+  archived trial records say about the sponsor name (its drugs, conditions, countries, years, and the lead sponsor
+  where the name is a collaborator), compared with the company's names and former names from the SEC.
+- The owner sees only the lines Claude is not sure about, each with a recommendation, and decides those.
+- Every decision made this way carries a note that starts with "Claude" and the date, so it can be told apart later.
+- The by-hand check of 20 companies for missed names stays as the safety net.
+
+**Why this is acceptable.** A decision is never final: a changed mind is a new line that replaces the old one. A
+wrong link shows up as trials that do not fit the company, which the analysts see.
+
+**The cost.** A mistake by Claude in the lines it calls sure goes through without the owner seeing it.
+
+**First run, 2026-11-20** (counts only). Of 311 suggestions, 281 were decided: 205 yes, 35 parent or subsidiary,
+41 no. The linking table has 240 sponsor names for 204 companies and 4,537 trials. 30 lines wait for the owner:
+- 26 are the former name of a stock-exchange shell that a new business merged into. The registry name is the same
+  legal company, but its trials belong to the business before the merger. Recommendation: do not link them.
+- 4 are cases where the company's recent history could not be confirmed from the files.
+
+**The owner's answers, 2026-11-20.** The owner agreed with all recommendations. The 26 shell names got a no; the
+4 uncertain lines were linked (3 as parent or subsidiary, 1 as yes). All 311 suggestions are now decided: 206 yes,
+38 parent or subsidiary, 67 no. The linking table has 244 sponsor names for 204 companies and 4,703 trials.
+The owner also marked 18 companies "not biotech": 2 that are not in health care at all, and 16 that have no
+medicines of their own in trials (medical tests, lab supplies and services, food and animal products, drugstore
+products, licensed technology). *Why:* their prices move on sales, not on trials and approvals, which is what the
+analysts read. Generics makers and companies that live on income from other companies' drugs stay in. The universe
+was built again the same day: 204 companies (221 before; 18 marked out, 1 came in through the filter and still
+needs its sponsor names matched).
+
+The former-name warning on the sheet proved its worth: two names that looked identical to a former name were in
+fact a different, later company.
+
 ## Sources
 - SEC, [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data)
   (company numbers "are not recycled"; the ticker files; read 2026-11-17)
