@@ -155,7 +155,12 @@ def test_the_marker_and_the_checks_agree_on_what_an_active_round_is(tmp_path: Pa
 
 def test_the_project_settings_name_only_checks_that_exist_and_never_touch_reading() -> None:
     settings = json.loads((REPO / ".claude" / "settings.json").read_text())
-    assert set(settings) == {"hooks"} and set(settings["hooks"]) == {"SessionStart", "PreToolUse"}
+    assert set(settings) == {"hooks", "statusLine"} and set(settings["hooks"]) == {"SessionStart", "PreToolUse"}
+    # The status line only shows and saves the usage figures (README, "The daily round"); it is no check.
+    assert settings["statusLine"] == {
+        "type": "command",
+        "command": 'python3 "${CLAUDE_PROJECT_DIR}/.claude/statusline.py"',
+    }
     commands = [h["command"] for group in settings["hooks"].values() for entry in group for h in entry["hooks"]]
     names = [c.rsplit(" ", 1)[1] for c in commands]
     # The fence is named in the agent files only.

@@ -215,6 +215,54 @@ def working_days_between(earlier: date, later: date) -> int:
     return count
 
 
+LIMITS_AT_START = "rate-limits-at-start.json"
+
+
+def rate_limits(saved_since: datetime, now: datetime | None = None) -> dict[str, Any] | None:
+    """The share of the usage limits, as the status line saved it (`.claude/statusline.py`: Claude Code gives the
+    figures to the status line only). Only figures saved at or after `saved_since` count, and a window whose reset
+    time has passed is left out: old figures must never pass for today's. None when nothing usable is left.
+    The limits belong to the account, so figures saved by another session at the right time count as well."""
+    now = (now or utcnow()).astimezone(UTC)
+    try:
+        found = json.loads((paths.data_dir() / "usage" / "rate-limits.json").read_text(encoding="utf-8"))
+        saved = datetime.strptime(found["saved_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        if saved < saved_since:
+            return None
+        kept: dict[str, Any] = {}
+        for key in ("five_hour", "seven_day"):
+            window = found.get(key)
+            if not isinstance(window, dict):
+                continue
+            used, resets = window.get("used_percentage"), window.get("resets_at")
+            if isinstance(used, bool) or not isinstance(used, (int, float)) or not 0 <= used <= 999:
+                continue
+            if isinstance(resets, int) and not isinstance(resets, bool):
+                if resets <= now.timestamp():
+                    continue
+                kept[key] = {"used_percentage": used, "resets_at": resets}
+            else:
+                kept[key] = {"used_percentage": used}
+        if not kept:
+            return None
+        return {**kept, "saved_at": found["saved_at"], "session_id": str(found.get("session_id", ""))[:100]}
+    except Exception:  # a broken or odd file means no figures, never a failed round
+        return None
+
+
+def _save_limits_at_start(rnd: Round, now: datetime) -> None:
+    """The figures at the start, kept with the round (spec, section 7): those saved in the last ten minutes (a
+    fresh session's status line may not have saved yet when the round starts). The first start of a day keeps
+    them; a restart does not replace them. Never a reason to refuse a round: missing figures are simply not kept."""
+    target = rnd.round_dir / LIMITS_AT_START
+    try:
+        found = rate_limits(now - timedelta(minutes=10), now)
+        if found is not None and not target.exists():
+            write_new(target, json.dumps(found, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
 def start(
     mode: str,
     session_id: str,
@@ -404,6 +452,7 @@ def _start(
                     **mark,
                 },
             )
+    _save_limits_at_start(rnd, now)
     marker.write(
         paths.data_dir(),
         session_id=session_id,

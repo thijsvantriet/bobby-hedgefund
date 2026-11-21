@@ -439,7 +439,7 @@ def measure(rnd: Round) -> dict[str, Any]:
     for role in by_role.values():
         for kind, count in role["tokens"].items():
             total[kind] = total.get(kind, 0) + count
-    limits = _rate_limits()
+    limits = steps.rate_limits(rnd.start)
     minutes = max(0, round(rnd.minutes()))
     for_log: dict[str, Any] = {"minutes": minutes, "agent_runs": sum(r.get("starts", 0) for r in by_role.values())}
     for key, name in (("five_hour", "five_hour_pct"), ("seven_day", "weekly_pct")):
@@ -454,6 +454,7 @@ def measure(rnd: Round) -> dict[str, Any]:
         "per_role": by_role,
         "leading_session": leading,
         "tokens_in_all": total,
+        "rate_limits_at_the_start": _at_start(rnd),
         "rate_limits_at_the_end": limits,
         "what_agents_lacked": lacked,
         "decisions": json.loads(decided.read_text(encoding="utf-8")) if decided.exists() else None,
@@ -464,10 +465,9 @@ def measure(rnd: Round) -> dict[str, Any]:
     }
 
 
-def _rate_limits() -> dict[str, Any] | None:
-    """The share of the usage limits, when the status line saved it (the only place Claude Code gives it to)."""
+def _at_start(rnd: Round) -> dict[str, Any] | None:
     try:
-        found = json.loads((paths.data_dir() / "usage" / "rate-limits.json").read_text(encoding="utf-8"))
+        found = json.loads((rnd.round_dir / steps.LIMITS_AT_START).read_text(encoding="utf-8"))
         return found if isinstance(found, dict) else None
     except (OSError, ValueError):
         return None

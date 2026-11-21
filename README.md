@@ -84,6 +84,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-20: **the linking table exists** (docs/decisions/0006, "Update 2026-11-20"). The owner changed how the review sheet is judged: Claude gathers the evidence and decides the lines it is sure about, the owner decides only the doubtful ones. 281 of the 311 suggestions are decided (205 yes, 35 parent or subsidiary, 41 no); the table links 204 companies to 4,537 trials. The same day the owner agreed with Claude's recommendations on the 30 doubtful lines (26 former names of merged shells: not linked; 4 linked), so all 311 are decided: the table now links 204 companies to 4,703 trials. The owner also marked 18 companies "not biotech" (no medicines of their own in trials); the universe, built again, has 204 companies.
 
+2026-11-21: **ready for the pilot.** `main` now has a GitHub ruleset that refuses rewriting and deleting it, with nobody exempt, the owner included (docs/decisions/0004, "Update 2026-11-21"); tested on a throwaway branch. The usage percentages are saved by the project's own status line, so the round records them at its start and end without any step for the owner (see "The daily round").
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -102,9 +104,11 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    one day~~ (built 2026-11-18; merged 2026-11-19, PRs #19-#26; record 0009 accepted). ~~Day 0~~ (run 2026-11-20, without a fund; it does not
    count as a pilot day). **Now (owner):** the pilot week (spec, section 7), from Monday 2026-11-23: a fresh session
    and `/bobbyhedgefund-day` on five working days. Days 1-3 the Careful fund alone (started 2026-11-20); before day 4
-   the other two AI funds are started, after the owner's yes; at the end the owner reads `/usage` once.
-   Open before the pilot: the rule on `main` that refuses rewriting (record 0004), and a way to read the usage
-   percentages (a status-line helper, or `/usage` by hand).
+   the other two AI funds are started, after the owner's yes; the owner reads `/usage` only if the saved usage
+   figures turn out to be missing.
+   ~~Open before the pilot: the rule on `main` that refuses rewriting (record 0004), and a way to read the usage
+   percentages~~ (done 2026-11-21: the ruleset is on and tested; the usage figures come from the project's own
+   status line, see "The daily round", "Usage").
 4. Streams 4-5, the scoring rules, the owner's go; the funds start for 26 weeks. No waiting for a date (owner, 2026-11-17): the pilot starts as soon as the setup is done, and the funds start right after the pilot and the owner's go. Target (owner, 2026-11-18): the pilot starts at the end of November 2026. Needed before it: streams 0-3, record 0009, the agent files, the decision log with its leak check, and the fund books.
 5. In the first live weeks: the app, the alerts and the first monthly letter. A review with the owner every month.
 
@@ -317,7 +321,13 @@ bobby-session canary               # first pilot days: one agent tries to read o
   cut-off. A second break makes the day a skipped day.
 - **Usage** is counted from the session's own records: runs, model, effort, tokens and seconds per role, minutes
   per step, how often the three runs agreed. The share of the five-hour and weekly limits is only given by Claude
-  Code to the status line; reading it by script is an open point for the owner (docs/pilot/).
+  Code to the status line, so this project has its own status line (`.claude/statusline.py`, switched on in
+  `.claude/settings.json`). It shows the two percentages and saves them to `usage/rate-limits.json` in the data
+  folder (with their reset times, the time saved and the session's id; nothing else from Claude Code's description);
+  `start` keeps a copy with the round and `end` writes both into `usage.json`. Only recent figures count (at the
+  start: saved in the last ten minutes; at the end: saved after the round began), and a window whose reset time has
+  passed is left out, so old figures never pass for today's. To remove it: delete the `statusLine` key and the script; the round then simply
+  records no percentages.
 
 ## Agents
 Design: docs/decisions/0009 and 0003 (point 3).

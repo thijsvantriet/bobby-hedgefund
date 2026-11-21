@@ -331,7 +331,8 @@ separate folder and do not count.
 - usage, measured without the owner: a script counts the tokens of every model call per role from the session's
   own record (exact, per session). Where Claude Code makes the usage percentages available to scripts (its status
   line data), the script also records the five-hour and weekly percentages at the start and the end; the pilot
-  checks this in its first session;
+  checks this in its first session (2026-11-21: they are available; the project's status line, `.claude/statusline.py`,
+  saves them for the round);
 - minutes from start to end, and per step;
 - number of agent runs per role, companies screened, companies analysed;
 - how often the three repeated decisions agreed;
