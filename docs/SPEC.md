@@ -357,7 +357,8 @@ limit once: the owner reads `/usage` a single time, at the end of the pilot week
 on the token count per week is the measure, and the owner looks at `/usage` only at the monthly review, as a check.
 No per-session action is needed.
 
-Only percentages are published; details of the owner's subscription stay out of the repository. The percentages are
+Only percentages are published (owner, 2026-11-22: yes, the daily five-hour and weekly percentages go into the
+public log once the funds are live); details of the owner's subscription stay out of the repository. The percentages are
 approximate (the owner's other Claude use shares the same limits), so they are a guide, not an invoice.
 
 After the pilot: a short report in `docs/`, the owner's go or no-go, then the funds start on a date announced in
