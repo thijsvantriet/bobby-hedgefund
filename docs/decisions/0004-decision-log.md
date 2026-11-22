@@ -239,6 +239,22 @@ missed wordings such as "shares have run 60%", "3x upside", "the market is prici
 sentences at "approx.", and was not called by the writer itself; publishing for real could have sent an
 unrelated commit on `main` along; messages could show a value or a path of the home folder.
 
+## Update 2026-11-21: the ruleset on `main` is on
+Switched on with the owner's yes, before the pilot (point 3; the item "the ruleset on `main`" in "Not switched on
+yet" above is done).
+- **The ruleset** "main: no rewriting, no deleting" (GitHub id 27809729): branch `refs/heads/main`, enforcement
+  active, two rules, `deletion` and `non_fast_forward` (a forced push), **nobody exempt** (no bypass list; GitHub
+  reports `current_user_can_bypass: never` for the owner). No rule asks for a pull request, so the daily
+  publication can still push straight to `main`; a pull-request merge only moves `main` forward and is allowed too.
+- **Made with** `gh api -X POST repos/<owner>/bobby-hedgefund/rulesets` and a JSON body holding exactly the values
+  above. Checked with `gh api repos/<owner>/bobby-hedgefund/rules/branches/main`, which lists both rules for `main`.
+- **Tested without touching `main`:** a temporary ruleset with the same two rules on a throwaway branch. A real
+  forced push to it and a real deletion were both refused by GitHub ("GH013 ... Cannot force-push to this branch",
+  "Cannot delete this branch"). The test ruleset and the branch were then removed. A `git push --dry-run` cannot
+  serve as the test: it sends nothing to GitHub, so GitHub's rules are never asked.
+- What stays true (see "What this proves, and what not"): the owner can switch the ruleset off; anyone can see when it
+  last changed.
+
 ## Sources
 Read on 2026-11-17.
 - Crosby and Wallach, [Efficient Data Structures for Tamper-Evident Logging](https://www.usenix.org/legacy/event/sec09/tech/full_papers/crosby.pdf) (USENIX Security 2009): "Tamper-evidence requires auditing"

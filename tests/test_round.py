@@ -677,3 +677,56 @@ def test_a_debate_ends_when_one_side_gave_no_readable_case(tmp_path: Path, monke
         agent_run(records, rnd.session_id, rnd.session_dir, task, case(task), at=minute(25))
     assert steps.collect(rnd, "debate", 0)[-1] == "NEXT: bobby-session debate"
     assert steps.debate(rnd) == ["the debate is over", "NEXT: bobby-session managers"]
+
+
+def test_the_usage_figures_the_status_line_saved_are_kept_at_the_start_and_the_end(world: dict) -> None:
+    saved = world["data"] / "usage" / "rate-limits.json"
+    saved.parent.mkdir(parents=True)
+    later = 2_000_000_000  # a reset time that has not passed yet
+
+    def limits(five: float, week: float, at: str) -> None:
+        figures = {"five_hour": {"used_percentage": five}, "seven_day": {"used_percentage": week, "resets_at": later}}
+        saved.write_text(json.dumps({**figures, "saved_at": at, "session_id": "session-1"}))
+
+    limits(12.5, 30, "2027-02-03T07:55:00Z")  # saved a few minutes before the start: counts for the start
+    rnd = begin(world)
+    limits(20, 34, "2027-02-03T08:30:00Z")
+    steps._save_limits_at_start(rnd, WED_8 + timedelta(minutes=30))  # as a restart would: the first figures stay
+    run_day(world, rnd, three(decisions("careful"), decisions("careful"), decisions("careful")))
+    usage = json.loads((rnd.round_dir / "usage.json").read_text())
+    assert usage["rate_limits_at_the_start"]["five_hour"]["used_percentage"] == 12.5
+    assert usage["rate_limits_at_the_end"]["five_hour"]["used_percentage"] == 20
+    assert (usage["for_the_log"]["five_hour_pct"], usage["for_the_log"]["weekly_pct"]) == ("20%", "34%")
+
+
+def test_old_or_odd_usage_figures_never_pass_for_todays(world: dict) -> None:
+    saved = world["data"] / "usage" / "rate-limits.json"
+    saved.parent.mkdir(parents=True)
+    start = WED_8
+
+    def read(body: dict) -> dict | None:
+        saved.write_text(json.dumps(body))
+        return steps.rate_limits(start, start + timedelta(minutes=30))
+
+    fresh = "2027-02-03T08:10:00Z"
+    week = {"used_percentage": 34, "resets_at": int((start + timedelta(days=2)).timestamp())}
+    assert read({"seven_day": week, "saved_at": "2027-02-02T09:00:00Z"}) is None  # saved the day before
+    assert read({"seven_day": week}) is None  # no time saved
+    gone = {"used_percentage": 80, "resets_at": int((start - timedelta(hours=1)).timestamp())}
+    found = read({"five_hour": gone, "seven_day": week, "saved_at": fresh})
+    assert found is not None and "five_hour" not in found and found["seven_day"]["used_percentage"] == 34
+    assert read({"five_hour": gone, "saved_at": fresh}) is None  # its window has reset since
+    for odd in (23, None, [1], {"used_percentage": "40"}, {"used_percentage": True}, {"used_percentage": 1000}):
+        assert read({"five_hour": odd, "saved_at": fresh}) is None
+    saved.write_text("[1, 2]")
+    assert steps.rate_limits(start) is None
+    saved.write_text("{not json")
+    assert steps.rate_limits(start) is None
+
+
+def test_a_round_without_saved_usage_figures_runs_and_says_so(world: dict) -> None:
+    rnd = begin(world)
+    run_day(world, rnd, three(decisions("careful"), decisions("careful"), decisions("careful")))
+    usage = json.loads((rnd.round_dir / "usage.json").read_text())
+    assert usage["rate_limits_at_the_start"] is None and usage["rate_limits_at_the_end"] is None
+    assert "five_hour_pct" not in usage["for_the_log"]
