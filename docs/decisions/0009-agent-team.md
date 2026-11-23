@@ -260,7 +260,7 @@ Each has a default that the pilot runs with. Decided 2026-11-19: the owner took 
   the script writes the role's instructions into the task file and names the general agent, the model and the
   effort it must be started with; the start check accepts exactly that.
 - **Answers** (`session/answers.py`): the last block in the fixed form counts (an earlier one is a draft),
-  nothing may follow it, no number with a decimal point, no field name twice; every list of sources has the one
+  no other block may follow it (plain words after it are ignored, update 2026-11-23), no number with a decimal point, no field name twice; every list of sources has the one
   form (number and one sentence); at most five orders and one per company for a portfolio manager; "sell" is
   always the whole position, a part is a "reduce". A message about a refused answer says what is wrong, never
   what the answer said.
@@ -276,6 +276,26 @@ file filters were not checked; a draft block in an answer threw the whole answer
 lists of sources invited a mistake that costs a whole run.
 - Not confirmed by any test here, because they need a real session: that Claude Code runs these checks inside an
   agent and names the agent (pilot check 4), and that a check in an agent file applies to every tool.
+
+## Update 2026-11-23: two fixes after pilot day 1
+
+- **The reading check crashed on a search of the session folder itself.** Day 1: 9 of the 11 agents ran
+  searches that named the session folder itself as their folder (a Glob of `**/*` or `companies/101/**`, a Grep
+  for a company number). The check had no subfolder name to look at, crashed, and refused them as "the reading
+  check failed (IndexError)": safe, because a crash refuses, but the agents could not tell what was wrong. Now
+  such a search is refused with a message that names where to search instead (a folder such as
+  `companies/<number>` or `round/reports`). No search from the top is allowed, whatever its pattern: the reviewer
+  showed that a Glob pattern without a slash matches at any depth, and that Claude Code rewrites a pattern that
+  starts with folder names, so a first version that judged the pattern let file names from `tasks/` and the
+  funds' folders through. A backslash in a search pattern is refused too, because it can hide a folder name from
+  the check (`t\asks`).
+- **Plain words after the block of JSON no longer throw an answer away.** Day 1: an analyst ended with a list of
+  what it left out and the files it read, after its block; the answer was refused and the company's report had
+  three sections instead of four. Now plain words after the last block are ignored, as all words outside it
+  already are (no script reads them). Another block after it, finished or not, is still refused, because then
+  it is not clear which block is the answer. The risk accepted: an agent that changes its mind in words after
+  its block is not heard; the block is its formal answer, and the agent files say so. Claude decided this (the
+  owner left it to Claude); the agent files still say to write nothing after the block.
 
 ## Revisit
 Revisit: by 2027-01, or after the pilot week, or when a new Claude Code version changes agent files, hooks or the

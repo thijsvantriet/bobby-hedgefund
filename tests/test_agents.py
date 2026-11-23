@@ -209,6 +209,47 @@ def test_an_agent_reads_inside_the_session_folder_and_nowhere_else(round_: dict)
     assert len(noted) == len(refused) and {n["check"] for n in noted} == {"fence"}
 
 
+def test_a_search_from_the_top_of_the_session_folder_is_refused_and_never_crashes(round_: dict) -> None:
+    # The searches of the first pilot day that broke the check (IndexError): a search with the session folder
+    # itself as its folder. From there every search reaches the task files and the funds' files (a Glob pattern
+    # without a slash matches at any depth, and Claude Code rewrites patterns that start with folder names), so
+    # all of them are refused, with a message that says where to search instead.
+    data, folder = round_["data"], round_["session_dir"]
+    careful = "bobby-pm-careful"
+    allowed = {
+        "a Glob in a company folder": use("Glob", pattern="**", path=str(folder / "companies" / "101")),
+        "a Glob in the reports": use("Glob", careful, pattern="*.md", path=str(folder / "round" / "reports")),
+        "a Grep in all company folders": use("Grep", pattern="101", path=str(folder / "companies")),
+    }
+    for why, event in allowed.items():
+        assert hook("fence", event, data) == (0, ""), why
+    top = str(folder)
+    refused = {
+        "a Grep over the whole folder": use("Grep", pattern="101", path=top),
+        "the same, with the folder written with a slash at the end": use("Grep", pattern="101", path=top + "/"),
+        "the same, with a dot": use("Grep", pattern="101", path=top + "/."),
+        "a Grep with a file filter": use("Grep", pattern="x", path=top, glob="*.md"),
+        "a Glob of the top, which matches at any depth": use("Glob", pattern="*", path=top),
+        "a Glob of one kind of file": use("Glob", pattern="*.md", path=top),
+        "a Glob through every folder": use("Glob", pattern="**/*", path=top),
+        "a Glob that starts in a company folder": use("Glob", pattern="companies/101/**", path=top),
+        "a Glob that leaves things out": use("Glob", pattern="!(companies)", path=top),
+        "a Glob that starts with the folder's own name": use("Glob", pattern=f"{folder.name}/tasks/*", path=top),
+        "a Glob that names round/ again from round/": use(
+            "Glob", careful, pattern="round/funds/*", path=str(folder / "round")
+        ),
+        "a Glob of the funds from round/": use("Glob", careful, pattern="funds/*", path=str(folder / "round")),
+        "a backslash that hides tasks/": use("Glob", pattern="t\\asks/*", path=str(folder / "companies")),
+        "a backslash that hides round/": use("Glob", careful, pattern="r\\ound/funds/*", path=top),
+        "a backslash in a file filter": use("Grep", pattern="x", path=str(folder / "companies"), glob="t\\asks/*"),
+        "reading the folder itself": read(folder),
+    }
+    for why, event in refused.items():
+        code, message = hook("fence", event, data)
+        assert code == 2 and message.startswith("Refused:") and "check failed" not in message, why
+    assert "companies/<number>" in hook("fence", use("Glob", pattern="*", path=top), data)[1]  # where to search
+
+
 def test_what_belongs_to_one_fund_cannot_be_read_by_another(round_: dict) -> None:
     data, folder = round_["data"], round_["session_dir"]
     mine = tasks.write(folder, "pm-careful-run-1", "bobby-pm-careful", "Decide.", run=1)
@@ -468,6 +509,11 @@ def test_an_answer_in_its_form_is_read() -> None:
     draft = 'First I thought:\n\n```json\n{"fund": "careful", "decisions": "?"}\n```\n\nBut on reflection:\n\n'
     assert answers.parse(draft + wrap(DECISIONS), "decisions") == DECISIONS
     assert answers.parse(wrap(DECISIONS).replace("\n", "\r\n"), "decisions") == DECISIONS
+    # Plain words after the block are ignored, as all words outside it are: they do not spoil the answer.
+    assert (
+        answers.parse(wrap(DECISIONS) + "\nWhat I left out: the full tables.\nFiles read: a, b.", "decisions")
+        == DECISIONS
+    )
 
 
 def change(found: dict, path: str, value: object) -> dict:
@@ -487,8 +533,9 @@ def change(found: dict, path: str, value: object) -> dict:
     "text",
     [
         "No block at all.",
-        wrap(DECISIONS) + "\nOne more thought: buy more.",
         wrap(DECISIONS) + "```json\n{not json}\n```\n",
+        wrap(DECISIONS) + '\nOn reflection:\n\n```json\n{"fund": "careful",',  # a second block, unfinished
+        wrap(DECISIONS) + "\nAlso:\n\n```\nbuy more\n```\n",  # any block after it, not only one marked json
         "```json\n[1, 2]\n```\n",
         "```json\n" + "[" * 100_000 + "]" * 100_000 + "\n```\n",
         wrap(change(DECISIONS, "decisions/0/size_pct", 3)),

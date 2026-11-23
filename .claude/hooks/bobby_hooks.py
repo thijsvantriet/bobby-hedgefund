@@ -128,12 +128,23 @@ def fence(event: dict) -> tuple[int, str]:
         patterns = [str(given.get("glob") or "")] + ([str(given.get("pattern") or "")] if tool == "Glob" else [])
         if any(leaves(p) for p in patterns if p):
             return refuse("a search pattern may not leave its folder")
+        if any("\\" in p for p in patterns):  # a backslash can hide a folder name from this check
+            return refuse("a search pattern may not hold a backslash")
     session_dir = active["session_dir"]
     if not inside(path, session_dir):
         return refuse("that is outside the session folder (give the full path)", path)
     # Inside the folder, a few places belong to one fund only, so that one fund's manager cannot read another's
     # holdings, tasks or debate, and nobody reads the list of all tasks.
     rel = list(Path(os.path.relpath(os.path.realpath(path), os.path.realpath(session_dir))).parts)
+    if not rel:
+        # The session folder itself. Every search from here reaches the task files and the funds' files: a Glob
+        # pattern without a slash matches at any depth, and Claude Code rewrites patterns that start with folder
+        # names, so no pattern can be judged safe from here.
+        return refuse(
+            "a search may not start at the session folder itself; give a folder inside it as the folder, such as "
+            "companies/<number> or round/reports, or read the file you need",
+            path,
+        )
     if rel[0] == "tasks":
         if tool != "Read" or len(rel) != 2:
             return refuse("the folder of tasks is not searched; read your own task file", path)
