@@ -110,8 +110,10 @@ def parse(final_text: str, kind: str) -> dict[str, Any]:
     if not blocks:
         raise AnswerError("the answer holds no block of JSON")
     last = blocks[-1]  # an earlier block is a draft; only the last one is the answer
-    if final_text[last.end() :].strip():
-        raise AnswerError("there is text after the block of JSON")
+    # Plain words after the block are ignored, like everything else an agent writes outside it (no script reads
+    # them). Another block after it, finished or not, is refused: then it is not clear which block is the answer.
+    if "```" in final_text[last.end() :]:
+        raise AnswerError("there is another block after the block of JSON")
     try:
         found = json.loads(last.group(1), parse_float=_no_decimal, object_pairs_hook=_no_twice)
     except (ValueError, AnswerError, RecursionError):

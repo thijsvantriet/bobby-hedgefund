@@ -86,6 +86,8 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-21: **ready for the pilot.** `main` now has a GitHub ruleset that refuses rewriting and deleting it, with nobody exempt, the owner included (docs/decisions/0004, "Update 2026-11-21"); tested on a throwaway branch. The usage percentages are saved by the project's own status line, so the round records them at its start and end without any step for the owner (see "The daily round").
 
+2026-11-23: **pilot day 1 run** (Careful fund; 5 minutes, 1 order, 9 forecasts). Two faults found and fixed the same day (docs/decisions/0009, "Update 2026-11-23"): the reading check crashed when an agent searched the session folder itself (refused safely, but without saying why; now refused with a message that says where to search), and an analyst answer was thrown away for plain words after its block of JSON (now ignored). A reviewer agent (Opus) found three ways around a first version of the search fix; the final version is simpler and covers them. Covered by tests; in effect from the next round.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
