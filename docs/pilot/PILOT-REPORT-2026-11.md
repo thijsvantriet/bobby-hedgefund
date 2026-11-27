@@ -30,7 +30,7 @@ include the owner's other Claude use at the same time).
 | 4 | 11-26 | 4 | 22 | 20 | 28 / 3 / 3 / 4 (25 lost, see faults) | 15 | none | 4.4 | 6 | ? → 1 (new week) |
 | 5 | 11-27 | 3 | 20 | 19 | 1 / 1 / 1 / 4 | 18 | none | 3.8 | 5 (from 0) | 19 → 19 |
 
-\* Other Claude sessions of the owner (server work, a session in the home folder) ran in the same minutes, so
+\* Other Claude sessions of the owner ran in the same minutes, so
 this jump is not the round's alone. "?" = no figure at the start: Claude Code gives the percentages to the status
 line only after the first model call of a session, so the start of a fresh session often has none. The token
 count per role is therefore the exact measure, and the percentage at the end the guide.
