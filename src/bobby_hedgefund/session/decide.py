@@ -29,7 +29,7 @@ from ..log import canon, forecasts, publish, records
 from ..log import private as private_names
 from ..log.store import Entry, Log, LogError, Writer
 from ..universe.output import write_new
-from . import daypage, marker, steps, transcripts
+from . import check, daypage, marker, steps, transcripts
 from . import round as rounds
 from .round import Collected, Round, RoundError
 
@@ -475,6 +475,7 @@ def measure(rnd: Round) -> dict[str, Any]:
         "rate_limits_at_the_start": _at_start(rnd),
         "rate_limits_at_the_end": limits,
         "what_agents_lacked": lacked,
+        "screening_check": check.result(rnd) if rounds.step_tasks(rnd, check.TASK) else None,
         "decisions": json.loads(decided.read_text(encoding="utf-8")) if decided.exists() else None,
         "for_the_log": for_log,
         "dry_run": rnd.dry_run,

@@ -332,8 +332,16 @@ what changed. Each change has a test; options that were turned down are named.
 - **The reason for a deep analysis names the catalyst's date** (until stream 5 brings a real calendar, the date
   of our nearest open forecast).
 
-Still open after the pilot: the weekly check on the screening (spec, section 3) has an agent file but was not
-yet part of the round; it is built separately.
+- **The weekly check on the screening is now part of the round.** It had an agent file but never ran: day 1
+  was a "weekly" day and nothing happened. On a day with weekly extras the screening step also hands out one
+  task (`check-screening`) to `bobby-screening-check`: up to 20 companies the screening marked "no deep look" in
+  the seven days before, drawn by fingerprint of the day and the company number (anyone can draw it again), each
+  with the lines of news the screening saw. Those lines are copied into the task file, because the folders of
+  earlier days may not be read; their source numbers belong to their own day. The check is not told the
+  screening's verdict. Its result (how many of the sample Opus would have sent to a deep look) is kept in the
+  round's folder and in `usage.json`; the spec's rule (more than 2 of 20, two weeks in a row) is applied at the
+  monthly review, not in the round. Its verdicts never count as screening verdicts. Measured on the pilot data:
+  the first check (Monday 2026-11-30) has exactly 20 companies to draw from.
 
 ## Revisit
 Revisit: by 2027-01, or after the pilot week, or when a new Claude Code version changes agent files, hooks or the

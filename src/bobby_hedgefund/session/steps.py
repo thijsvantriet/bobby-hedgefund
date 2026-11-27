@@ -30,7 +30,7 @@ from ..log import canon, private, records
 from ..log.store import Log
 from ..log.text import TextCheck
 from ..universe.output import write_new
-from . import marker, roles, select, tasks, transcripts
+from . import check, marker, roles, select, tasks, transcripts
 from . import prepare as prep
 from . import round as rounds
 from .round import Collected, Round, RoundError
@@ -518,6 +518,9 @@ def screening(rnd: Round) -> list[str]:
     for path in batches:
         number = path.stem.removeprefix("batch-")
         made.append(rounds.write_task(rnd, f"screening-{number}", "bobby-screening", _screening_lines(path)))
+    weekly = check.write_task(rnd)  # the weekly check on the screening runs alongside, on its own sample
+    if weekly is not None:
+        made.append(weekly)
     if not made:
         return ["no company has news today: nothing to screen", "NEXT: bobby-session analysts"]
     return [*rounds.start_lines(rnd, made), THEN.format(step="screening")]
@@ -532,7 +535,9 @@ def screening_again(rnd: Round, results: list[Collected]) -> list[tasks.Task]:
     made = []
     for result in results:
         name = result.task
-        if result.status != "rejected" or not result.reason.startswith(rounds.NOT_IN_FORM) or name.endswith(AGAIN):
+        if not name.startswith("screening-") or name.endswith(AGAIN):
+            continue
+        if result.status != "rejected" or not result.reason.startswith(rounds.NOT_IN_FORM):
             continue
         batch = rnd.session_dir / "screening" / f"batch-{name.removeprefix('screening-')}.md"
         if batch.is_file():  # a task is written once: asked again, this hands back the same task
@@ -881,6 +886,8 @@ def collect(rnd: Round, step: str, wait_seconds: float = 90) -> list[str]:
         raise RoundError(f"nothing to collect for '{step}'; it is one of: {', '.join(STEPS)}")
     prefix, minute, following = STEPS[step]
     wanted = rounds.step_tasks(rnd, prefix)
+    if step == "screening":
+        wanted += rounds.step_tasks(rnd, check.TASK)
     results = rounds.collect(rnd, wanted, rnd.deadline(minute), wait_seconds)
     out = [f"{step}: {rounds.summary_line(results)}"]
     out += [f"- {r.task}: {r.status}: {r.reason}" for r in results if r.status != "ok"]
@@ -898,6 +905,8 @@ def collect(rnd: Round, step: str, wait_seconds: float = 90) -> list[str]:
         if again:
             out.append("A batch whose answer was not in its form gets one fresh run:")
             return [*out, *rounds.start_lines(rnd, again), THEN.format(step="screening")]
+        if rounds.step_tasks(rnd, check.TASK):
+            out.append(check.summary(check.result(rnd)))
     number = {"screening": 3, "analysts": 4, "debate": 5, "managers": 5}[step]
     if step == "analysts":
         out += join_reports(rnd)

@@ -9,12 +9,13 @@ from pathlib import Path
 import pytest
 from fundkit import store_day
 from roundkit import FLAT, THU_8, WED_8, agent_run, began, buy, decisions, fence_refusal, fresh_jobs, make_data, section
+from test_session_prepare import store_filing
 
 from bobby_hedgefund.funds import cli as funds_cli
 from bobby_hedgefund.funds.book import replay
 from bobby_hedgefund.log.store import Log
+from bobby_hedgefund.session import check, decide, marker, steps, tasks
 from bobby_hedgefund.session import cli as session_cli
-from bobby_hedgefund.session import decide, marker, steps, tasks
 from bobby_hedgefund.session import prepare as prep
 from bobby_hedgefund.session import round as rounds
 from bobby_hedgefund.session.round import RoundError
@@ -63,12 +64,14 @@ def analyst_answer(task: tasks.Task) -> dict:
     return section(cik, forecast=task.task.endswith("clinical"))
 
 
-def run_day(world: dict, rnd: rounds.Round, pm_answers, analyst_answers=None, end: bool = True) -> list[str]:
+def run_day(
+    world: dict, rnd: rounds.Round, pm_answers, analyst_answers=None, end: bool = True, screening_answers=None
+) -> list[str]:
     """One whole round with recorded answers, from booking to the end."""
     minute = lambda n: rnd.start + timedelta(minutes=n)  # noqa: E731
     out = steps.book(rnd)
     out += steps.screening(rnd)
-    answer_all(world, rnd, "screening-", screening_yes, minute(3))
+    answer_all(world, rnd, "screening-", screening_answers or screening_yes, minute(3))
     out += steps.collect(rnd, "screening", 0)
     out += steps.analysts(rnd, now=minute(7))
 
@@ -809,3 +812,57 @@ def test_no_fresh_screening_run_for_a_broken_rule_or_late_in_the_round(world: di
         world["monkeypatch"].setattr(rounds, "utcnow", lambda: rnd.start + timedelta(minutes=12))
     out = steps.collect(rnd, "screening", 0)
     assert out[-1] == "NEXT: bobby-session analysts" and not rounds.step_tasks(rnd, "screening-01-again")
+
+
+def test_the_weekly_check_on_the_screening(world: dict) -> None:
+    # Spec, section 3: once a week Opus judges again a sample of companies Haiku marked "no deep look". It never
+    # ran in the pilot week: it was not part of the round yet.
+    evening = datetime(2027, 2, 2, 23, tzinfo=UTC)
+    for cik in (102, 103):  # news the screening will pass over
+        store_filing(world["data"], cik, f"0000000{cik}-27-000005", "4", "2027-02-02", evening)
+    rnd = begin(world)
+
+    def wednesday_screening(task: tasks.Task) -> dict:
+        batch = (rnd.session_dir / "screening" / "batch-01.md").read_text()
+        ciks = [int(line[3:].split()[0]) for line in batch.splitlines() if line.startswith("## ")]
+        verdicts = [{"cik": c, "deep_look": c == 101, "urgent": False, "why": "One sentence."} for c in ciks]
+        return {"companies": verdicts, "lacked": []}
+
+    run_day(world, rnd, three(*[decisions("careful")] * 3), screening_answers=wednesday_screening)
+    noes = check.earlier_noes(world["data"] / "pilot", date(2027, 2, 8))
+    assert noes and 101 not in noes and all(day == "2027-02-03" for day, _ in noes.values())
+    assert check.write_task(rnd) is None  # Wednesday was a monthly day, not a weekly one
+
+    monday = datetime(2027, 2, 8, 8, tzinfo=UTC)
+    for day in (WED, date(2027, 2, 4), date(2027, 2, 5)):
+        store_day(
+            world["data"] / "prices",
+            day,
+            FLAT,
+            when=datetime.combine(day, datetime.min.time(), UTC) + timedelta(hours=30),
+        )
+    fresh_jobs(world["data"], monday)
+    mon = begin(world, "session-3", monday)
+    assert mon.extras == ["weekly"]
+    out = steps.screening(mon)
+    (task,) = rounds.step_tasks(mon, check.TASK)
+    assert task.agent == "bobby-screening-check" and any(task.prompt(mon.session_dir) in line for line in out)
+    text = (mon.session_dir / task.file).read_text()
+    for cik in noes:
+        assert f"## {cik} " in text and "(judged on 2027-02-03)" in text
+    assert "Files:" not in text and "## 101 " not in text
+    sample = json.loads((mon.round_dir / check.SAMPLE_FILE).read_text())
+    assert sorted(c for c, _ in sample["sample"]) == sorted(noes) and sample["pool"] == len(noes)
+    assert check.draw(noes, date(2027, 2, 8)) == [c for c, _ in sample["sample"]]  # anyone can draw it again
+    # Opus answers: it would have looked deeper at one of them.
+    first = sorted(noes)[0]
+    verdicts = [{"cik": c, "deep_look": c == first, "urgent": False, "why": "One sentence."} for c in sorted(noes)]
+    agent_run(world["records"], mon.session_id, mon.session_dir, task, {"companies": verdicts, "lacked": []}, at=monday)
+    answer_all(world, mon, "screening-", screening_yes, monday)
+    out = steps.collect(mon, "screening", 0)
+    assert any(f"Opus would have looked deeper at 1 of {len(noes)} companies" in line for line in out)
+    assert out[-1] == "NEXT: bobby-session analysts"
+    found = json.loads((mon.round_dir / check.RESULT_FILE).read_text())
+    assert found == {"disagreed": [first], "judged": len(noes), "not_judged": [], "sampled": len(noes), "status": "ok"}
+    assert first not in steps.flagged(mon)[0]  # the check's verdicts never count as screening verdicts
+    assert decide.measure(mon)["screening_check"] == found

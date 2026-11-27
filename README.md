@@ -357,6 +357,10 @@ bobby-session canary               # first pilot days: one agent tries to read o
 - **The step clock is the script's:** no new deep analysis after minute 20; an analyst's answer after minute 28
   waits for the next session; a portfolio manager's answer after minute 38 is "no decision today: out of time";
   hard stop at 45. At most four deep analyses, or two on a day with weekly or monthly extras.
+- **Weekly check on the screening** (first round of a week): Opus judges again up to 20 companies the
+  screening passed over in the week before, from the same lines of news, without seeing the screening's verdict;
+  how many it would have looked at deeper goes into `usage.json` (spec, section 3; the rule is applied at the
+  monthly review).
 - **Three runs per fund.** A new position needs at least two of three, at the smallest size among them, with
   that run's thesis. Everything else follows run number 1. One readable answer is enough for selling, not for
   buying. The log records what each run said.
