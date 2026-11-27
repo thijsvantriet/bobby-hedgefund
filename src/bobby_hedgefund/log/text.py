@@ -142,7 +142,9 @@ _NUMBER_WORD = (
     r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred)"
 )
 _A_PRICE = (
-    r"(?:(?:US\s?)?(?:\$|€|£|USD|EUR)\s?\d[\d,.]*(?!\d|[\d,.]*\s?(?:million|billion|thousand|mn?\b|bn\b|k\b))"
+    # a sum of a million or more written out ("$5,000,000") is an amount, not a price
+    r"(?:(?:US\s?)?(?:\$|€|£|USD|EUR)\s?(?!\d{7}|\d{1,3}(?:,\d{3}){2})"
+    r"\d[\d,.]*(?!\d|[\d,.]*\s?(?:million|billion|thousand|mn?\b|bn\b|k\b))"
     r"|\b(?:\d[\d,.]*|" + _NUMBER_WORD + r")\s?(?:dollars?|euros?|cents?)\b(?!\s+(?:million|billion|thousand)))"
 )
 _COMPARE = r"(?:above|below|over|under|at least|at most|more than|less than|beyond|near|around|at)"
@@ -156,11 +158,15 @@ _PRICE_EVENT = re.compile(
     # "the stock doubles", "shares halve", "the share price is higher": a move, whatever the figure
     r"\b(?:shares?|stock|share price|stock price|market value|market cap\w*|valuation)\b.{0,40}?\b(?:doubl\w+"
     r"|halv\w+|tripl\w+|higher|lower|exceeds?|reach(?:es)?)\b"
-    # "the stock rises 20%", "shares drop by a third", "the stock gains 50%"
-    r"|\b(?:shares?|stock|market value|market cap\w*)\b.{0,40}?\b" + _RISE + r"\b\s+(?:by\s+)?(?:\d[\d,.]*\s?%"
+    # "the stock rises 20%", "shares drop by a third", "the stock is up 30%", "rises at least 30%", "loses half"
+    r"|\b(?:shares?|stock|market value|market cap\w*)\b.{0,40}?\b(?:" + _RISE + r"|up|down|los(?:es?|t|ing))"
+    r"\b\s+(?:by\s+)?(?:(?:at least|more than|over|nearly|about|almost|up to)\s+)?(?:\d[\d,.]*\s?%"
     r"|\d[\d,.]*\s?percent|a (?:third|quarter|half)|half)"
+    # "the stock hits $10", "shares surpass $10", "the stock is worth $10 or more"
+    r"|\b(?:hits?|surpass(?:es|ed)?|tops?|worth)\b(?:\s+\w+){0,2}?\s+"
+    + _A_PRICE
     # "closes above $10", "ends June under $ 5", "is over ten dollars", "goes up to $20", "trades at 12 dollars"
-    r"|\b"
+    + r"|\b"
     + _RISE
     + r"\b(?:\s+\w+){0,3}?\s+(?:up\s+to|down\s+to|to|"
     + _COMPARE

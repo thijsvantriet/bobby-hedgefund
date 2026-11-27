@@ -354,7 +354,11 @@ what changed. Each change has a test; options that were turned down are named.
 - **Review.** A reviewer agent (Opus) read this update before it was merged; its findings are worked in above,
   plus: a repeat of a forecast is compared on the text as the log stores it (after cleaning); a share count is
   not multiplied by today's price after a share split; `bobby-session prepare` by hand builds the same folder as a
-  round. Accepted: the long-quote check now reads more source text (the earlier filings), measured at about half
+  round. A second look at the fixes added: the same event by two dates is two forecasts; a weekly check still
+  running when the round ends gets up to 90 seconds and is then recorded as late; "the stock is up 30%", "hits
+  $10" and "worth $10" are refused, a written-out sum of a million or more is an amount. Known gaps, accepted: a
+  move with the company's name as subject ("ACME rises 30%"), and a repeat whose event had a long quote cut out is
+  written again (it fails open). Accepted: the long-quote check now reads more source text (the earlier filings), measured at about half
   a second per record on the real data of 2026-11-27, some 20 seconds a day.
 
 ## Revisit

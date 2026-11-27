@@ -136,8 +136,9 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
     open_ones = {e.seq: e for e in entries if e.kind == "forecast"}
     resolved = {e.record["ref"] for e in entries if e.kind == "outcome"}
     # Forecasts of today written by an earlier run of this step that stopped halfway: not written twice.
+    # The key holds the date and the probability too: the same event by two dates is two forecasts.
     written_today = {
-        (e.record["company"]["cik"], e.record["role"], e.record["event"])
+        (e.record["company"]["cik"], e.record["role"], e.record["event"], e.record["by_date"], e.record["probability"])
         for e in entries
         if e.kind == "forecast" and e.day == rnd.day
     }
@@ -164,7 +165,7 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
             role = got.agent.removeprefix("bobby-")
             for forecast in got.answer.get("forecasts") or []:
                 stored_form = as_stored(forecast)
-                if (cik, role, stored_form["event"]) in written_today:
+                if (cik, role, stored_form["event"], forecast["by_date"], forecast["probability"]) in written_today:
                     continue
                 same = standing.get(repeat_key(cik, role, stored_form))
                 if same is not None:
@@ -187,7 +188,6 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
                 try:
                     entry = writer.add("forecast", body)
                     written += 1
-                    written_today.add((cik, role, entry.record["event"]))
                     standing[repeat_key(cik, role, entry.record)] = entry.seq
                 except LogError as exc:
                     notes.append(f"a forecast for company {cik} was not written: {exc}")
@@ -417,6 +417,9 @@ def _append_note(rnd: Round, text: str) -> None:
         fh.write(text + "\n")
 
 
+CHECK_WAIT_SECONDS = 90  # how long the end of a round waits for the weekly check on the screening
+
+
 def measure(rnd: Round) -> dict[str, Any]:
     """The usage figures of the round, from the session's own records (docs/SPEC.md section 7)."""
     by_role: dict[str, dict[str, Any]] = {}
@@ -522,7 +525,10 @@ def end(rnd: Round, *, abort: bool = False) -> list[str]:
     rnd.note_step(9, "begin")
     weekly = rounds.step_tasks(rnd, check.TASK)
     if weekly:  # the weekly check on the screening, taken now; until the hard stop a late answer still counts
-        rounds.collect(rnd, weekly, rnd.deadline(rounds.HARD_STOP), 0)
+        # It started with the screening; give it a little time, then an answer that is still not in counts as late,
+        # so the round's records are complete and the week's summary says so (review of 2026-11-27).
+        rounds.collect(rnd, weekly, rnd.deadline(rounds.HARD_STOP), CHECK_WAIT_SECONDS)
+        rounds.collect(rnd, weekly, utcnow(), 0)
         check.result(rnd)
     digest = steps.copy_conversation(rnd.root, Path(rnd.project), rnd.session_id, rnd.day, "end")
     usage = measure(rnd)

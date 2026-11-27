@@ -174,6 +174,15 @@ def test_a_forecast_defined_by_a_price_is_refused() -> None:
         "The stock gains 50% by June",
         "The stock drops 40% after the decision",
         "The share price surpasses $10 by June",
+        # Found by the re-check of 2026-11-27:
+        "The stock is up 30% by 1 June",
+        "ACME stock is down 50% by 1 June",
+        "The stock rises at least 30% by June",
+        "The stock rises more than 20% after the readout",
+        "Shares surpass $10 by June",
+        "The stock hits $10 by June",
+        "The stock is worth $10 or more on 1 June",
+        "The shares lose half their value by June",
     ):
         assert T.price_defined(event), event
     for event in (
@@ -199,6 +208,8 @@ def test_a_forecast_defined_by_a_price_is_refused() -> None:
         "The company announces a stock offering whose closing falls on or before 2027-01-15",
         "The share of patients with a response rises in the second cohort",
         "The company announces a stock offering of $50 million",
+        "The upfront payment for the shares is at least $5,000,000",
+        "The response rate rises by at least 20% in the second cohort",
     ):
         assert not T.price_defined(event), event
     with pytest.raises(ValueError, match="defined by a price"):

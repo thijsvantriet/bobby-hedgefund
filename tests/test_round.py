@@ -916,11 +916,14 @@ def test_a_repeat_is_compared_as_the_log_stores_it_and_twice_in_one_round_is_onc
         if made["forecasts"]:
             made["forecasts"][0]["event"] = "The company repays a loan of $75 million before June"
             made["forecasts"].append(dict(made["forecasts"][0]))
+            made["forecasts"].append({**made["forecasts"][0], "by_date": "2027-12-01", "probability": "80%"})
         return made
 
     run_day(world, rnd, three(*[decisions("careful")] * 3), analyst_answers=answers)
     wednesday = [e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast"]
-    assert len(wednesday) == 2 and all("[sealed]" in f["event"] for f in wednesday)  # one per company, not two
+    # Per company: the twin is written once, the same event by a later date is a forecast of its own.
+    assert len(wednesday) == 4 and all("[sealed]" in f["event"] for f in wednesday)
+    assert sorted(f["by_date"] for f in wednesday) == ["2027-06-01"] * 2 + ["2027-12-01"] * 2
     fresh_jobs(world["data"], THU_8)
     store_day(world["data"] / "prices", WED, FLAT, when=datetime(2027, 2, 4, 6, tzinfo=UTC))
     thursday = begin(world, "session-3", THU_8)
@@ -930,3 +933,34 @@ def test_a_repeat_is_compared_as_the_log_stores_it_and_twice_in_one_round_is_onc
     assert again
     new = [e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast" and e.day == thursday.day]
     assert not {f["company"]["cik"] for f in new} & again
+
+
+def test_a_weekly_check_without_an_answer_is_late_when_the_round_ends(world: dict) -> None:
+    # Re-check of 2026-11-27: a check still running at the end must not leave a task without a result.
+    evening = datetime(2027, 2, 2, 23, tzinfo=UTC)
+    for cik in (102, 103):
+        store_filing(world["data"], cik, f"0000000{cik}-27-000005", "4", "2027-02-02", evening)
+    rnd = begin(world)
+
+    def no_to_all_but_101(task: tasks.Task) -> dict:
+        batch = (rnd.session_dir / "screening" / "batch-01.md").read_text()
+        ciks = [int(line[3:].split()[0]) for line in batch.splitlines() if line.startswith("## ")]
+        return {
+            "companies": [{"cik": c, "deep_look": c == 101, "urgent": False, "why": "x"} for c in ciks],
+            "lacked": [],
+        }
+
+    run_day(world, rnd, three(*[decisions("careful")] * 3), screening_answers=no_to_all_but_101)
+    monday = datetime(2027, 2, 8, 8, tzinfo=UTC)
+    for day in (WED, date(2027, 2, 4), date(2027, 2, 5)):
+        when = datetime.combine(day, datetime.min.time(), UTC) + timedelta(hours=30)
+        store_day(world["data"] / "prices", day, FLAT, when=when)
+    fresh_jobs(world["data"], monday)
+    mon = begin(world, "session-3", monday)
+    world["monkeypatch"].setattr(decide, "CHECK_WAIT_SECONDS", 0)
+    world["monkeypatch"].setattr(rounds, "utcnow", lambda: monday + timedelta(minutes=10))
+    out = run_day(world, mon, three(*[decisions("careful")] * 3))
+    assert rounds.stored(mon, check.TASK).status == "late"
+    usage = json.loads((mon.round_dir / "usage.json").read_text())
+    assert usage["screening_check"] == {"sampled": 2, "status": "late"}
+    assert any("weekly check on the screening: its answer was late" in line for line in out)
