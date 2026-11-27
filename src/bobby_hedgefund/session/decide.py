@@ -27,9 +27,10 @@ from ..funds.prices import PriceBook
 from ..funds.universe import covered_list
 from ..log import canon, forecasts, publish, records
 from ..log import private as private_names
+from ..log import text as log_text
 from ..log.store import Entry, Log, LogError, Writer
 from ..universe.output import write_new
-from . import daypage, marker, steps, transcripts
+from . import check, daypage, marker, steps, transcripts
 from . import round as rounds
 from .round import Collected, Round, RoundError
 
@@ -112,6 +113,13 @@ def saw(sources: list[dict[str, Any]], inputs: dict[int, dict[str, Any]]) -> lis
     return out
 
 
+def repeat_key(cik: int, role: str, forecast: dict[str, Any]) -> tuple[Any, ...]:
+    """What makes two forecasts the same: company, role, event (case, spaces and end marks aside), date and
+    probability."""
+    event = " ".join(str(forecast["event"]).split()).rstrip(" .;").casefold()
+    return (cik, role, event, forecast["by_date"], forecast["probability"])
+
+
 def analyst_answers(rnd: Round) -> dict[int, list[Collected]]:
     out: dict[int, list[Collected]] = {}
     for task in rounds.step_tasks(rnd, "analysis-"):
@@ -128,19 +136,40 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
     open_ones = {e.seq: e for e in entries if e.kind == "forecast"}
     resolved = {e.record["ref"] for e in entries if e.kind == "outcome"}
     # Forecasts of today written by an earlier run of this step that stopped halfway: not written twice.
+    # The key holds the date and the probability too: the same event by two dates is two forecasts.
     written_today = {
-        (e.record["company"]["cik"], e.record["role"], e.record["event"])
+        (e.record["company"]["cik"], e.record["role"], e.record["event"], e.record["by_date"], e.record["probability"])
         for e in entries
         if e.kind == "forecast" and e.day == rnd.day
     }
+    # An open forecast given again by the same role with the same event, date and probability adds nothing and
+    # would count one view several times (pilot: 22 of 100 forecasts). A changed probability is written.
+    standing = {
+        repeat_key(e.record["company"]["cik"], e.record["role"], e.record): e.seq
+        for e in entries
+        if e.kind == "forecast" and e.seq not in resolved
+    }
+
+    def as_stored(forecast: dict[str, Any]) -> dict[str, Any]:
+        """The forecast with its event as the log would store it: the log holds the cleaned text, so a repeat is
+        compared on that (review of 2026-11-27). The long-quote part of the check is left out here."""
+        event = log_text.clean(forecast["event"], None, writer.check.known_amounts, writer.check.private).text
+        return {**forecast, "event": event}
+
     written = 0
     for cik, sections in sorted(analyst_answers(rnd).items()):
         company = universe.companies[cik]
         about = {"cik": cik, "name": company.name, "ticker": company.ticker}
         for got in sections:
             assert got.answer is not None
+            role = got.agent.removeprefix("bobby-")
             for forecast in got.answer.get("forecasts") or []:
-                if (cik, got.agent.removeprefix("bobby-"), forecast["event"]) in written_today:
+                stored_form = as_stored(forecast)
+                if (cik, role, stored_form["event"], forecast["by_date"], forecast["probability"]) in written_today:
+                    continue
+                same = standing.get(repeat_key(cik, role, stored_form))
+                if same is not None:
+                    notes.append(f"a forecast for company {cik} repeats open record {same} unchanged; not written")
                     continue
                 body = {
                     "company": about,
@@ -151,14 +180,15 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
                     "probability": forecast["probability"],
                     "make_or_break": forecast["make_or_break"],
                     "reasoning": forecast["reasoning"],
-                    "sources": saw(forecast["sources"], inputs),
+                    "sources": saw(forecast.get("sources", []), inputs),
                     "agent": rounds.agent_entry(got),
                     "cutoff": iso(rnd.cutoff),
                     **mark,
                 }
                 try:
-                    writer.add("forecast", body)
+                    entry = writer.add("forecast", body)
                     written += 1
+                    standing[repeat_key(cik, role, entry.record)] = entry.seq
                 except LogError as exc:
                     notes.append(f"a forecast for company {cik} was not written: {exc}")
             for done in got.answer.get("resolved") or []:
@@ -387,6 +417,9 @@ def _append_note(rnd: Round, text: str) -> None:
         fh.write(text + "\n")
 
 
+CHECK_WAIT_SECONDS = 90  # how long the end of a round waits for the weekly check on the screening
+
+
 def measure(rnd: Round) -> dict[str, Any]:
     """The usage figures of the round, from the session's own records (docs/SPEC.md section 7)."""
     by_role: dict[str, dict[str, Any]] = {}
@@ -457,6 +490,7 @@ def measure(rnd: Round) -> dict[str, Any]:
         "rate_limits_at_the_start": _at_start(rnd),
         "rate_limits_at_the_end": limits,
         "what_agents_lacked": lacked,
+        "screening_check": check.result(rnd) if rounds.step_tasks(rnd, check.TASK) else None,
         "decisions": json.loads(decided.read_text(encoding="utf-8")) if decided.exists() else None,
         "for_the_log": for_log,
         "dry_run": rnd.dry_run,
@@ -489,6 +523,13 @@ def end(rnd: Round, *, abort: bool = False) -> list[str]:
         raise RoundError("the day is not published yet: run `bobby-session publish` first (or end with --abort)")
     done = json.loads(published.read_text(encoding="utf-8"))
     rnd.note_step(9, "begin")
+    weekly = rounds.step_tasks(rnd, check.TASK)
+    if weekly:  # the weekly check on the screening, taken now; until the hard stop a late answer still counts
+        # It started with the screening; give it a little time, then an answer that is still not in counts as late,
+        # so the round's records are complete and the week's summary says so (review of 2026-11-27).
+        rounds.collect(rnd, weekly, rnd.deadline(rounds.HARD_STOP), CHECK_WAIT_SECONDS)
+        rounds.collect(rnd, weekly, utcnow(), 0)
+        check.result(rnd)
     digest = steps.copy_conversation(rnd.root, Path(rnd.project), rnd.session_id, rnd.day, "end")
     usage = measure(rnd)
     usage["conversation_copy_sha256"] = digest
@@ -534,6 +575,8 @@ def summary_lines(rnd: Round, usage: dict[str, Any]) -> list[str]:
         f"{tokens.get('cache_creation_input_tokens', 0):,}, read from it {tokens.get('cache_read_input_tokens', 0):,}, "
         f"output {tokens.get('output_tokens', 0):,})."
     )
+    if usage.get("screening_check") is not None or rounds.step_tasks(rnd, check.TASK):
+        out.append(check.summary(usage.get("screening_check")))
     limits = usage["for_the_log"]
     if "five_hour_pct" in limits or "weekly_pct" in limits:
         out.append(

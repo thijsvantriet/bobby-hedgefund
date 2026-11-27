@@ -200,6 +200,10 @@ def test_an_agent_reads_inside_the_session_folder_and_nowhere_else(round_: dict)
         "starting another agent": use("Agent", prompt="x"),
         "changing a file": use("MultiEdit", file_path=str(folder / "companies" / "101" / "company.md")),
     }
+    # Claude Code's own copy of a long search result (pilot, 2026-11-26): refused, with a message that says what
+    # to do instead. That place holds the saved results of every agent of the round.
+    saved = Path.home() / ".claude" / "projects" / "-x" / "s1" / "tool-results" / "toolu_1.txt"
+    refused["a saved copy of a long search result"] = read(saved)
     for why, event in refused.items():
         code, message = hook("fence", event, data)
         assert code == 2 and message.startswith("Refused:"), why
@@ -207,6 +211,7 @@ def test_an_agent_reads_inside_the_session_folder_and_nowhere_else(round_: dict)
     assert hook("fence", "[1, 2]", data)[0] == 2
     noted = [json.loads(line) for line in (round_["round_dir"] / "refusals.jsonl").read_text().splitlines()]
     assert len(noted) == len(refused) and {n["check"] for n in noted} == {"fence"}
+    assert "search a smaller folder" in hook("fence", read(saved), data)[1]
 
 
 def test_a_search_from_the_top_of_the_session_folder_is_refused_and_never_crashes(round_: dict) -> None:
@@ -594,3 +599,11 @@ def test_a_section_with_forecasts_and_resolved_ones() -> None:
             answers.parse(wrap(change(section, path, value)), "section")
     with pytest.raises(answers.AnswerError, match="unknown kind"):
         answers.parse(wrap(section), "poem")
+    # A forecast without its list of sources is read as one with an empty list (pilot, 2026-11-27); the section's
+    # own list stays required.
+    bare = json.loads(json.dumps(section))
+    del bare["forecasts"][0]["sources"]
+    assert "sources" not in answers.parse(wrap(bare), "section")["forecasts"][0]
+    del bare["sources"]
+    with pytest.raises(answers.AnswerError, match="'sources' is missing"):
+        answers.parse(wrap(bare), "section")

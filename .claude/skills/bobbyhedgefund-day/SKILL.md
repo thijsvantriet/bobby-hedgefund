@@ -44,6 +44,8 @@ Each command ends with a line `NEXT:` that names the next command. Follow those 
 1. `uv run bobby-session book` (step 2: fills, company events and values since the last session)
 2. `uv run bobby-session screening` (step 3). It prints the agents to start. Start them all at once, in the
    background, and then run `uv run bobby-session collect screening` right away: that command does the waiting.
+   If `collect screening` prints an agent to start (a fresh run of a batch whose answer was not in its form),
+   start it as printed and run `collect screening` again. That is a new task, not the same one started twice.
 3. `uv run bobby-session analysts` (step 4), start what it prints, then `uv run bobby-session collect analysts`.
 4. `uv run bobby-session debate` (only does something when the Debate fund runs), start what it prints, then
    `uv run bobby-session collect debate`; repeat `debate` until it says `NEXT: bobby-session managers`.

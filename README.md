@@ -6,8 +6,9 @@ a world index fund; docs/SPEC.md).
 
 **This is an experiment with paper money. Nothing here is investment advice, and no real money is traded.**
 
-**How far it is (2026-11):** the research reports, the nightly data archive and the data streams the pilot needs exist. There are no agents, no
-portfolio and no results yet. The log below shows each step.
+**How far it is (2026-11):** the data streams, the agents and the daily round exist; the pilot week ran (paper
+money, pilot only, nothing counts) and two extra pilot days with all three AI funds follow. No live funds and no
+results yet. The log below shows each step.
 
 ## Status
 2026-11-15: project named Bobby Hedgefund (repo and folder `bobby-hedgefund`, renamed from biotech-agents). Idea brainstormed with Claude (see docs/IDEA.md, incl. a prior-art check). Project folder created; no spec, no code yet.
@@ -88,6 +89,41 @@ portfolio and no results yet. The log below shows each step.
 
 2026-11-23: **pilot day 1 run** (Careful fund; 5 minutes, 1 order, 9 forecasts). Two faults found and fixed the same day (docs/decisions/0009, "Update 2026-11-23"): the reading check crashed when an agent searched the session folder itself (refused safely, but without saying why; now refused with a message that says where to search), and an analyst answer was thrown away for plain words after its block of JSON (now ignored). A reviewer agent (Opus) found three ways around a first version of the search fix; the final version is simpler and covers them. Covered by tests; in effect from the next round.
 
+2026-11-24: **pilot day 2 run** (Careful fund; 4 minutes, 23 agent runs, 4 companies analysed, 33 forecasts, no
+order: all three manager runs chose to do nothing). Usage at the end: 7% of the five-hour limit, 34% of the week
+(account-wide; the figure at the start was not yet available). Faults: two forecasts refused as "defined by a
+price" although they were about a company event (wrongly, see 2026-11-27).
+
+2026-11-25: **pilot day 3 run** (5 minutes, 20 agent runs, 25 forecasts; 1 order: buy Rezolute, 2 of 3 runs
+agreed, at the smaller size). Usage: 7% of the five-hour limit; the weekly figure went from 34% to 51% during the
+round, but other Claude sessions of the owner ran in the same minutes, so that jump is not the round's alone.
+No faults.
+
+2026-11-26: **pilot day 4 run** (4 minutes, 22 agent runs, 15 forecasts, no order). Usage: 6% of the five-hour
+limit, 1% of the week (the weekly window had just started again). Faults: the first screening batch was thrown
+away (no block of JSON), so 25 companies were not judged; one of the three manager runs was thrown away because
+it had *tried* to read a file outside the session folder (Claude Code's saved copy of a long search result; the
+reading check had refused it); two forecasts wrongly refused as "defined by a price".
+
+2026-11-27: **pilot day 5 run** (3 minutes, 20 agent runs, 18 forecasts, no order: all three runs agreed). Usage:
+5% of the five-hour limit (from 0%), the week unchanged at 19%: one Careful-only round is below 1% of the week.
+Faults: an analyst's whole section was thrown away for a forecast without its `sources` field; two forecasts
+wrongly refused as "defined by a price"; on several days the agents could not open the universe list [1] and the
+linking table [3] and could not cite the filings behind our earlier reports. Over the five days: 97 agent runs,
+93 answers used, 100 forecasts, 2 orders, 3 to 5 minutes a round (of 45), about 4 million tokens a round, mostly
+read from the cache.
+
+2026-11-27: **pilot faults fixed** (branch `pilot-fixes`; docs/decisions/0009 and 0003, "Update 2026-11-27"):
+each company's folder now holds its own lines of the universe list and the linking table, and for the companies
+that may be analysed their filings of the last 90 days, marked as earlier (not news), with today's numbers for
+the filings an earlier report cites; a forecast without `sources` counts as one with none; the "price" check no
+longer refuses "shares sold under an agreement"; a read the reading check refused no longer throws an answer
+away; agents are told where to search; an unchanged repeat of an open forecast is not written again; a screening
+batch lost for its form gets one fresh run. Found on the way: 7 of the 202 companies have no linked trials, among
+them Rezolute, which the Careful fund holds (no sponsor name was suggested for it). **Owner said yes (2026-11-27)
+to starting the Bold and Debate funds in the pilot** for two extra days, Monday 2026-11-30 and Tuesday 2026-12-01,
+so that the full setup is measured. Draft report: docs/pilot/PILOT-REPORT-2026-11.md.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -105,9 +141,14 @@ The plan is docs/SPEC.md ("Order of work"). In short:
 3. ~~Record 0009, agent files, decision log, fund books, session preparation, the daily round and a try-out of
    one day~~ (built 2026-11-18; merged 2026-11-19, PRs #19-#26; record 0009 accepted). ~~Day 0~~ (run 2026-11-20, without a fund; it does not
    count as a pilot day). **Now (owner):** the pilot week (spec, section 7), from Monday 2026-11-23: a fresh session
-   and `/bobbyhedgefund-day` on five working days. Days 1-3 the Careful fund alone (started 2026-11-20); before day 4
-   the other two AI funds are started, after the owner's yes; the owner reads `/usage` only if the saved usage
-   figures turn out to be missing.
+   and `/bobbyhedgefund-day` on five working days. ~~Days 1-5~~ (run 2026-11-23 to 27, Careful fund only; the
+   other two funds were not started in time). **Now:** the fixes of 2026-11-27 merged, the Bold and Debate funds
+   started in the pilot (owner's yes, 2026-11-27), then **two extra pilot days with all three AI funds: Monday
+   2026-11-30 and Tuesday 2026-12-01** (owner: fresh session + `/bobbyhedgefund-day`). Then the pilot report
+   (docs/pilot/PILOT-REPORT-2026-11.md) gets its three-fund figures, and the owner's go or no-go.
+   Also before go-live: the by-hand check of missed sponsor names, starting with the 7 companies that have no
+   linked trials (Rezolute first: a fund holds it), and the trial records themselves in the company folders
+   (the information the agents missed most).
    ~~Open before the pilot: the rule on `main` that refuses rewriting (record 0004), and a way to read the usage
    percentages~~ (done 2026-11-21: the ruleset is on and tested; the usage figures come from the project's own
    status line, see "The daily round", "Usage").
@@ -259,9 +300,15 @@ bobby-session prepare              # build today's session folder at the data cu
 - **Only what was saved before the data cut-off.** A saved file counts by the time in its line of the saved-files
   list, never by a date of the file system. A file our own jobs made (the universe, the linking table) is used
   only when every file in its own list of inputs was saved before the cut-off.
-- **Per company** (`companies/<SEC number>/`): `company.md` (who it is, what is new since the last session),
-  `numbers.md` (worked out by script from saved prices; private), `trials.md`, the new filings as plain text
-  (the form itself and its press releases), and our own newest report on it.
+- **Per company** (`companies/<SEC number>/`): `company.md` (who it is, its line of the universe list without
+  prices or anything about the XBI fund, what is new since the last session), `numbers.md` (worked out by script
+  from saved prices; private), `trials.md` (its linked trials from the linking table, and their changes), the new
+  filings as plain text (the form itself and its press releases), and our own newest report on it, with a note
+  that gives today's numbers for the filings it cites.
+- **Earlier filings** (since 2026-11-27): a company the order of deep analysis can reach today (news, a holding,
+  a catalyst, the next in the rotation) also gets its filings of the 90 days before the cut-off, at most 30,
+  marked `earlier` in the list of inputs and under their own heading in `company.md`. They are never news, so
+  analysts can cite the filings behind an earlier report and read the last quarterly report.
 - **`inputs.jsonl`**: one numbered line per source with its fingerprint, the time it was saved and its link. The
   agents name their sources by these numbers; the session's first log record carries the fingerprint of this list.
 - **Screening:** `screening/batch-NN.md` with a short digest per company that has news, 25 a file. Companies
@@ -310,6 +357,10 @@ bobby-session canary               # first pilot days: one agent tries to read o
 - **The step clock is the script's:** no new deep analysis after minute 20; an analyst's answer after minute 28
   waits for the next session; a portfolio manager's answer after minute 38 is "no decision today: out of time";
   hard stop at 45. At most four deep analyses, or two on a day with weekly or monthly extras.
+- **Weekly check on the screening** (first round of a week): Opus judges again up to 20 companies the
+  screening passed over in the week before, from the same lines of news, without seeing the screening's verdict;
+  how many it would have looked at deeper goes into `usage.json` (spec, section 3; the rule is applied at the
+  monthly review).
 - **Three runs per fund.** A new position needs at least two of three, at the smallest size among them, with
   that run's thesis. Everything else follows run number 1. One readable answer is enough for selling, not for
   buying. The log records what each run said.

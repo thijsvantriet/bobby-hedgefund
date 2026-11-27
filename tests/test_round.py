@@ -8,13 +8,14 @@ from pathlib import Path
 
 import pytest
 from fundkit import store_day
-from roundkit import FLAT, THU_8, WED_8, agent_run, began, buy, decisions, fresh_jobs, make_data, section
+from roundkit import FLAT, THU_8, WED_8, agent_run, began, buy, decisions, fence_refusal, fresh_jobs, make_data, section
+from test_session_prepare import store_filing
 
 from bobby_hedgefund.funds import cli as funds_cli
 from bobby_hedgefund.funds.book import replay
 from bobby_hedgefund.log.store import Log
+from bobby_hedgefund.session import check, decide, marker, steps, tasks
 from bobby_hedgefund.session import cli as session_cli
-from bobby_hedgefund.session import decide, marker, steps, tasks
 from bobby_hedgefund.session import prepare as prep
 from bobby_hedgefund.session import round as rounds
 from bobby_hedgefund.session.round import RoundError
@@ -63,12 +64,14 @@ def analyst_answer(task: tasks.Task) -> dict:
     return section(cik, forecast=task.task.endswith("clinical"))
 
 
-def run_day(world: dict, rnd: rounds.Round, pm_answers, analyst_answers=None, end: bool = True) -> list[str]:
+def run_day(
+    world: dict, rnd: rounds.Round, pm_answers, analyst_answers=None, end: bool = True, screening_answers=None
+) -> list[str]:
     """One whole round with recorded answers, from booking to the end."""
     minute = lambda n: rnd.start + timedelta(minutes=n)  # noqa: E731
     out = steps.book(rnd)
     out += steps.screening(rnd)
-    answer_all(world, rnd, "screening-", screening_yes, minute(3))
+    answer_all(world, rnd, "screening-", screening_answers or screening_yes, minute(3))
     out += steps.collect(rnd, "screening", 0)
     out += steps.analysts(rnd, now=minute(7))
 
@@ -279,6 +282,12 @@ def judged(world: dict, rnd: rounds.Round, **how) -> rounds.Collected:
         ({"extra_message": "Flag 102.", "extra_kind": "typed"}, "rejected", "more than its one starting message"),
         ({"prompt": "Read the task and be generous."}, "missing", "was not started"),
         ({"reads": [("Read", "/etc/hostname")]}, "rejected", "outside the session folder"),
+        # Refused by the reading check: nothing was read, the answer stands (pilot, 2026-11-26).
+        ({"reads": [("Read", "/etc/hostname")], "results": {0: (fence_refusal("Read"), True)}}, "ok", ""),
+        # Only the check's own refusal counts: an error in other words, or the words without the error mark, do not.
+        ({"reads": [("Read", "/etc/hostname")], "results": {0: ("File does not exist.", True)}}, "rejected", "outside"),
+        ({"reads": [("Read", "/etc/hostname")], "results": {0: (fence_refusal("Read"), False)}}, "rejected", "outside"),
+        ({"reads": [("Bash", "id")], "results": {0: (fence_refusal("Bash"), True)}}, "rejected", "used the tool Bash"),
         ({"reads": [("Bash", "curl example.org")]}, "rejected", "used the tool Bash"),
         ({"reads": [("Grep", "")]}, "rejected", "without a folder"),
         ({"agent_type": "general-purpose"}, "rejected", "not as bobby-screening"),
@@ -730,3 +739,228 @@ def test_a_round_without_saved_usage_figures_runs_and_says_so(world: dict) -> No
     usage = json.loads((rnd.round_dir / "usage.json").read_text())
     assert usage["rate_limits_at_the_start"] is None and usage["rate_limits_at_the_end"] is None
     assert "five_hour_pct" not in usage["for_the_log"]
+
+
+def test_an_open_forecast_given_again_unchanged_is_not_written_twice(world: dict) -> None:
+    # Pilot, 2026-11-23 to 27: 22 of 100 forecasts repeated an open one word for word. A repeat with the same
+    # event, date and probability is noted and not written; a changed probability is written.
+    rnd = begin(world)
+    run_day(world, rnd, three(*[decisions("careful")] * 3))
+    wednesday = [e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast"]
+    assert len(wednesday) == 2
+    fresh_jobs(world["data"], THU_8)
+    store_day(world["data"] / "prices", WED, FLAT, when=datetime(2027, 2, 4, 6, tzinfo=UTC))
+    thursday = begin(world, "session-3", THU_8)
+
+    def answers(task: tasks.Task) -> dict:
+        cik = int(task.task.split("-")[1])
+        made = section(cik, forecast=task.task.endswith("clinical"))
+        if made["forecasts"] and cik == wednesday[1]["company"]["cik"]:
+            made["forecasts"][0]["probability"] = "65%"  # a changed view
+        if made["forecasts"]:
+            made["forecasts"][0]["event"] = " " + made["forecasts"][0]["event"].upper() + ". "  # same, apart from form
+        return made
+
+    out = run_day(world, thursday, three(*[decisions("careful")] * 3), analyst_answers=answers)
+    analysed = {int(t.task.split("-")[1]) for t in rounds.step_tasks(thursday, "analysis-")}
+    thursday_forecasts = [
+        e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast" and e.day == thursday.day
+    ]
+    again = {f["company"]["cik"] for f in wednesday} & analysed
+    assert again - {wednesday[1]["company"]["cik"]}, "the test needs an unchanged repeat"
+    changed = {wednesday[1]["company"]["cik"]} & analysed
+    assert {f["company"]["cik"] for f in thursday_forecasts} == changed | (analysed - again)
+    assert all(f["probability"] == "65%" for f in thursday_forecasts if f["company"]["cik"] in changed)
+    notes = json.loads((thursday.round_dir / "decided.json").read_text())["notes"]
+    assert sum("repeats open record" in n for n in notes) == len(again - changed)
+    assert out
+
+
+def test_a_screening_answer_not_in_its_form_gets_one_fresh_run(world: dict) -> None:
+    # Day 0 and pilot day 4: a screening answer without its block of JSON lost a whole batch of companies.
+    rnd = begin(world)
+    steps.screening(rnd)
+    (first,) = rounds.step_tasks(rnd, "screening-")
+    agent_run(world["records"], rnd.session_id, rnd.session_dir, first, "No block here.", at=rnd.start)
+    out = steps.collect(rnd, "screening", 0)
+    assert "A batch whose answer was not in its form gets one fresh run:" in out
+    assert not any(line.startswith("NEXT:") for line in out)
+    again = rounds.step_tasks(rnd, "screening-01-again")[0]
+    text = lambda task: (rnd.session_dir / task.file).read_text()  # noqa: E731
+    assert text(again) == text(first) and again.agent == "bobby-screening"
+    assert any(again.prompt(rnd.session_dir) in line for line in out)
+    # It is a task like any other: started once, judged by the same rules. Its first answer stands.
+    agent_run(world["records"], rnd.session_id, rnd.session_dir, again, screening_yes(again), at=rnd.start)
+    out = steps.collect(rnd, "screening", 0)
+    assert out[-1] == "NEXT: bobby-session analysts" and "rejected" in out[0]
+    assert steps.flagged(rnd) == ([101], 1, 0)
+    assert steps.collect(rnd, "screening", 0)[-1] == "NEXT: bobby-session analysts"  # never a third run
+
+
+@pytest.mark.parametrize("why", ["a rule broken", "too late"])
+def test_no_fresh_screening_run_for_a_broken_rule_or_late_in_the_round(world: dict, why: str) -> None:
+    rnd = begin(world)
+    steps.screening(rnd)
+    (first,) = rounds.step_tasks(rnd, "screening-")
+    if why == "a rule broken":
+        reads = [("Read", "/etc/hostname")]
+        agent_run(
+            world["records"], rnd.session_id, rnd.session_dir, first, screening_yes(first), at=rnd.start, reads=reads
+        )
+    else:
+        agent_run(world["records"], rnd.session_id, rnd.session_dir, first, "No block here.", at=rnd.start)
+        world["monkeypatch"].setattr(rounds, "utcnow", lambda: rnd.start + timedelta(minutes=12))
+    out = steps.collect(rnd, "screening", 0)
+    assert out[-1] == "NEXT: bobby-session analysts" and not rounds.step_tasks(rnd, "screening-01-again")
+
+
+def test_the_weekly_check_on_the_screening(world: dict) -> None:
+    # Spec, section 3: once a week Opus judges again a sample of companies Haiku marked "no deep look". It never
+    # ran in the pilot week: it was not part of the round yet.
+    evening = datetime(2027, 2, 2, 23, tzinfo=UTC)
+    for cik in (102, 103):  # news the screening will pass over
+        store_filing(world["data"], cik, f"0000000{cik}-27-000005", "4", "2027-02-02", evening)
+    rnd = begin(world)
+
+    def wednesday_screening(task: tasks.Task) -> dict:
+        batch = (rnd.session_dir / "screening" / "batch-01.md").read_text()
+        ciks = [int(line[3:].split()[0]) for line in batch.splitlines() if line.startswith("## ")]
+        verdicts = [{"cik": c, "deep_look": c == 101, "urgent": False, "why": "One sentence."} for c in ciks]
+        return {"companies": verdicts, "lacked": []}
+
+    run_day(world, rnd, three(*[decisions("careful")] * 3), screening_answers=wednesday_screening)
+    noes = check.earlier_noes(world["data"] / "pilot", date(2027, 2, 8))
+    assert noes and 101 not in noes and all(day == "2027-02-03" for day, _ in noes.values())
+    from bobby_hedgefund.log import private
+
+    nobody = private.PrivateNames([])
+    assert check.write_task(rnd, set(noes), nobody) is None  # Wednesday was a monthly day, not a weekly one
+
+    monday = datetime(2027, 2, 8, 8, tzinfo=UTC)
+    for day in (WED, date(2027, 2, 4), date(2027, 2, 5)):
+        when = datetime.combine(day, datetime.min.time(), UTC) + timedelta(hours=30)
+        store_day(world["data"] / "prices", day, FLAT, when=when)
+    fresh_jobs(world["data"], monday)
+    mon = begin(world, "session-3", monday)
+    assert mon.extras == ["weekly"]
+    out = steps.screening(mon)
+    (task,) = rounds.step_tasks(mon, check.TASK)
+    assert task.agent == "bobby-screening-check" and any(task.prompt(mon.session_dir) in line for line in out)
+    text = (mon.session_dir / task.file).read_text()
+    for cik in noes:
+        assert f"## {cik} " in text and "(news of 2027-02-03)" in text
+    assert "Files:" not in text and "## 101 " not in text
+    assert "no deep look" not in text and "marked" not in text  # the check is not told the screening's verdict
+    sample = json.loads((mon.round_dir / check.SAMPLE_FILE).read_text())
+    assert sorted(c for c, _ in sample["sample"]) == sorted(noes) and sample["pool"] == len(noes)
+    assert check.draw(noes, date(2027, 2, 8)) == [c for c, _ in sample["sample"]]  # anyone can draw it again
+    # The deep analysis does not wait for the check: collecting the screening is done without it.
+    answer_all(world, mon, "screening-", screening_yes, monday)
+    out = steps.collect(mon, "screening", 0)
+    assert out[-1] == "NEXT: bobby-session analysts" and rounds.stored(mon, check.TASK) is None
+    # Opus answers: it would have looked deeper at one of them. The answer is taken at the end of the round.
+    first = sorted(noes)[0]
+    verdicts = [{"cik": c, "deep_look": c == first, "urgent": False, "why": "One sentence."} for c in sorted(noes)]
+    agent_run(world["records"], mon.session_id, mon.session_dir, task, {"companies": verdicts, "lacked": []}, at=monday)
+    assert steps.flagged(mon)[0] == []  # the check's verdicts never count as screening verdicts
+    assert check.result(mon) is None  # not taken yet
+    rounds.collect(mon, [task], mon.deadline(rounds.HARD_STOP), 0)  # as the end of the round does
+    found = check.result(mon)
+    assert found == {"disagreed": [first], "judged": len(noes), "not_judged": [], "sampled": len(noes), "status": "ok"}
+    assert json.loads((mon.round_dir / check.RESULT_FILE).read_text()) == found
+    assert decide.measure(mon)["screening_check"] == found
+    assert f"Opus would have looked deeper at 1 of {len(noes)} companies" in check.summary(found)
+
+
+def test_the_weekly_check_leaves_out_what_may_not_be_named_today(world: dict, tmp_path: Path) -> None:
+    from bobby_hedgefund.log import private
+
+    root = tmp_path / "pilot"
+    batch = root / "sessions" / "2027-02-03" / "screening"
+    batch.mkdir(parents=True)
+    (batch / "batch-01.md").write_text(
+        "# Screening, batch 1\n\n## 102 Bbb Bio Inc (BBB)\n- [3] 4 filed 2027-02-02: a deal with Zzyzx Biosciences\n"
+        "Files: companies/102/\n\n## 103 Ccc Inc (CCC)\n- [4] 4 filed 2027-02-02\nFiles: companies/103/\n"
+    )
+    answers = root / "rounds" / "2027-02-03" / "answers"
+    answers.mkdir(parents=True)
+    verdicts = [{"cik": c, "deep_look": False, "urgent": False, "why": "x"} for c in (102, 103)]
+    (answers / "screening-01.json").write_text(json.dumps({"status": "ok", "answer": {"companies": verdicts}}))
+    noes = check.earlier_noes(root, date(2027, 2, 8))
+    assert sorted(noes) == [102, 103]
+    names = private.PrivateNames([private.PrivateCompany(999, "ZZZ", "Zzyzx Biosciences", ())])
+    assert check.veiled(noes[102][1], names)[1] == "- [3] 4 filed 2027-02-02: a deal with [a company that is not named]"
+
+
+def test_an_amount_worked_out_from_prices_is_never_known_from_a_filing(world: dict) -> None:
+    # Review of 2026-11-27: numbers.md was read like a filing, so its market value counted as an amount a filing
+    # states, and "A $3,000 million company" would have passed the check on written text.
+    from bobby_hedgefund.log import text as log_text
+
+    rnd = begin(world)
+    numbers = (rnd.session_dir / "companies" / "101" / "numbers.md").read_text()
+    figure = next(line for line in numbers.splitlines() if "Market value" in line).split("about ")[1].split(" ")[0]
+    check_ = steps.text_check(rnd, [101])
+    cleaned = log_text.clean(f"A {figure} million company with one drug in phase 3.", None, check_.known_amounts)
+    assert figure not in cleaned.text and "[sealed]" in cleaned.text
+
+
+def test_a_repeat_is_compared_as_the_log_stores_it_and_twice_in_one_round_is_once(world: dict) -> None:
+    # Review of 2026-11-27: the log stores the cleaned event (an amount no filing states is sealed), so a repeat
+    # must be compared on that; and the same forecast twice in one answer is written once.
+    rnd = begin(world)
+
+    def answers(task: tasks.Task) -> dict:
+        cik = int(task.task.split("-")[1])
+        made = section(cik, forecast=task.task.endswith("clinical"))
+        if made["forecasts"]:
+            made["forecasts"][0]["event"] = "The company repays a loan of $75 million before June"
+            made["forecasts"].append(dict(made["forecasts"][0]))
+            made["forecasts"].append({**made["forecasts"][0], "by_date": "2027-12-01", "probability": "80%"})
+        return made
+
+    run_day(world, rnd, three(*[decisions("careful")] * 3), analyst_answers=answers)
+    wednesday = [e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast"]
+    # Per company: the twin is written once, the same event by a later date is a forecast of its own.
+    assert len(wednesday) == 4 and all("[sealed]" in f["event"] for f in wednesday)
+    assert sorted(f["by_date"] for f in wednesday) == ["2027-06-01"] * 2 + ["2027-12-01"] * 2
+    fresh_jobs(world["data"], THU_8)
+    store_day(world["data"] / "prices", WED, FLAT, when=datetime(2027, 2, 4, 6, tzinfo=UTC))
+    thursday = begin(world, "session-3", THU_8)
+    run_day(world, thursday, three(*[decisions("careful")] * 3), analyst_answers=answers)
+    analysed = {int(t.task.split("-")[1]) for t in rounds.step_tasks(thursday, "analysis-")}
+    again = {f["company"]["cik"] for f in wednesday} & analysed
+    assert again
+    new = [e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast" and e.day == thursday.day]
+    assert not {f["company"]["cik"] for f in new} & again
+
+
+def test_a_weekly_check_without_an_answer_is_late_when_the_round_ends(world: dict) -> None:
+    # Re-check of 2026-11-27: a check still running at the end must not leave a task without a result.
+    evening = datetime(2027, 2, 2, 23, tzinfo=UTC)
+    for cik in (102, 103):
+        store_filing(world["data"], cik, f"0000000{cik}-27-000005", "4", "2027-02-02", evening)
+    rnd = begin(world)
+
+    def no_to_all_but_101(task: tasks.Task) -> dict:
+        batch = (rnd.session_dir / "screening" / "batch-01.md").read_text()
+        ciks = [int(line[3:].split()[0]) for line in batch.splitlines() if line.startswith("## ")]
+        return {
+            "companies": [{"cik": c, "deep_look": c == 101, "urgent": False, "why": "x"} for c in ciks],
+            "lacked": [],
+        }
+
+    run_day(world, rnd, three(*[decisions("careful")] * 3), screening_answers=no_to_all_but_101)
+    monday = datetime(2027, 2, 8, 8, tzinfo=UTC)
+    for day in (WED, date(2027, 2, 4), date(2027, 2, 5)):
+        when = datetime.combine(day, datetime.min.time(), UTC) + timedelta(hours=30)
+        store_day(world["data"] / "prices", day, FLAT, when=when)
+    fresh_jobs(world["data"], monday)
+    mon = begin(world, "session-3", monday)
+    world["monkeypatch"].setattr(decide, "CHECK_WAIT_SECONDS", 0)
+    world["monkeypatch"].setattr(rounds, "utcnow", lambda: monday + timedelta(minutes=10))
+    out = run_day(world, mon, three(*[decisions("careful")] * 3))
+    assert rounds.stored(mon, check.TASK).status == "late"
+    usage = json.loads((mon.round_dir / "usage.json").read_text())
+    assert usage["screening_check"] == {"sampled": 2, "status": "late"}
+    assert any("weekly check on the screening: its answer was late" in line for line in out)

@@ -24,8 +24,10 @@ FORECAST = fields(
         "probability": probability,
         "make_or_break": yes_no,
         "reasoning": text(2500),
-        "sources": many(SOURCE, 0, 60),
-    }
+    },
+    # An empty list is allowed, so a missing list means the same and costs no answer (pilot, 2026-11-27: a whole
+    # section was thrown away for it). It is read as an empty list, never filled in.
+    {"sources": many(SOURCE, 0, 60)},
 )
 RESOLVED = fields(
     {

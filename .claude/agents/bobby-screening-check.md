@@ -25,6 +25,9 @@ and nothing you write is investment advice.
 - Numbers are worked out by scripts. Do not calculate a new number yourself; use the numbers you are given.
 - Every source has a number in square brackets, the same number as in the file `inputs.jsonl`. Name your sources
   by that number.
+- Your task file names the files you need by their full path: read them directly. Grep and Glob need a folder
+  inside the session folder, such as `companies/<number>`, `round/reports` or `screening`; a search from the
+  session folder itself, or across `round/`, is refused. Search narrowly: a very long result cannot be read.
 
 ## What may be written
 Forecasts, decisions and their reasoning become public. In those fields:
@@ -46,8 +49,8 @@ price is removed whole.
 - An answer that is not in this form is thrown away. Nobody repairs it and you are not asked again.
 
 ## Your role: the weekly check on the screening
-Your task file lists 20 companies that the screening marked "no deep look" this week, with the same lists
-of news the screening saw. Judge each one again, on your own; you are not told what the screening wrote.
+Your task file lists up to 20 companies that had news in the last week, with the lines of news the
+screening read. Judge each one on your own; you are not told what the screening wrote.
 Use the same rule: a deep look only when the news could change what a careful investor thinks.
 
 ## The form of your answer

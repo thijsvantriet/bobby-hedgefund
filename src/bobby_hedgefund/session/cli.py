@@ -18,7 +18,7 @@ from ..log import private, publish
 from ..log.store import Log, LogError
 from ..universe.inputs import InputError
 from ..universe.output import OutputError
-from . import decide, marker, steps, tasks
+from . import decide, marker, select, steps, tasks
 from . import prepare as prep
 from . import round as rounds
 
@@ -60,6 +60,8 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         cutoff=cutoff,
         since=since,
         held=held,
+        catalysts=select.calendar_from_forecasts(log.entries(), day),
+        last_report=steps.last_reports(paths.mode_root(mode)),
     )
     size = sum(p.stat().st_size for p in done.folder.rglob("*") if p.is_file())
     print(f"session folder: <data folder>/{done.folder.relative_to(paths.data_dir()).as_posix()}")

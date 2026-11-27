@@ -238,7 +238,11 @@ def test_newest_share_count_adds_up_classes_of_one_report_and_ignores_zero() -> 
         read_shares.newest(b"<html>", "dei")
 
 
-def test_build_command_writes_the_universe_and_its_inputs_and_never_replaces_them(world: Path, capsys) -> None:
+def test_build_command_writes_the_universe_and_its_inputs_and_never_replaces_them(
+    world: Path, capsys, monkeypatch
+) -> None:
+    # The made-up price files end on a fixed day; the age check of `build` is not what this test is about.
+    monkeypatch.setattr("bobby_hedgefund.universe.cli.MAX_PRICE_AGE_DAYS", 10_000)
     assert cli.main(["build"]) == 0 and cli.main(["build"]) == 0
     folder = world.parent / "universe"
     today = date.today().isoformat()
@@ -372,7 +376,9 @@ def test_sec_shares_command_asks_for_the_candidates_of_the_newest_batch(
     assert archive_cli.main(["sec-shares"]) == 1
 
 
-def test_purge_replaces_universe_files_by_copies_without_the_price_columns(world: Path, capsys) -> None:
+def test_purge_replaces_universe_files_by_copies_without_the_price_columns(world: Path, capsys, monkeypatch) -> None:
+    # The made-up price files end on a fixed day; the age check of `build` is not what this test is about.
+    monkeypatch.setattr("bobby_hedgefund.universe.cli.MAX_PRICE_AGE_DAYS", 10_000)
     from bobby_hedgefund.prices import cli as prices_cli
 
     assert cli.main(["build"]) == 0

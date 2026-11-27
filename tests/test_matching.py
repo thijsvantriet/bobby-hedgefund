@@ -265,7 +265,9 @@ def read_csv(path: Path) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(path.read_text(encoding="utf-8"))))
 
 
-def test_from_universe_to_linking_table_through_the_commands(world: Path, capsys) -> None:  # noqa: F811
+def test_from_universe_to_linking_table_through_the_commands(world: Path, capsys, monkeypatch) -> None:  # noqa: F811
+    # The made-up price files end on a fixed day; the age check of `build` is not what this test is about.
+    monkeypatch.setattr("bobby_hedgefund.universe.cli.MAX_PRICE_AGE_DAYS", 10_000)
     data, today = world.parent, date.today().isoformat()
     assert cli.main(["match"]) == 1 and "no universe file yet" in capsys.readouterr().out
     assert cli.main(["build"]) == 0 and cli.main(["match"]) == 0

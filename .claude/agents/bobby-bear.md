@@ -25,6 +25,9 @@ and nothing you write is investment advice.
 - Numbers are worked out by scripts. Do not calculate a new number yourself; use the numbers you are given.
 - Every source has a number in square brackets, the same number as in the file `inputs.jsonl`. Name your sources
   by that number.
+- Your task file names the files you need by their full path: read them directly. Grep and Glob need a folder
+  inside the session folder, such as `companies/<number>`, `round/reports` or `screening`; a search from the
+  session folder itself, or across `round/`, is refused. Search narrowly: a very long result cannot be read.
 
 ## What may be written
 Forecasts, decisions and their reasoning become public. In those fields:

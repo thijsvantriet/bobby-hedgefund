@@ -282,6 +282,30 @@ A second review (Opus) of these fixes found two of them incomplete; worked in, w
 Left as it is (low): a leading session that has been silent for more than two minutes can be taken over by a new
 start; the collecting command waits at most 90 seconds, so a working session is never that quiet.
 
+## Update 2026-11-27: what the session folder holds, after the pilot week
+Two gaps the agents named every day of the pilot ("lacked" in their answers, `rounds/<day>/usage.json`):
+
+- **The universe list [1] and the linking table [3] were in the list of inputs but not in the folder.** The
+  whole files may not go in: the universe list names the companies that may not be named and holds prices, and
+  the XBI columns come from fund holdings. So each company's folder now holds its own lines: in `company.md` its
+  line of the universe list without prices and without anything about the XBI fund (exchange, industry code,
+  kind of filer, former names, shares outstanding with their date), in `trials.md` its sponsor names and trial
+  numbers from the linking table, with links. The two lines of the list of inputs now give the file's `name` and
+  say where the slices are (`in_folder`) instead of a `file` that was not there. `numbers.md` (private) adds a
+  market value of today: the last close times the shares on the universe list.
+- **Filings from earlier sessions could not be cited.** A source number holds for one session only; a report
+  of an earlier day cited numbers that today belonged to other filings, and the filings behind it were in no
+  list of today. Also, the quarterly reports of the first big download (fetched late) were never shown. Now a
+  company that may be analysed today (news, a holding, or within reach of the order of deep analysis: a
+  catalyst or the next ones in the rotation) gets its filings of the 90 days before the cut-off, and those of
+  the day its last report was written, at most 30 (event and periodic reports before insider trades, newest
+  first). They are in the list of inputs marked `earlier` and listed under their own heading in `company.md`;
+  they are never news and never in the screening. The copy of the report gets a note above it: which day's
+  numbers it uses, and today's number for each of its filings. Turned down: one number per filing for all
+  sessions (a bigger change to the log and its checks) and earlier filings for every company with a report
+  (in time that is every company, some 6,000 filings a day). Measured on the real data of 2026-11-27: 120
+  earlier filings for 10 companies; the folder is built in about 20 seconds.
+
 ## Sources
 Read on 2026-11-17 unless noted.
 - Claude Code documentation: [skills and typed commands](https://code.claude.com/docs/en/skills.md),
