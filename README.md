@@ -124,6 +124,11 @@ them Rezolute, which the Careful fund holds (no sponsor name was suggested for i
 to starting the Bold and Debate funds in the pilot** for two extra days, Monday 2026-11-30 and Tuesday 2026-12-01,
 so that the full setup is measured. Draft report: docs/pilot/PILOT-REPORT-2026-11.md.
 
+2026-11-27: **merged** (PR #32: the fixes, the weekly check on the screening, the draft report; reviewed by an Opus
+reviewer agent, 595 tests pass) and **the Bold and Debate funds started in the pilot** ($1,000,000 of paper money
+each; `bobby-funds check` recomputes all books from the log to the cent). Monday's and Tuesday's rounds run all
+three AI funds.
+
 ## Next step
 The plan is docs/SPEC.md ("Order of work"). In short:
 1. ~~Owner reads and merges the spec~~ (done 2026-11-17). ~~Decision records 0003-0008~~ (accepted 2026-11-17).
@@ -142,8 +147,8 @@ The plan is docs/SPEC.md ("Order of work"). In short:
    one day~~ (built 2026-11-18; merged 2026-11-19, PRs #19-#26; record 0009 accepted). ~~Day 0~~ (run 2026-11-20, without a fund; it does not
    count as a pilot day). **Now (owner):** the pilot week (spec, section 7), from Monday 2026-11-23: a fresh session
    and `/bobbyhedgefund-day` on five working days. ~~Days 1-5~~ (run 2026-11-23 to 27, Careful fund only; the
-   other two funds were not started in time). **Now:** the fixes of 2026-11-27 merged, the Bold and Debate funds
-   started in the pilot (owner's yes, 2026-11-27), then **two extra pilot days with all three AI funds: Monday
+   other two funds were not started in time). ~~The fixes merged, the Bold and Debate funds started~~ (2026-11-27,
+   PR #32). **Now:** **two extra pilot days with all three AI funds: Monday
    2026-11-30 and Tuesday 2026-12-01** (owner: fresh session + `/bobbyhedgefund-day`). Then the pilot report
    (docs/pilot/PILOT-REPORT-2026-11.md) gets its three-fund figures, and the owner's go or no-go.
    Also before go-live: the by-hand check of missed sponsor names, starting with the 7 companies that have no
