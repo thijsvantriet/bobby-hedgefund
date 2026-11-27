@@ -27,6 +27,7 @@ from ..funds.prices import PriceBook
 from ..funds.universe import covered_list
 from ..log import canon, forecasts, publish, records
 from ..log import private as private_names
+from ..log import text as log_text
 from ..log.store import Entry, Log, LogError, Writer
 from ..universe.output import write_new
 from . import check, daypage, marker, steps, transcripts
@@ -147,16 +148,25 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
         for e in entries
         if e.kind == "forecast" and e.seq not in resolved
     }
+
+    def as_stored(forecast: dict[str, Any]) -> dict[str, Any]:
+        """The forecast with its event as the log would store it: the log holds the cleaned text, so a repeat is
+        compared on that (review of 2026-11-27). The long-quote part of the check is left out here."""
+        event = log_text.clean(forecast["event"], None, writer.check.known_amounts, writer.check.private).text
+        return {**forecast, "event": event}
+
     written = 0
     for cik, sections in sorted(analyst_answers(rnd).items()):
         company = universe.companies[cik]
         about = {"cik": cik, "name": company.name, "ticker": company.ticker}
         for got in sections:
             assert got.answer is not None
+            role = got.agent.removeprefix("bobby-")
             for forecast in got.answer.get("forecasts") or []:
-                if (cik, got.agent.removeprefix("bobby-"), forecast["event"]) in written_today:
+                stored_form = as_stored(forecast)
+                if (cik, role, stored_form["event"]) in written_today:
                     continue
-                same = standing.get(repeat_key(cik, got.agent.removeprefix("bobby-"), forecast))
+                same = standing.get(repeat_key(cik, role, stored_form))
                 if same is not None:
                     notes.append(f"a forecast for company {cik} repeats open record {same} unchanged; not written")
                     continue
@@ -175,8 +185,10 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
                     **mark,
                 }
                 try:
-                    writer.add("forecast", body)
+                    entry = writer.add("forecast", body)
                     written += 1
+                    written_today.add((cik, role, entry.record["event"]))
+                    standing[repeat_key(cik, role, entry.record)] = entry.seq
                 except LogError as exc:
                     notes.append(f"a forecast for company {cik} was not written: {exc}")
             for done in got.answer.get("resolved") or []:
@@ -508,6 +520,10 @@ def end(rnd: Round, *, abort: bool = False) -> list[str]:
         raise RoundError("the day is not published yet: run `bobby-session publish` first (or end with --abort)")
     done = json.loads(published.read_text(encoding="utf-8"))
     rnd.note_step(9, "begin")
+    weekly = rounds.step_tasks(rnd, check.TASK)
+    if weekly:  # the weekly check on the screening, taken now; until the hard stop a late answer still counts
+        rounds.collect(rnd, weekly, rnd.deadline(rounds.HARD_STOP), 0)
+        check.result(rnd)
     digest = steps.copy_conversation(rnd.root, Path(rnd.project), rnd.session_id, rnd.day, "end")
     usage = measure(rnd)
     usage["conversation_copy_sha256"] = digest
@@ -553,6 +569,8 @@ def summary_lines(rnd: Round, usage: dict[str, Any]) -> list[str]:
         f"{tokens.get('cache_creation_input_tokens', 0):,}, read from it {tokens.get('cache_read_input_tokens', 0):,}, "
         f"output {tokens.get('output_tokens', 0):,})."
     )
+    if usage.get("screening_check") is not None or rounds.step_tasks(rnd, check.TASK):
+        out.append(check.summary(usage.get("screening_check")))
     limits = usage["for_the_log"]
     if "five_hour_pct" in limits or "weekly_pct" in limits:
         out.append(

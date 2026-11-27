@@ -162,7 +162,18 @@ def test_a_forecast_defined_by_a_price_is_refused() -> None:
         "The stock is under $5 at the end of June",
         "The share price is at least 12 dollars on 1 June",
         "Market value exceeds $1 billion by June",
-        "The stock rises after the readout",
+        "The stock rises 20% after the readout",
+        # Found by the review of 2026-11-27:
+        "The stock closes under five dollars on 30 June",
+        "The stock ends June under $ 5",
+        "The shares close over €5 on 1 June",
+        "The stock is over ten dollars on 1 June",
+        "The stock goes up to $20 by June",
+        "ACME closes above $10 on 1 June",
+        "Shares climb to $20 by year end",
+        "The stock gains 50% by June",
+        "The stock drops 40% after the decision",
+        "The share price surpasses $10 by June",
     ):
         assert T.price_defined(event), event
     for event in (
@@ -179,6 +190,15 @@ def test_a_forecast_defined_by_a_price_is_refused() -> None:
         "ImmunityBio discloses in an SEC filing that at least one Equity Payment in shares was made to the RIPA "
         "purchasers under the Equitization Option, on or before 2027-05-15.",
         "The company sells shares for up to $100 million under its sales agreement",
+        # Found by the review of 2026-11-27: an amount, a number of agreements, a number of days, a share of
+        # patients, a closing date.
+        "The company discloses that it sold shares for at least $10 million under its sales agreement",
+        "The company reports stock-based compensation over $20 million for 2027",
+        "The company sells shares under 2 sales agreements",
+        "The company prices a registered direct offering of shares at least 10 days before its PDUFA date",
+        "The company announces a stock offering whose closing falls on or before 2027-01-15",
+        "The share of patients with a response rises in the second cohort",
+        "The company announces a stock offering of $50 million",
     ):
         assert not T.price_defined(event), event
     with pytest.raises(ValueError, match="defined by a price"):

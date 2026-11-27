@@ -135,13 +135,43 @@ _MOVE = re.compile(
 _FIGURE = re.compile(
     r"\d\s?%|\bpercent\b|\d(?:\.\d+)?\s?x\b|\b(?:half|halv\w*|doubl\w*|twice|tripl\w*)\b", re.IGNORECASE
 )
-# A forecast event about the level or the move of a share. "Over", "under", "at least" and "at most" count only
-# when a figure follows: "shares sold under the sales agreement" is a company event, "under $5" is a price (pilot
-# 2026-11-24 to 27: six forecasts were refused on the first wording). "Up to" is an amount, not a move.
+# A forecast event about the level or the move of a share (record 0009, point 5). After the pilot (2026-11-24 to 27:
+# six company events refused for "shares sold under the agreement") and its review, a comparison counts only with
+# a price after it: a currency sign or word with a figure, never an amount in millions or a number of days.
+_NUMBER_WORD = (
+    r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred)"
+)
+_A_PRICE = (
+    r"(?:(?:US\s?)?(?:\$|€|£|USD|EUR)\s?\d[\d,.]*(?!\d|[\d,.]*\s?(?:million|billion|thousand|mn?\b|bn\b|k\b))"
+    r"|\b(?:\d[\d,.]*|" + _NUMBER_WORD + r")\s?(?:dollars?|euros?|cents?)\b(?!\s+(?:million|billion|thousand)))"
+)
+_COMPARE = r"(?:above|below|over|under|at least|at most|more than|less than|beyond|near|around|at)"
+_RISE = (
+    r"(?:ris(?:es?|en|ing)|rose|fall(?:s|en|ing)?|fell|gain(?:s|ed)?|drop(?:s|ped)?|jump(?:s|ed)?|climb(?:s|ed)?"
+    r"|surg(?:es?|ed)|soar(?:s|ed)?|plung(?:es?|ed)|sink(?:s)?|sank|declin(?:es?|ed)|rall(?:y|ies|ied)"
+    r"|tumbl(?:es?|ed)|slump(?:s|ed)?|surpass(?:es|ed)?|tops?|goes|go|went|moves?|trades?|traded|closes?|closed"
+    r"|ends?|ended|opens?|opened|is|are|stays?|remains?)"
+)
 _PRICE_EVENT = re.compile(
-    r"\b(?:shares?|stock|price|market value|market cap\w*|valuation)\b.{0,60}(?:\b(?:above|below|exceeds?|higher"
-    r"|lower|reach(?:es)?|rises?|falls?|doubl\w+|halv\w+|down|up(?!\s+to\b))\b"
-    r"|\b(?:over|under|at least|at most)\s+(?:US\s?)?(?:\$|USD\s?|EUR\s?)?\d)",
+    # "the stock doubles", "shares halve", "the share price is higher": a move, whatever the figure
+    r"\b(?:shares?|stock|share price|stock price|market value|market cap\w*|valuation)\b.{0,40}?\b(?:doubl\w+"
+    r"|halv\w+|tripl\w+|higher|lower|exceeds?|reach(?:es)?)\b"
+    # "the stock rises 20%", "shares drop by a third", "the stock gains 50%"
+    r"|\b(?:shares?|stock|market value|market cap\w*)\b.{0,40}?\b" + _RISE + r"\b\s+(?:by\s+)?(?:\d[\d,.]*\s?%"
+    r"|\d[\d,.]*\s?percent|a (?:third|quarter|half)|half)"
+    # "closes above $10", "ends June under $ 5", "is over ten dollars", "goes up to $20", "trades at 12 dollars"
+    r"|\b"
+    + _RISE
+    + r"\b(?:\s+\w+){0,3}?\s+(?:up\s+to|down\s+to|to|"
+    + _COMPARE
+    + r")\s+"
+    + _A_PRICE
+    +
+    # "the shares ... over $5", "the stock price at least 12 dollars"
+    r"|\b(?:shares?|stock|price|market value|market cap\w*|valuation)\b.{0,60}?\b"
+    + _COMPARE
+    + r"\s+"
+    + _A_PRICE,
     re.IGNORECASE,
 )
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")

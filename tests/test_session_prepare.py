@@ -740,3 +740,15 @@ def test_the_universe_line_of_a_company_without_prices_or_the_xbi_fund(tmp_path:
     assert "former names: OLD NAME INC" in line
     for absent in ("xbi", "27.96", "2196119626", "own code"):
         assert absent not in line.lower()
+
+
+def test_no_market_value_of_today_after_a_split_since_the_share_count(tmp_path: Path) -> None:
+    # Review of 2026-11-27: the shares on the universe list times today's price is wrong after a split.
+    data = tmp_path / "data"
+    universe_file(data)
+    store_splits(data / "prices", [("AAA", date(2027, 2, 1), 1.0, 10.0)])
+    prices = {"AAA": (10.0, 10.0), "BBB": (20.0, 20.0), "CCC": (5.0, 5.0), "EEE": (3.0, 3.0)}
+    for day in (date(2027, 1, 29), MON, TUE):
+        store_day(data / "prices", day, prices)
+    numbers = (run(data).folder / "companies" / "101" / "numbers.md").read_text()
+    assert "Market value now: not worked out: the shares were split since the share count" in numbers

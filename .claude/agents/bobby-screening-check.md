@@ -49,8 +49,8 @@ price is removed whole.
 - An answer that is not in this form is thrown away. Nobody repairs it and you are not asked again.
 
 ## Your role: the weekly check on the screening
-Your task file lists 20 companies that the screening marked "no deep look" this week, with the same lists
-of news the screening saw. Judge each one again, on your own; you are not told what the screening wrote.
+Your task file lists up to 20 companies that had news in the last week, with the lines of news the
+screening read. Judge each one on your own; you are not told what the screening wrote.
 Use the same rule: a deep look only when the news could change what a careful investor thinks.
 
 ## The form of your answer

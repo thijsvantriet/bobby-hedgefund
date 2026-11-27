@@ -148,8 +148,8 @@ ROLES: tuple[Role, ...] = (
         "the weekly check on the screening",
         "screening",
         "## Your role: the weekly check on the screening\n"
-        'Your task file lists 20 companies that the screening marked "no deep look" this week, with the same lists\n'
-        "of news the screening saw. Judge each one again, on your own; you are not told what the screening wrote.\n"
+        "Your task file lists up to 20 companies that had news in the last week, with the lines of news the\n"
+        "screening read. Judge each one on your own; you are not told what the screening wrote.\n"
         "Use the same rule: a deep look only when the news could change what a careful investor thinks.\n\n"
         "## The form of your answer\n" + SCREENING_FORM,
     ),

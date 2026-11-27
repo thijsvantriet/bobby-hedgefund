@@ -20,11 +20,13 @@ from pathlib import Path
 from typing import Any
 
 from ..archive.store import sha256_hex
+from ..log.private import PrivateNames
 from ..universe.output import write_new
 from . import round as rounds
 from .round import Round
 from .tasks import Task
 
+NOT_NAMED = "[a company that is not named]"
 TASK = "check-screening"
 AGENT = "bobby-screening-check"
 SAMPLE = 20
@@ -74,11 +76,28 @@ def draw(noes: dict[int, Any], today: date, size: int = SAMPLE) -> list[int]:
     return sorted(noes, key=lambda cik: (key(cik), cik))[:size]
 
 
-def write_task(rnd: Round) -> Task | None:
-    """The check's task on a day with weekly extras, or None (another day, or nothing to check)."""
+def veiled(lines: list[str], names: PrivateNames) -> list[str]:
+    """The lines with every name that may not be named today taken out (the private list only grows, so a line
+    written last week may hold a name that is private since)."""
+    out = []
+    for line in lines:
+        cut: list[str] = []
+        at = 0
+        for start, end, _ in names.spans(line):
+            if start >= at:
+                cut += [line[at:start], NOT_NAMED]
+                at = end
+        out.append("".join(cut) + line[at:])
+    return out
+
+
+def write_task(rnd: Round, allowed: set[int], names: PrivateNames) -> Task | None:
+    """The check's task on a day with weekly extras, or None (another day, or nothing to check). `allowed`: the
+    companies that may be analysed today; `names`: today's list of names that may not be named."""
     if "weekly" not in rnd.extras:
         return None
-    noes = earlier_noes(rnd.root, rnd.day)
+    earlier = earlier_noes(rnd.root, rnd.day)
+    noes = {cik: (day, veiled(lines, names)) for cik, (day, lines) in earlier.items() if cik in allowed}
     chosen = draw(noes, rnd.day)
     if not chosen:
         return None
@@ -86,9 +105,11 @@ def write_task(rnd: Round) -> Task | None:
     if not sample.exists():
         body = {"day": rnd.day.isoformat(), "pool": len(noes), "sample": [[c, noes[c][0]] for c in chosen]}
         write_new(sample, json.dumps(body, sort_keys=True) + "\n")
+    # Worded without the screening's verdict, so that the check is not led towards agreeing with it (review of
+    # 2026-11-27). Only companies the screening passed over are in it; the agent is not told so.
     lines = [
-        f'This week\'s check: {len(chosen)} companies that the screening marked "no deep look" in the last '
-        f"{LOOK_BACK_DAYS} days, each with the day it was judged and the lines of news it saw then.",
+        f"This week's check: {len(chosen)} companies that had news in the last {LOOK_BACK_DAYS} days, each with "
+        "the day of the news and the lines the screening read then.",
         "The files of those days are not in this folder, and the numbers in square brackets belong to that day's "
         "list of sources: judge from these lines alone. Do not try to open anything else.",
         "Answer for every company below, in this order.",
@@ -96,7 +117,7 @@ def write_task(rnd: Round) -> Task | None:
     ]
     for cik in chosen:
         day, seen = noes[cik]
-        lines += [f"{seen[0]}    (judged on {day})", *seen[1:], ""]
+        lines += [f"{seen[0]}    (news of {day})", *seen[1:], ""]
     return rounds.write_task(rnd, TASK, AGENT, lines)
 
 

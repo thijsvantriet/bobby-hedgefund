@@ -306,9 +306,12 @@ what changed. Each change has a test; options that were turned down are named.
   so a missing list now counts as empty. Nothing is filled in; the section's own list stays required.
 - **"Defined by a price" (point 5) was too wide.** Six forecasts on days 2, 4 and 5 were refused, all about a
   company event: "sold shares of common stock *under* the sales agreement", "an Equity Payment in common stock
-  ... *under* the Equitization Option". Now "over", "under", "at least" and "at most" count only when a figure
-  follows ("under $5"), and "up to" is an amount, not a move. A replay over all 121 forecast events of the pilot
-  changes exactly those six. The rule itself stays: a forecast about the level or move of a share is refused.
+  ... *under* the Equitization Option". Now a comparison ("over", "under", "at least", "above", "to", ...) counts
+  only with a price after it: a currency sign or word with a figure ("under $5", "over ten dollars", "€5"), never
+  an amount in millions or a number of days; a move counts with a percentage ("gains 50%"), and "doubles",
+  "halves", "higher" count as before. The reviewer's list of wordings that slipped through or were refused
+  wrongly is in the tests. A replay over all 121 forecast events of the pilot changes exactly those six. The rule
+  itself stays: a forecast about the level or move of a share is refused.
 - **A read the reading check refused no longer throws the answer away.** Day 4: a portfolio manager's long
   search result was kept by Claude Code in a file outside the session folder; the agent tried to read it, the
   check refused, and the second layer (the script that goes through the agent's record) counted the refused
@@ -329,6 +332,10 @@ what changed. Each change has a test; options that were turned down are named.
   gets one new task with the same text (`screening-NN-again`), started and judged like any other, before minute
   10 of the round. Not for an answer that broke a rule, and never a third run. This is a new run, not a repair:
   the first answer stays thrown away, and point 3 (a task is started once) still holds for each task.
+- **Only a filing makes an amount "known"** (found by the review of this update). The check on written text let
+  an amount through when it stood in any file of the company's folder. That included `numbers.md` (market values
+  worked out from prices; the new "market value now" made this likely) and our own `report.md` (where the market
+  analyst may discuss prices). Now only the files in `filings/` count, as point 5 always said.
 - **The reason for a deep analysis names the catalyst's date** (until stream 5 brings a real calendar, the date
   of our nearest open forecast).
 
@@ -337,11 +344,18 @@ what changed. Each change has a test; options that were turned down are named.
   task (`check-screening`) to `bobby-screening-check`: up to 20 companies the screening marked "no deep look" in
   the seven days before, drawn by fingerprint of the day and the company number (anyone can draw it again), each
   with the lines of news the screening saw. Those lines are copied into the task file, because the folders of
-  earlier days may not be read; their source numbers belong to their own day. The check is not told the
-  screening's verdict. Its result (how many of the sample Opus would have sent to a deep look) is kept in the
+  earlier days may not be read; their source numbers belong to their own day, and names that are on today's
+  private list are taken out. The check is not told the screening's verdict: the task speaks of "companies that
+  had news". It is collected at the end of the round (until the hard stop), so it never holds up the deep
+  analysis. Its result (how many of the sample Opus would have sent to a deep look) is kept in the
   round's folder and in `usage.json`; the spec's rule (more than 2 of 20, two weeks in a row) is applied at the
   monthly review, not in the round. Its verdicts never count as screening verdicts. Measured on the pilot data:
   the first check (Monday 2026-11-30) has exactly 20 companies to draw from.
+- **Review.** A reviewer agent (Opus) read this update before it was merged; its findings are worked in above,
+  plus: a repeat of a forecast is compared on the text as the log stores it (after cleaning); a share count is
+  not multiplied by today's price after a share split; `bobby-session prepare` by hand builds the same folder as a
+  round. Accepted: the long-quote check now reads more source text (the earlier filings), measured at about half
+  a second per record on the real data of 2026-11-27, some 20 seconds a day.
 
 ## Revisit
 Revisit: by 2027-01, or after the pilot week, or when a new Claude Code version changes agent files, hooks or the

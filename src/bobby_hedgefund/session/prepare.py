@@ -261,10 +261,11 @@ def universe_rows(path: Path) -> dict[int, dict[str, str]]:
 def universe_line(row: dict[str, str], n: int) -> str:
     """The company's own line of the universe list, without prices and without the XBI fund."""
     parts = [f"{label}: {row[key]}" for key, label in UNIVERSE_SHOWN if row.get(key)]
-    if row.get("shares"):
+    if row.get("shares", "").isdigit():
         source = f", {row['shares_source']}" if row.get("shares_source") else ""
         as_of = f" as of {row['shares_as_of']}" if row.get("shares_as_of") else ""
-        parts.append(f"shares outstanding: {int(row['shares']):,}{as_of} (from the SEC{source})")
+        note = f"; note: {row['shares_note']}" if row.get("shares_note") else ""  # our own build's words
+        parts.append(f"shares outstanding: {int(row['shares']):,}{as_of} (from the SEC{source}{note})")
     return f"- Universe list [{n}]: " + ("; ".join(parts) if parts else "in the universe") + "."
 
 
@@ -601,6 +602,15 @@ def prepare(
             for d in sorted(used_days, reverse=True)
         }
         n_last = number_of[last]
+
+        def split_since(ticker: str, as_of: str, upto: date) -> bool:
+            """A share split after the share count was taken makes count times price wrong; in doubt, yes."""
+            try:
+                splits = prices.splits()
+            except Exception:  # no list of splits: the count cannot be trusted against today's price
+                return True
+            return any(sp.ticker == ticker and as_of < sp.day.isoformat() <= upto.isoformat() for sp in splits)
+
         for cik in companies:
             company = universe.companies[cik]
             now = prices.close(company.ticker, last)
@@ -614,8 +624,11 @@ def prepare(
             if company.market_value is not None:
                 lines.append(f"Market value at the last universe run: about ${company.market_value / 1e6:,.0f} million")
             shares = rows_of.get(cik, {}).get("shares", "")
-            if shares.isdigit() and int(shares) > 0:
-                as_of = rows_of[cik].get("shares_as_of") or "the universe run"
+            as_of = rows_of.get(cik, {}).get("shares_as_of") or ""
+            if shares.isdigit() and int(shares) > 0 and split_since(company.ticker, as_of, last):
+                lines.append("Market value now: not worked out: the shares were split since the share count")
+            elif shares.isdigit() and int(shares) > 0:
+                as_of = as_of or "the universe run"
                 value = int(shares) * now / 1_000_000
                 lines.append(
                     f"Market value now: about ${float(value):,.0f} million (last close [{n_last}] times the shares "
@@ -675,8 +688,7 @@ def prepare(
         ranked = sorted(newest, key=lambda pair: is_insider_form(sources.record_meta(pair[1]).get("form")))
         for _filed, rec in ranked[:EARLIER_MOST]:
             added = add_filing(rec, cik, True)
-            if added is None:
-                unreadable += 1
+            if added is None:  # noted by add_filing
                 continue
             n, head, holder = added
             today_n[cik][head.accession] = n

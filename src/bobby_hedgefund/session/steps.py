@@ -63,12 +63,19 @@ def text_check(rnd: Round, companies: list[int] | None = None) -> TextCheck:
 
     names = private.PrivateNames(private.load(rnd.root / private.FILE))
     sources: list[str] = []
+    known: set[int] = set()
     for cik in companies or []:
         folder = rnd.session_dir / "companies" / str(cik)
-        sources += [p.read_text(encoding="utf-8", errors="replace") for p in sorted(folder.rglob("*")) if p.is_file()]
-    known: set[int] = set()
-    for source in sources:
-        known |= log_text.amounts(source)
+        for path in sorted(folder.rglob("*")):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            sources.append(text)
+            # Only a filing states an amount (record 0009, point 5). numbers.md holds market values worked out
+            # from prices, and our own report.md may hold the market analyst's price talk: neither may make an
+            # amount in written text public (review of 2026-11-27).
+            if path.parent.name == "filings":
+                known |= log_text.amounts(text)
     return TextCheck(sources, known, names)
 
 
@@ -518,7 +525,11 @@ def screening(rnd: Round) -> list[str]:
     for path in batches:
         number = path.stem.removeprefix("batch-")
         made.append(rounds.write_task(rnd, f"screening-{number}", "bobby-screening", _screening_lines(path)))
-    weekly = check.write_task(rnd)  # the weekly check on the screening runs alongside, on its own sample
+    # The weekly check on the screening starts alongside, on its own sample. It is collected at the end of the
+    # round, so it never holds up the deep analysis (review of 2026-11-27).
+    universe = session_universe(rnd)
+    names = private.PrivateNames(private.load(rnd.root / private.FILE))
+    weekly = check.write_task(rnd, buyable(rnd, universe), names)
     if weekly is not None:
         made.append(weekly)
     if not made:
@@ -886,8 +897,6 @@ def collect(rnd: Round, step: str, wait_seconds: float = 90) -> list[str]:
         raise RoundError(f"nothing to collect for '{step}'; it is one of: {', '.join(STEPS)}")
     prefix, minute, following = STEPS[step]
     wanted = rounds.step_tasks(rnd, prefix)
-    if step == "screening":
-        wanted += rounds.step_tasks(rnd, check.TASK)
     results = rounds.collect(rnd, wanted, rnd.deadline(minute), wait_seconds)
     out = [f"{step}: {rounds.summary_line(results)}"]
     out += [f"- {r.task}: {r.status}: {r.reason}" for r in results if r.status != "ok"]
@@ -905,8 +914,6 @@ def collect(rnd: Round, step: str, wait_seconds: float = 90) -> list[str]:
         if again:
             out.append("A batch whose answer was not in its form gets one fresh run:")
             return [*out, *rounds.start_lines(rnd, again), THEN.format(step="screening")]
-        if rounds.step_tasks(rnd, check.TASK):
-            out.append(check.summary(check.result(rnd)))
     number = {"screening": 3, "analysts": 4, "debate": 5, "managers": 5}[step]
     if step == "analysts":
         out += join_reports(rnd)
