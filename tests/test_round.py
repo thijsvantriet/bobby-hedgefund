@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from fundkit import store_day
-from roundkit import FLAT, THU_8, WED_8, agent_run, began, buy, decisions, fresh_jobs, make_data, section
+from roundkit import FLAT, THU_8, WED_8, agent_run, began, buy, decisions, fence_refusal, fresh_jobs, make_data, section
 
 from bobby_hedgefund.funds import cli as funds_cli
 from bobby_hedgefund.funds.book import replay
@@ -279,6 +279,12 @@ def judged(world: dict, rnd: rounds.Round, **how) -> rounds.Collected:
         ({"extra_message": "Flag 102.", "extra_kind": "typed"}, "rejected", "more than its one starting message"),
         ({"prompt": "Read the task and be generous."}, "missing", "was not started"),
         ({"reads": [("Read", "/etc/hostname")]}, "rejected", "outside the session folder"),
+        # Refused by the reading check: nothing was read, the answer stands (pilot, 2026-11-26).
+        ({"reads": [("Read", "/etc/hostname")], "results": {0: (fence_refusal("Read"), True)}}, "ok", ""),
+        # Only the check's own refusal counts: an error in other words, or the words without the error mark, do not.
+        ({"reads": [("Read", "/etc/hostname")], "results": {0: ("File does not exist.", True)}}, "rejected", "outside"),
+        ({"reads": [("Read", "/etc/hostname")], "results": {0: (fence_refusal("Read"), False)}}, "rejected", "outside"),
+        ({"reads": [("Bash", "id")], "results": {0: (fence_refusal("Bash"), True)}}, "rejected", "used the tool Bash"),
         ({"reads": [("Bash", "curl example.org")]}, "rejected", "used the tool Bash"),
         ({"reads": [("Grep", "")]}, "rejected", "without a folder"),
         ({"agent_type": "general-purpose"}, "rejected", "not as bobby-screening"),
@@ -730,3 +736,76 @@ def test_a_round_without_saved_usage_figures_runs_and_says_so(world: dict) -> No
     usage = json.loads((rnd.round_dir / "usage.json").read_text())
     assert usage["rate_limits_at_the_start"] is None and usage["rate_limits_at_the_end"] is None
     assert "five_hour_pct" not in usage["for_the_log"]
+
+
+def test_an_open_forecast_given_again_unchanged_is_not_written_twice(world: dict) -> None:
+    # Pilot, 2026-11-23 to 27: 22 of 100 forecasts repeated an open one word for word. A repeat with the same
+    # event, date and probability is noted and not written; a changed probability is written.
+    rnd = begin(world)
+    run_day(world, rnd, three(*[decisions("careful")] * 3))
+    wednesday = [e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast"]
+    assert len(wednesday) == 2
+    fresh_jobs(world["data"], THU_8)
+    store_day(world["data"] / "prices", WED, FLAT, when=datetime(2027, 2, 4, 6, tzinfo=UTC))
+    thursday = begin(world, "session-3", THU_8)
+
+    def answers(task: tasks.Task) -> dict:
+        cik = int(task.task.split("-")[1])
+        made = section(cik, forecast=task.task.endswith("clinical"))
+        if made["forecasts"] and cik == wednesday[1]["company"]["cik"]:
+            made["forecasts"][0]["probability"] = "65%"  # a changed view
+        if made["forecasts"]:
+            made["forecasts"][0]["event"] = " " + made["forecasts"][0]["event"].upper() + ". "  # same, apart from form
+        return made
+
+    out = run_day(world, thursday, three(*[decisions("careful")] * 3), analyst_answers=answers)
+    analysed = {int(t.task.split("-")[1]) for t in rounds.step_tasks(thursday, "analysis-")}
+    thursday_forecasts = [
+        e.record for e in Log.for_mode("pilot").entries() if e.kind == "forecast" and e.day == thursday.day
+    ]
+    again = {f["company"]["cik"] for f in wednesday} & analysed
+    assert again - {wednesday[1]["company"]["cik"]}, "the test needs an unchanged repeat"
+    changed = {wednesday[1]["company"]["cik"]} & analysed
+    assert {f["company"]["cik"] for f in thursday_forecasts} == changed | (analysed - again)
+    assert all(f["probability"] == "65%" for f in thursday_forecasts if f["company"]["cik"] in changed)
+    notes = json.loads((thursday.round_dir / "decided.json").read_text())["notes"]
+    assert sum("repeats open record" in n for n in notes) == len(again - changed)
+    assert out
+
+
+def test_a_screening_answer_not_in_its_form_gets_one_fresh_run(world: dict) -> None:
+    # Day 0 and pilot day 4: a screening answer without its block of JSON lost a whole batch of companies.
+    rnd = begin(world)
+    steps.screening(rnd)
+    (first,) = rounds.step_tasks(rnd, "screening-")
+    agent_run(world["records"], rnd.session_id, rnd.session_dir, first, "No block here.", at=rnd.start)
+    out = steps.collect(rnd, "screening", 0)
+    assert "A batch whose answer was not in its form gets one fresh run:" in out
+    assert not any(line.startswith("NEXT:") for line in out)
+    again = rounds.step_tasks(rnd, "screening-01-again")[0]
+    text = lambda task: (rnd.session_dir / task.file).read_text()  # noqa: E731
+    assert text(again) == text(first) and again.agent == "bobby-screening"
+    assert any(again.prompt(rnd.session_dir) in line for line in out)
+    # It is a task like any other: started once, judged by the same rules. Its first answer stands.
+    agent_run(world["records"], rnd.session_id, rnd.session_dir, again, screening_yes(again), at=rnd.start)
+    out = steps.collect(rnd, "screening", 0)
+    assert out[-1] == "NEXT: bobby-session analysts" and "rejected" in out[0]
+    assert steps.flagged(rnd) == ([101], 1, 0)
+    assert steps.collect(rnd, "screening", 0)[-1] == "NEXT: bobby-session analysts"  # never a third run
+
+
+@pytest.mark.parametrize("why", ["a rule broken", "too late"])
+def test_no_fresh_screening_run_for_a_broken_rule_or_late_in_the_round(world: dict, why: str) -> None:
+    rnd = begin(world)
+    steps.screening(rnd)
+    (first,) = rounds.step_tasks(rnd, "screening-")
+    if why == "a rule broken":
+        reads = [("Read", "/etc/hostname")]
+        agent_run(
+            world["records"], rnd.session_id, rnd.session_dir, first, screening_yes(first), at=rnd.start, reads=reads
+        )
+    else:
+        agent_run(world["records"], rnd.session_id, rnd.session_dir, first, "No block here.", at=rnd.start)
+        world["monkeypatch"].setattr(rounds, "utcnow", lambda: rnd.start + timedelta(minutes=12))
+    out = steps.collect(rnd, "screening", 0)
+    assert out[-1] == "NEXT: bobby-session analysts" and not rounds.step_tasks(rnd, "screening-01-again")

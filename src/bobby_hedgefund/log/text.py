@@ -135,9 +135,13 @@ _MOVE = re.compile(
 _FIGURE = re.compile(
     r"\d\s?%|\bpercent\b|\d(?:\.\d+)?\s?x\b|\b(?:half|halv\w*|doubl\w*|twice|tripl\w*)\b", re.IGNORECASE
 )
+# A forecast event about the level or the move of a share. "Over", "under", "at least" and "at most" count only
+# when a figure follows: "shares sold under the sales agreement" is a company event, "under $5" is a price (pilot
+# 2026-11-24 to 27: six forecasts were refused on the first wording). "Up to" is an amount, not a move.
 _PRICE_EVENT = re.compile(
-    r"\b(?:shares?|stock|price|market value|market cap\w*|valuation)\b.{0,60}\b(?:above|below|over|under|at least"
-    r"|at most|exceeds?|higher|lower|reach(?:es)?|rise|fall|doubl\w+|halv\w+|up|down)\b",
+    r"\b(?:shares?|stock|price|market value|market cap\w*|valuation)\b.{0,60}(?:\b(?:above|below|exceeds?|higher"
+    r"|lower|reach(?:es)?|rises?|falls?|doubl\w+|halv\w+|down|up(?!\s+to\b))\b"
+    r"|\b(?:over|under|at least|at most)\s+(?:US\s?)?(?:\$|USD\s?|EUR\s?)?\d)",
     re.IGNORECASE,
 )
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")

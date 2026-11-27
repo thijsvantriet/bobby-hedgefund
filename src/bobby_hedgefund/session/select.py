@@ -67,10 +67,9 @@ def deep_order(
 
     take(sorted(held_with_news, key=lambda c: place.get(c, len(place))), "a fund holds it and there is news")
     take(flagged, "the screening flagged it")
-    take(
-        sorted((c for c in catalysts if c in universe), key=lambda c: (catalysts[c], place[c])),
-        "a catalyst within 60 days",
-    )
+    for cik in sorted((c for c in catalysts if c in universe), key=lambda c: (catalysts[c], place[c])):
+        # Which catalyst: the date of the nearest open forecast (the task file lists the forecasts themselves).
+        take([cik], f"a catalyst within 60 days (our nearest open forecast for it is dated {catalysts[cik]})")
     without = [c for c in order if c not in last_report]
     take(without, "rotation: no report yet")
     take(

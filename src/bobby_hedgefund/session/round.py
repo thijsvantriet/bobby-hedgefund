@@ -22,6 +22,7 @@ from . import answers, marker, roles, tasks, transcripts
 from .tasks import Task
 
 # The step clock of the spec, in minutes from the start of the round.
+NOT_IN_FORM = "the answer is not in its form"
 NO_NEW_ANALYSIS = 20  # no new deep analysis starts after this
 ANALYSIS_USED_UNTIL = 28  # an analyst's answer that arrives later waits for the next session
 DEBATE_UNTIL = 33  # the bull and bear cases of the Debate fund must be in by then
@@ -253,7 +254,7 @@ def judge(rnd: Round, task: Task, run: transcripts.AgentRun | None, deadline: da
     try:
         got.answer = answers.parse(run.final_text, role.answer)
     except answers.AnswerError as exc:
-        return _reject(got, f"the answer is not in its form: {exc}")
+        return _reject(got, f"{NOT_IN_FORM}: {exc}")
     got.lacked = list(got.answer.get("lacked") or [])
     got.status = "ok"
     return got

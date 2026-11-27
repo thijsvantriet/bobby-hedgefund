@@ -132,6 +132,14 @@ def fence(event: dict) -> tuple[int, str]:
             return refuse("a search pattern may not hold a backslash")
     session_dir = active["session_dir"]
     if not inside(path, session_dir):
+        if "/tool-results/" in path.replace("\\", "/"):
+            # Claude Code keeps a long search result in a file of its own, outside the session folder. It is not
+            # opened up: the same place holds the saved results of every agent of the round, of every fund.
+            return refuse(
+                "that is a saved copy of a long search result and lies outside the session folder; search a "
+                "smaller folder or fewer files instead, or read the files you need one by one",
+                path,
+            )
         return refuse("that is outside the session folder (give the full path)", path)
     # Inside the folder, a few places belong to one fund only, so that one fund's manager cannot read another's
     # holdings, tasks or debate, and nobody reads the list of all tasks.

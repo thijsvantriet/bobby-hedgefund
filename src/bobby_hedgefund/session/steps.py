@@ -30,7 +30,7 @@ from ..log import canon, private, records
 from ..log.store import Log
 from ..log.text import TextCheck
 from ..universe.output import write_new
-from . import marker, roles, select, transcripts
+from . import marker, roles, select, tasks, transcripts
 from . import prepare as prep
 from . import round as rounds
 from .round import Collected, Round, RoundError
@@ -409,6 +409,8 @@ def _start(
             cutoff=rnd.cutoff,
             since=since,
             held=held,
+            catalysts=select.calendar_from_forecasts(entries, rnd.day),
+            last_report=last_reports(root),
         )
         out += [f"note: {n}" for n in done_prep.notes]
     if any(p.is_symlink() for p in rnd.session_dir.rglob("*")):
@@ -501,17 +503,41 @@ def book(rnd: Round) -> list[str]:
 # ---------------------------------------------------------------- step 3
 
 
+AGAIN = "-again"  # the name of a fresh run of a screening batch whose first answer was not in its form
+SCREENING_AGAIN_UNTIL = 10  # minute of the round after which a lost batch is not run again
+
+
+def _screening_lines(path: Path) -> list[str]:
+    return [f"Your batch file: {path}", "Judge every company in it, in the order of the file."]
+
+
 def screening(rnd: Round) -> list[str]:
     rnd.note_step(3, "begin")
     batches = sorted((rnd.session_dir / "screening").glob("batch-*.md"))
     made = []
     for path in batches:
         number = path.stem.removeprefix("batch-")
-        lines = [f"Your batch file: {path}", "Judge every company in it, in the order of the file."]
-        made.append(rounds.write_task(rnd, f"screening-{number}", "bobby-screening", lines))
+        made.append(rounds.write_task(rnd, f"screening-{number}", "bobby-screening", _screening_lines(path)))
     if not made:
         return ["no company has news today: nothing to screen", "NEXT: bobby-session analysts"]
     return [*rounds.start_lines(rnd, made), THEN.format(step="screening")]
+
+
+def screening_again(rnd: Round, results: list[Collected]) -> list[tasks.Task]:
+    """A screening answer thrown away for its form loses a whole batch (day 0 and pilot day 4: 25 companies not
+    judged). Such a batch gets one fresh run: a new task with the same text, started like any other and judged
+    by the same rules. Not for an answer that broke a rule (that is no slip of form), not twice, and not late."""
+    if rnd.minutes() >= SCREENING_AGAIN_UNTIL and not rnd.relaxed_clock:
+        return []
+    made = []
+    for result in results:
+        name = result.task
+        if result.status != "rejected" or not result.reason.startswith(rounds.NOT_IN_FORM) or name.endswith(AGAIN):
+            continue
+        batch = rnd.session_dir / "screening" / f"batch-{name.removeprefix('screening-')}.md"
+        if batch.is_file():  # a task is written once: asked again, this hands back the same task
+            made.append(rounds.write_task(rnd, name + AGAIN, "bobby-screening", _screening_lines(batch)))
+    return made
 
 
 def flagged(rnd: Round) -> tuple[list[int], int, int]:
@@ -591,8 +617,9 @@ def analysts(rnd: Round, now: datetime | None = None) -> list[str]:
         folder = rnd.session_dir / "companies" / str(cik)
         base = [
             f"Company: {company.name} ({company.ticker}), SEC company number {cik}.",
-            f"Its files are in {folder}: company.md (what is new), numbers.md (private), trials.md, the folder "
-            "filings/ (the new filings as plain text) and report.md (our own last report, if there is one).",
+            f"Its files are in {folder}: company.md (what is new, and which filings are earlier ones), numbers.md "
+            "(private), trials.md (its linked trials and their changes), the folder filings/ (new and earlier "
+            "filings as plain text) and report.md (our own last report, if there is one).",
             "Every file in that folder, by its full path (you do not need to search for them):",
             *[f"- {path}" for path in sorted(folder.rglob("*")) if path.is_file()],
             f"The numbered list of sources is {rnd.session_dir / 'inputs.jsonl'}.",
@@ -866,6 +893,11 @@ def collect(rnd: Round, step: str, wait_seconds: float = 90) -> list[str]:
         out.append("The time for this step is over: agents of it that are still running may be stopped.")
     if step == "canary":
         return [*out, *canary_result(rnd), f"NEXT: {following}"]
+    if step == "screening":
+        again = [t for t in screening_again(rnd, results) if rounds.stored(rnd, t.task) is None]
+        if again:
+            out.append("A batch whose answer was not in its form gets one fresh run:")
+            return [*out, *rounds.start_lines(rnd, again), THEN.format(step="screening")]
     number = {"screening": 3, "analysts": 4, "debate": 5, "managers": 5}[step]
     if step == "analysts":
         out += join_reports(rnd)

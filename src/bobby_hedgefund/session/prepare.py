@@ -10,11 +10,13 @@ sessions/<date>/
   session.json            start time, data cut-off, universe file, what was counted
   inputs.jsonl            every source: its number, what it is, fingerprint, when it was saved, the link
   companies/<SEC number>/
-    company.md            who it is, and what is new since the last session
+    company.md            who it is, its line of the universe list, what is new since the last session, and
+                          its earlier filings that are in the folder for reference
     numbers.md            numbers worked out by script from saved prices (private; never to be copied into text)
-    trials.md             changes in its trial records, or the note that its trials are not linked yet
-    filings/<n>-<form>.txt   the new filings as plain text
-    report.md             our own newest report on it, if there is one
+    trials.md             its linked trials (from the linking table) and the changes in their records
+    filings/<n>-<form>.txt   the new filings, and for companies that may be analysed its earlier ones, as plain text
+    report.md             our own newest report on it, if there is one, with today's numbers for the filings
+                          it cites
   screening/batch-01.md   a short digest per company with news; companies without news are not in it
   screening/no-news.txt   the companies without any new item: marked by this script, sent to no model
 ```
@@ -46,7 +48,7 @@ from ..funds.universe import load as load_universe
 from ..log import private
 from ..universe.inputs import InputError
 from ..universe.output import plain_cell, write_new
-from . import plaintext, sources
+from . import plaintext, select, sources
 
 BATCH = 25  # companies per screening file
 MAX_FILING_TEXT = 2_000_000  # characters of one filing that are copied; the saved file itself is never cut
@@ -55,6 +57,19 @@ BIG_MOVE = Fraction(15, 100)  # a move of the share since the last session that 
 # before and fetched late (the first big download, a gap that was filled) is not: it stays in the archive.
 LATE_FILING_DAYS = 3
 HOLDER_FORMS = ("3", "4", "5", "SC 13D", "SC 13G", "SCHEDULE 13D", "SCHEDULE 13G")  # filed by an owner of shares
+INSIDER_FORMS = ("3", "4", "5")
+# Earlier filings (pilot, 2026-11-23 to 27): an analyst could not cite the filings behind our own earlier report,
+# and the quarterly reports of the first big download were never shown. For a company that may be analysed today,
+# its filings of this many days before the cut-off are in its folder too, marked as earlier, never as news.
+EARLIER_DAYS = 90
+EARLIER_MOST = 30  # per company; event and periodic reports go before insider trades, newest first
+# Columns of the universe list that say nothing about a price and nothing about the XBI fund's holdings.
+UNIVERSE_SHOWN = (
+    ("exchanges", "exchange"),
+    ("sic", "industry code (SIC)"),
+    ("filer_type", "kind of filer"),
+    ("former_names", "former names"),
+)
 HOLDER_NOTE = (
     "NOTE: this company filed this as a holder of ANOTHER company's shares. It says nothing about this company's "
     "own shares or insiders."
@@ -197,6 +212,10 @@ def is_holder_filing(head: filings.Header, company_name: str) -> bool:
     )
 
 
+def is_insider_form(form: Any) -> bool:
+    return str(form or "").upper().split("/")[0] in INSIDER_FORMS
+
+
 def announces_results(head: filings.Header) -> bool:
     """An event report with a press release or a "Regulation FD" or "other events" item: where trial results
     are announced. The results reader decides whether it really is one."""
@@ -209,13 +228,59 @@ def announces_results(head: filings.Header) -> bool:
 def read_linking(path: Path) -> dict[str, list[int]]:
     """The linking table: trial number -> the companies it belongs to."""
     out: dict[str, list[int]] = {}
+    for cik, rows in read_linking_rows(path).items():
+        for row in rows:
+            for nct in row["trial_numbers"].split():
+                out.setdefault(nct, []).append(cik)
+    return out
+
+
+def read_linking_rows(path: Path) -> dict[int, list[dict[str, str]]]:
+    """The linking table per company: its sponsor names in the registry and the trials under each."""
+    out: dict[int, list[dict[str, str]]] = {}
     try:
         for row in csv.DictReader(io.StringIO(path.read_text(encoding="utf-8"), newline="")):
-            for nct in plain_cell(row["trial_numbers"]).split():
-                out.setdefault(nct, []).append(int(row["cik"]))
+            plain = {key: plain_cell(row.get(key) or "") for key in ("sponsor_name", "relation", "as_lead")}
+            plain["trial_numbers"] = plain_cell(row["trial_numbers"])
+            out.setdefault(int(row["cik"]), []).append(plain)
     except (KeyError, ValueError, UnicodeDecodeError) as exc:
         raise PrepareError(f"{path.name} is not a linking table ({type(exc).__name__})") from exc
     return out
+
+
+def universe_rows(path: Path) -> dict[int, dict[str, str]]:
+    """The universe list, line by line, for the slices in the company folders. Read from the same file whose
+    fingerprint is in the list of inputs."""
+    try:
+        rows = csv.DictReader(io.StringIO(path.read_text(encoding="utf-8"), newline=""))
+        return {int(row["cik"]): {k: plain_cell(v or "") for k, v in row.items() if k} for row in rows}
+    except (KeyError, ValueError, UnicodeDecodeError) as exc:
+        raise PrepareError(f"{path.name} is not a universe file ({type(exc).__name__})") from exc
+
+
+def universe_line(row: dict[str, str], n: int) -> str:
+    """The company's own line of the universe list, without prices and without the XBI fund."""
+    parts = [f"{label}: {row[key]}" for key, label in UNIVERSE_SHOWN if row.get(key)]
+    if row.get("shares"):
+        source = f", {row['shares_source']}" if row.get("shares_source") else ""
+        as_of = f" as of {row['shares_as_of']}" if row.get("shares_as_of") else ""
+        parts.append(f"shares outstanding: {int(row['shares']):,}{as_of} (from the SEC{source})")
+    return f"- Universe list [{n}]: " + ("; ".join(parts) if parts else "in the universe") + "."
+
+
+def linked_trials_text(rows: list[dict[str, str]], n: int) -> str:
+    """The company's lines of the linking table: under which sponsor names its trials are registered."""
+    if not rows:
+        return f"Linking table [{n}]: no trials are linked to this company.\n"
+    out = [f"Linking table [{n}]: its trials in the registry (ClinicalTrials.gov), by sponsor name."]
+    for row in rows:
+        trials = row["trial_numbers"].split()
+        relation = "" if row["relation"] in ("", "yes") else f" ({row['relation']})"
+        lead = f", {row['as_lead']} as lead sponsor" if row["as_lead"] else ""
+        out.append(f"- {row['sponsor_name']}{relation}: {len(trials)} trial(s){lead}")
+        out += [f"  - {nct}: {trial_link(nct)}" for nct in trials]
+    out.append("The records themselves are not in the folder; their changes since the last session are listed above.")
+    return "\n".join(out) + "\n"
 
 
 def _value(value: Any) -> str:
@@ -303,9 +368,13 @@ def prepare(
     cutoff: datetime,
     since: datetime,
     held: set[int] | None = None,
+    catalysts: dict[int, date] | None = None,
+    last_report: dict[int, date] | None = None,
 ) -> Prepared:
     """Build the session folder. Refuses when it exists already: a session folder is made once. It is built
-    under another name and gets its own name in one step at the very end, so a half-built folder never counts."""
+    under another name and gets its own name in one step at the very end, so a half-built folder never counts.
+    `held`: what the funds hold. `catalysts` and `last_report`: what the order of deep analysis uses besides the
+    news (docs/SPEC.md section 1), so that every company it can reach today gets its earlier filings."""
     for when in (start_time, cutoff, since):
         if when.tzinfo is None:
             raise PrepareError("a time without a time zone cannot be used as a cut-off")
@@ -333,6 +402,7 @@ def prepare(
     if universe_path is None:
         raise PrepareError("no universe file may be used at this cut-off: " + ("; ".join(passed) or "there is none"))
     universe = load_universe(universe_path)
+    rows_of = universe_rows(universe_path)
     hidden = sorted((c for c in universe.companies.values() if c.xbi_only), key=lambda c: c.cik)
     if not hidden:
         notes.append(
@@ -345,7 +415,15 @@ def prepare(
     done = Prepared(final, session_day, cutoff, since, universe, companies)
     done.notes = notes
     inputs = Inputs()
-    inputs.add(kind="universe", file=universe.file, sha256=universe.sha256, made_before_cutoff=True)
+    # The whole list is not in the folder: it names companies that may not be named and holds prices. Each
+    # company's own line is in its folder (pilot, 2026-11-27: agents looked for a file that was not there).
+    n_universe = inputs.add(
+        kind="universe",
+        name=universe.file,
+        sha256=universe.sha256,
+        made_before_cutoff=True,
+        in_folder="not as a file: each company's own line is in companies/<number>/company.md",
+    )
     archive = sources.before(archive_root, cutoff)
     items: dict[int, list[Item]] = {cik: [] for cik in companies}
     files: dict[int, list[tuple[str, str]]] = {cik: [] for cik in companies}  # (file name, text)
@@ -368,28 +446,17 @@ def prepare(
             veiled += 1
         return "".join(out) + text[at:]
 
-    # 1. new SEC filings: saved before the cut-off, filed around the last session, and shown to no earlier one
-    seen: set[str] = set()
-    old = unreadable = 0
-    earliest_filed = (since.date() - timedelta(days=LATE_FILING_DAYS)).isoformat()
-    for rec in archive.files(FILINGS_SOURCE):
-        meta = sources.record_meta(rec)
-        accession, cik = meta.get("accession"), meta.get("cik")
-        if not accession or cik not in wanted or accession in seen or ("filing", str(accession)) in earlier:
-            continue
-        seen.add(accession)
-        if str(meta.get("filed") or "9999") < earliest_filed:
-            old += 1
-            continue
+    def add_filing(rec: dict[str, Any], cik: int, earlier_one: bool) -> tuple[int, filings.Header, bool] | None:
+        """One filing into the list of inputs and the company's folder: its number, header and whether the
+        company filed it as a holder of another. None when it cannot be read."""
         try:
             body = archive.read(rec)
             head = filings.header(body)
             holder = is_holder_filing(head, universe.companies[cik].name)
             text = veil(filing_text(body, head, holder))
         except (InputError, filings.FilingError) as exc:
-            unreadable += 1
             done.notes.append(f"a filing of company {cik} could not be read ({type(exc).__name__}); left out")
-            continue
+            return None
         form = "".join(c if c.isalnum() else "-" for c in head.form)[:20]
         n = inputs.add(
             kind="sec filing",
@@ -403,8 +470,36 @@ def prepare(
             sha256=rec["sha256"],
             stored=first_stored.get(str(rec["path"]), rec["ts"]),
             file=f"companies/{cik}/filings/{len(inputs.lines) + 1:04d}-{form}.txt",
+            **({"earlier": True} if earlier_one else {}),
         )
         files[cik].append((f"filings/{n:04d}-{form}.txt", text))
+        return n, head, holder
+
+    # 1. new SEC filings: saved before the cut-off, filed around the last session, and shown to no earlier one.
+    # The others are kept aside: for a company that may be analysed they come in as earlier filings (step 4).
+    seen: set[str] = set()
+    old = unreadable = shown = 0
+    passed_over: dict[int, list[tuple[str, dict[str, Any]]]] = {cik: [] for cik in companies}  # (filed, record)
+    earliest_filed = (since.date() - timedelta(days=LATE_FILING_DAYS)).isoformat()
+    for rec in archive.files(FILINGS_SOURCE):
+        meta = sources.record_meta(rec)
+        accession, cik = meta.get("accession"), meta.get("cik")
+        if not accession or cik not in wanted or accession in seen:
+            continue
+        seen.add(accession)
+        if ("filing", str(accession)) in earlier:
+            shown += 1
+            passed_over[cik].append((str(meta.get("filed") or ""), rec))
+            continue
+        if str(meta.get("filed") or "9999") < earliest_filed:
+            old += 1
+            passed_over[cik].append((str(meta.get("filed") or ""), rec))
+            continue
+        added = add_filing(rec, cik, False)
+        if added is None:
+            unreadable += 1
+            continue
+        n, head, holder = added
         if holder:
             line = f"[{n}] {head.form} filed {head.filed.isoformat()}: filed by this company as a holder of another"
             items[cik].append(Item(n, "holder filing", line))
@@ -414,7 +509,7 @@ def prepare(
         items[cik].append(
             Item(n, kind, f"[{n}] {head.form} filed {head.filed.isoformat()}{about}", announces_results(head))
         )
-    done.counts["filings"] = len(seen) - old - unreadable
+    done.counts["filings"] = len(seen) - shown - old - unreadable
     done.counts["filings_saved_late_and_left_out"] = old
 
     # 2. changes in trial records, through the linking table once the owner's check has made one
@@ -423,8 +518,15 @@ def prepare(
     )
     done.notes += passed
     linking = read_linking(linking_path) if linking_path is not None else None
+    linked_rows = read_linking_rows(linking_path) if linking_path is not None else {}
+    n_linking = 0
     if linking_path is not None:
-        inputs.add(kind="linking table", file=linking_path.name, sha256=sha256_hex(linking_path.read_bytes()))
+        n_linking = inputs.add(
+            kind="linking table",
+            name=linking_path.name,
+            sha256=sha256_hex(linking_path.read_bytes()),
+            in_folder="not as a file: each company's own lines are in companies/<number>/trials.md",
+        )
     upper = iso(cutoff)
     earliest_change = iso(since - timedelta(days=LATE_FILING_DAYS))
     changes = unlinked = distrusted = 0
@@ -511,6 +613,14 @@ def prepare(
             lines.append(f"Last closing price: {float(now):.2f}")
             if company.market_value is not None:
                 lines.append(f"Market value at the last universe run: about ${company.market_value / 1e6:,.0f} million")
+            shares = rows_of.get(cik, {}).get("shares", "")
+            if shares.isdigit() and int(shares) > 0:
+                as_of = rows_of[cik].get("shares_as_of") or "the universe run"
+                value = int(shares) * now / 1_000_000
+                lines.append(
+                    f"Market value now: about ${float(value):,.0f} million (last close [{n_last}] times the shares "
+                    f"on the universe list [{n_universe}], as of {as_of})"
+                )
             for label, back in refs.items():
                 if len(days) > back:
                     then = prices.close(company.ticker, days[-1 - back])
@@ -529,8 +639,54 @@ def prepare(
     else:
         done.notes.append("no price file was stored before the cut-off: the numbers from prices are missing")
 
-    # 4. the files
+    # Who is "news": a filing a company made as a holder of another company is in its folder, but does not by
+    # itself send the company to the screening.
+    with_news = [cik for cik in companies if any(item.kind != "holder filing" for item in items[cik])]
+
+    # 4. earlier filings, for the companies that may be analysed today: news, a holding, or one the order of deep
+    # analysis can reach without news. Not for every company with a report: in time that is all of them.
     reports = mode_root / "reports"
+    report_of = {cik: newest_report(reports / str(cik), session_day) for cik in companies}
+    cited = {cik: report_sources(sessions, path, cik) for cik, path in report_of.items() if path is not None}
+    reachable = select.deep_order(
+        universe=wanted,
+        held_with_news=set(),
+        flagged=[],
+        catalysts=catalysts or {},
+        last_report=last_report or {},
+        limit=len(catalysts or {}) + select.MOST,
+    )
+    may_be_analysed = (set(with_news) | set(held or ()) | {cik for cik, _ in reachable}) & wanted
+    earliest_earlier = (cutoff.date() - timedelta(days=EARLIER_DAYS)).isoformat()
+    earlier_lines: dict[int, list[str]] = {cik: [] for cik in companies}
+    today_n: dict[int, dict[str, int]] = {cik: {} for cik in companies}  # accession -> today's number
+    for line in inputs.lines:
+        if line["kind"] == "sec filing":
+            today_n[line["cik"]][line["accession"]] = line["n"]
+    for cik in sorted(may_be_analysed):
+        wanted_back = set(cited.get(cik, {}))
+        chosen_ones = [
+            (filed, rec)
+            for filed, rec in passed_over[cik]
+            if filed >= earliest_earlier or sources.record_meta(rec).get("accession") in wanted_back
+        ]
+        newest = sorted(chosen_ones, key=lambda pair: pair[0], reverse=True)
+        # Event and periodic reports first, insider trades after them; newest first within each (a stable sort).
+        ranked = sorted(newest, key=lambda pair: is_insider_form(sources.record_meta(pair[1]).get("form")))
+        for _filed, rec in ranked[:EARLIER_MOST]:
+            added = add_filing(rec, cik, True)
+            if added is None:
+                unreadable += 1
+                continue
+            n, head, holder = added
+            today_n[cik][head.accession] = n
+            about = f"; items: {'; '.join(head.items)}" if head.items else ""
+            mark = ": filed by this company as a holder of another" if holder else about
+            earlier_lines[cik].append(f"[{n}] {head.form} filed {head.filed.isoformat()}{mark}")
+        earlier_lines[cik].sort(key=lambda text: text.split(" filed ")[1][:10], reverse=True)
+    done.counts["earlier_filings"] = sum(map(len, earlier_lines.values()))
+
+    # 5. the files
     for cik in companies:
         company = universe.companies[cik]
         base = folder / "companies" / str(cik)
@@ -538,12 +694,20 @@ def prepare(
         lines = [
             f"# {company.name}",
             f"Ticker: {company.ticker}    SEC company number: {cik}",
+            universe_line(rows_of.get(cik, {}), n_universe),
             "",
             f"## New since the last session ({iso(since)}), saved before the data cut-off ({iso(cutoff)})",
         ]
         lines += [f"- {item.line}" for item in new] or ["- nothing new"]
+        if earlier_lines[cik]:
+            lines += [
+                "",
+                f"## Earlier filings, for reference (not news today; filed in the {EARLIER_DAYS} days before the "
+                "cut-off, or cited by our last report)",
+                *[f"- {line}" for line in earlier_lines[cik]],
+            ]
         lines += ["", "The number in square brackets is the source's number in the session's list of inputs."]
-        write_new(base / "company.md", "\n".join(lines) + "\n")
+        write_new(base / "company.md", veil("\n".join(lines)) + "\n")
         write_new(base / "numbers.md", "\n".join(numbers.get(cik, ["No numbers from prices for this session."])) + "\n")
         trial_items = [item for item in new if item.kind == "trial change"]
         if linking is None:
@@ -553,15 +717,15 @@ def prepare(
             trials = "Changes in its trial records since the last session:\n" + listed_changes
         else:
             trials = "No change in its linked trial records since the last session.\n"
+        if linking is not None:
+            trials += "\n" + veil(linked_trials_text(linked_rows.get(cik, []), n_linking))
         write_new(base / "trials.md", trials)
         for name, text in files[cik]:
             write_new(base / name, text)
-        report = newest_report(reports / str(cik), session_day)
+        report = report_of[cik]
         if report is not None:
-            write_new(base / "report.md", veil(report.read_text(encoding="utf-8")))
-    # Who is "news": a filing a company made as a holder of another company is in its folder, but does not by
-    # itself send the company to the screening.
-    with_news = [cik for cik in companies if any(item.kind != "holder filing" for item in items[cik])]
+            note = report_note(report.stem, cited.get(cik, {}), today_n[cik])
+            write_new(base / "report.md", note + veil(report.read_text(encoding="utf-8")))
     for number, at in enumerate(range(0, len(with_news), BATCH), start=1):
         part = [f"# Screening, batch {number}", ""]
         for cik in with_news[at : at + BATCH]:
@@ -603,6 +767,40 @@ def prepare(
     write_new(folder / "session.json", json.dumps(session, indent=1, sort_keys=True) + "\n")  # the last file
     folder.rename(final)  # one step: from here on the session folder exists, and it is complete
     return done
+
+
+def report_sources(sessions: Path, report: Path, cik: int) -> dict[str, int]:
+    """The filings of this company in the list of inputs of the session a report was written in (a report is
+    named after its day): accession -> that day's number. Empty when that list cannot be read."""
+    path = sessions / report.stem / "inputs.jsonl"
+    out: dict[str, int] = {}
+    try:
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = json.loads(raw)
+            if line.get("kind") == "sec filing" and line.get("cik") == cik and line.get("accession"):
+                out[str(line["accession"])] = int(line["n"])
+    except (OSError, ValueError, TypeError, KeyError):
+        return {}
+    return out
+
+
+def report_note(day: str, then: dict[str, int], today: dict[str, int]) -> str:
+    """A note above the copy of an earlier report: its numbers are those of its own day, and here are today's."""
+    lines = [
+        f"> Note from the script: this report was written in the session of {day}. Its numbers in square brackets",
+        "> are that session's source numbers, not today's.",
+    ]
+    pairs = sorted((n_then, today[acc]) for acc, n_then in then.items() if acc in today)
+    if pairs:
+        lines.append(
+            "> The company's filings among them, with today's numbers: "
+            + ", ".join(f"[{a}] is today [{b}]" for a, b in pairs)
+            + "."
+        )
+    missing = sorted(n for acc, n in then.items() if acc not in today)
+    if missing:
+        lines.append("> Not in today's list: " + ", ".join(f"[{n}]" for n in missing) + ".")
+    return "\n".join(lines) + "\n\n"
 
 
 def newest_report(folder: Path, session_day: date) -> Path | None:

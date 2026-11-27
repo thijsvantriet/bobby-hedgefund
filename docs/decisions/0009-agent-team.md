@@ -297,6 +297,44 @@ lists of sources invited a mistake that costs a whole run.
   its block is not heard; the block is its formal answer, and the agent files say so. Claude decided this (the
   owner left it to Claude); the agent files still say to write nothing after the block.
 
+## Update 2026-11-27: fixes after the pilot week (days 1-5, Careful fund only)
+What the five rounds showed, from the rounds' own records (`rounds/<day>/`: answers, refusals, `usage.json`), and
+what changed. Each change has a test; options that were turned down are named.
+
+- **A forecast without its list of sources no longer costs the whole answer.** Day 5: one analyst wrote a
+  forecast without the `sources` field and its whole section was thrown away. An empty list was already allowed,
+  so a missing list now counts as empty. Nothing is filled in; the section's own list stays required.
+- **"Defined by a price" (point 5) was too wide.** Six forecasts on days 2, 4 and 5 were refused, all about a
+  company event: "sold shares of common stock *under* the sales agreement", "an Equity Payment in common stock
+  ... *under* the Equitization Option". Now "over", "under", "at least" and "at most" count only when a figure
+  follows ("under $5"), and "up to" is an amount, not a move. A replay over all 121 forecast events of the pilot
+  changes exactly those six. The rule itself stays: a forecast about the level or move of a share is refused.
+- **A read the reading check refused no longer throws the answer away.** Day 4: a portfolio manager's long
+  search result was kept by Claude Code in a file outside the session folder; the agent tried to read it, the
+  check refused, and the second layer (the script that goes through the agent's record) counted the refused
+  attempt and threw away the whole run. A call whose result is the check's own refusal (an error result in the
+  check's words, written by Claude Code, not by the agent) read nothing and is now passed over; any other call
+  outside the folder still rejects the run, so the second layer still holds when the check does not fire.
+  Turned down: letting agents read those saved results. The same place holds the saved results of every agent
+  of the round, of every fund. The refusal now says what to do instead (search a smaller folder).
+- **Where to search is in the instructions.** 5 to 26 searches a day were refused because they started at the
+  session folder itself. The shared instructions of every agent file now name the folders to search. The agent
+  files changed with this; their new fingerprints are in the log from the next round.
+- **An unchanged repeat of an open forecast is not written again.** 22 of the 100 pilot forecasts repeated an
+  open one by the same role word for word, with the same date and probability, which would count one view
+  several times. Such a repeat is noted in the day's notes and not written. A changed probability is written as
+  a new record; how updates are scored is for the scoring record. The agent files say this too.
+- **A lost screening batch gets one fresh run.** Day 0 and day 4: a screening answer without its block of JSON
+  left a whole batch (25 companies) unjudged. When a screening answer is thrown away *for its form*, the batch
+  gets one new task with the same text (`screening-NN-again`), started and judged like any other, before minute
+  10 of the round. Not for an answer that broke a rule, and never a third run. This is a new run, not a repair:
+  the first answer stays thrown away, and point 3 (a task is started once) still holds for each task.
+- **The reason for a deep analysis names the catalyst's date** (until stream 5 brings a real calendar, the date
+  of our nearest open forecast).
+
+Still open after the pilot: the weekly check on the screening (spec, section 3) has an agent file but was not
+yet part of the round; it is built separately.
+
 ## Revisit
 Revisit: by 2027-01, or after the pilot week, or when a new Claude Code version changes agent files, hooks or the
 layout of session records, or when a new model replaces one named in a file.
@@ -310,6 +348,7 @@ Read on 2026-11-18.
   [model configuration](https://code.claude.com/docs/en/model-config.md)
 - The records of earlier sessions on the owner's machine (field names only)
 - Wang and others, [Self-Consistency Improves Chain of Thought Reasoning in Language Models](https://arxiv.org/abs/2203.11171) (2022; abstract read)
+- The pilot week's own records (2026-11-23 to 27), summed up in `docs/pilot/PILOT-REPORT-2026-11.md`
 - This project: `docs/SPEC.md`, sections 1, 3, 5 and 7; records 0003, 0004, 0006, 0007;
   `docs/research/OPEN-SOURCE.md`, 3.5 (rules 5, 6, 7 and 9); `docs/research/notes/H-how-agents-run.md`
 

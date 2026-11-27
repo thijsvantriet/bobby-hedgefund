@@ -24,6 +24,11 @@ READ_TOOLS = ("Read", "Grep", "Glob")
 HANDBACK = "SubagentHandback"
 QUEUED = "queued_command"
 TOKEN_KINDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+# How Claude Code records a call that the reading check (the fence) refused: an error result that names the hook and
+# starts its message with "Refused:". Such a call read nothing. Claude Code writes this result, not the agent.
+_FENCE_REFUSAL = re.compile(
+    r'^PreToolUse:(?:Read|Grep|Glob) hook error: \[[^\]\n]{0,200}bobby_hooks\.py"? fence\]: Refused: '
+)
 
 
 class RecordError(Exception):
@@ -35,6 +40,8 @@ class ToolUse:
     name: str
     path: str  # the file or folder it was pointed at ("" when none was given)
     pattern: str = ""
+    use_id: str = ""
+    refused: bool = False  # the reading check refused it, so it read nothing
 
 
 @dataclass
@@ -90,6 +97,22 @@ def _text(content: Any) -> str:
     return ""
 
 
+def _refusals(lines: list[dict[str, Any]]) -> set[str]:
+    """The tool calls the reading check refused, by their id: an error result in the fence's own words."""
+    out: set[str] = set()
+    for line in lines:
+        message = line.get("message")
+        if line.get("type") != "user" or not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            continue
+        for block in message["content"]:
+            if not isinstance(block, dict) or block.get("type") != "tool_result" or block.get("is_error") is not True:
+                continue
+            if _FENCE_REFUSAL.match(_text(block.get("content"))):
+                out.add(str(block.get("tool_use_id") or ""))
+    out.discard("")
+    return out
+
+
 def _is_tool_result(content: Any) -> bool:
     return isinstance(content, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
 
@@ -127,6 +150,7 @@ def read_run(path: Path) -> AgentRun:
     # One answer of the model is spread over several lines that share its id; its counts are on each of them.
     by_id: dict[str, dict[str, Any]] = {}
     order: list[str] = []
+    refused = _refusals(lines)
     for line in lines:
         if line.get("type") != "assistant" or not isinstance(line.get("message"), dict):
             continue
@@ -147,7 +171,16 @@ def read_run(path: Path) -> AgentRun:
             elif block.get("type") == "tool_use":
                 given = _dict(block.get("input"))
                 where = str(given.get("file_path") or given.get("path") or given.get("notebook_path") or "")
-                run.tools.append(ToolUse(str(block.get("name")), where, str(given.get("pattern") or "")))
+                use_id = str(block.get("id") or "")
+                run.tools.append(
+                    ToolUse(
+                        str(block.get("name")),
+                        where,
+                        str(given.get("pattern") or ""),
+                        use_id,
+                        bool(use_id) and use_id in refused,
+                    )
+                )
         if isinstance(message.get("usage"), dict):
             entry["usage"] = message["usage"]
         entry["stop"] = message.get("stop_reason") or entry["stop"]
@@ -188,10 +221,14 @@ def agent_runs(project: Path, session_id: str) -> list[AgentRun]:
 def outside(run: AgentRun, session_dir: Path) -> list[str]:
     """What an agent did that it may not do: a tool other than reading files, or a path outside the session
     folder (links followed). Empty when its record is clean. This is the second layer behind the tool list and
-    the reading check, and the only one when the agent files could not be used."""
+    the reading check, and the only one when the agent files could not be used. A call the reading check refused
+    read nothing and does not count (pilot, 2026-11-26: a refused read cost a whole answer); a call that was not
+    refused is judged here as before, so this layer still holds when the check did not fire."""
     base = os.path.realpath(session_dir)
     wrong: list[str] = []
     for use in run.tools:
+        if use.refused and use.name in READ_TOOLS:
+            continue
         if use.name not in READ_TOOLS:
             wrong.append(f"used the tool {use.name}")
             continue

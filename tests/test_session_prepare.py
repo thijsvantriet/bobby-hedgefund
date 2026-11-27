@@ -83,13 +83,17 @@ def store_filing(data: Path, cik: int, accession: str, form: str, filed: str, wh
 
 
 def universe_file(data: Path, label: str = "2027-02-01", made: str = "2027-02-01T07:00:00Z", listed: str = "") -> None:
-    header = "cik,name,in_universe,why_out,ticker_used,exchanges,sic,door,in_xbi,filer_type,market_value\n"
+    header = (
+        "cik,name,in_universe,why_out,ticker_used,exchanges,sic,door,in_xbi,filer_type,market_value,"
+        "shares,shares_as_of,shares_source\n"
+    )
+    shares = {101: "300000000,2027-01-15,cover page"}
     rows = "".join(
-        f"{cik},{name},yes,,{ticker},Nasdaq,2834,own code,no,domestic,{mv or ''}\n"
+        f"{cik},{name},yes,,{ticker},Nasdaq,2834,own code,no,domestic,{mv or ''},{shares.get(cik, ',,')}\n"
         for cik, (ticker, name, mv) in COMPANIES.items()
     )
-    hidden = f"{HIDDEN[0]},{HIDDEN[2]},yes,,{HIDDEN[1]},Nasdaq,3841,xbi only,yes,domestic,700000000\n"
-    out = "999,Out Corp,no,price,OUT,Nasdaq,2834,own code,no,domestic,\n"
+    hidden = f"{HIDDEN[0]},{HIDDEN[2]},yes,,{HIDDEN[1]},Nasdaq,3841,xbi only,yes,domestic,700000000,,,\n"
+    out = "999,Out Corp,no,price,OUT,Nasdaq,2834,own code,no,domestic,,,,\n"
     folder = data / "universe"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{label}_universe.csv").write_text(header + rows + hidden + out)
@@ -214,21 +218,29 @@ def test_the_session_folder_holds_only_what_was_saved_before_the_cut_off(data: P
         and "===== document: EX-99.1 PRESS RELEASE" in text
     )
     assert "color: red" not in text and "M_]C" not in text and "loan agreement" not in text
-    assert (
-        not (folder / "companies" / "102" / "filings").exists()
-        and not (folder / "companies" / "103" / "filings").exists()
-    )
     assert not (folder / "companies" / "999").exists()
     everything = b"".join(p.read_bytes() for p in folder.rglob("*") if p.is_file())
-    for absent in (b"After the cut-off", b"Fetched late", b"Shown yesterday"):
-        assert absent not in everything
+    assert b"After the cut-off" not in everything
+    # A filing fetched late, and one an earlier session showed, are no news. With four companies the order of
+    # deep analysis can reach every one of them, so both are in the folder as earlier filings, marked as such.
+    for cik, text_ in ((102, "Fetched late"), (103, "Shown yesterday")):
+        company_md = (folder / "companies" / str(cik) / "company.md").read_text()
+        assert "- nothing new" in company_md and "## Earlier filings, for reference" in company_md
+        (earlier_file,) = (folder / "companies" / str(cik) / "filings").iterdir()
+        assert text_ in earlier_file.read_text()
+    assert not (folder / "screening" / "batch-01.md").read_text().count("## 10") > 1  # only company 101 is news
     lines = [json.loads(line) for line in (folder / "inputs.jsonl").read_text().splitlines()]
-    assert [(line["n"], line["kind"]) for line in lines] == [
-        (1, "universe"),
-        (2, "sec filing"),
-        (3, "prices"),
-        (4, "prices"),
+    assert [(line["n"], line["kind"], line.get("earlier", False)) for line in lines] == [
+        (1, "universe", False),
+        (2, "sec filing", False),
+        (3, "prices", False),
+        (4, "prices", False),
+        (5, "sec filing", True),
+        (6, "sec filing", True),
     ]
+    assert lines[0]["name"] == "2027-02-01_universe.csv" and "file" not in lines[0]
+    assert "company.md" in lines[0]["in_folder"]
+    lines = lines[:4]
     filed = lines[1]
     assert (
         filed["sha256"] == sha
@@ -265,6 +277,10 @@ def test_what_is_new_per_company_and_the_screening_list(data: Path) -> None:
         and "Change over 1 trading day: +20.0%" in numbers
     )
     assert "about $3,000 million" in numbers
+    # The market value of the universe run is old; the one of today is worked out from the same shares.
+    assert "Market value now: about $3,600 million (last close [" in numbers and "as of 2027-01-15)" in numbers
+    assert "Market value now" not in (folder / "companies" / "102" / "numbers.md").read_text()  # no share count
+    assert "shares outstanding: 300,000,000 as of 2027-01-15" in company and "3,600" not in company
     assert "nothing new" in (folder / "companies" / "103" / "company.md").read_text()
     assert "- nothing new" not in (folder / "companies" / "102" / "company.md").read_text()  # the insider filing
     batch = (folder / "screening" / "batch-01.md").read_text()
@@ -355,8 +371,17 @@ def test_trial_changes_wait_for_the_linking_table_and_use_it_once_it_may_be_used
     trials = (second.folder / "companies" / "101" / "trials.md").read_text()
     wanted = "trial NCT00000001: primary completion date changed from 2027-03 (estimated) to 2027-09 (estimated)"
     assert wanted + " (moved 184 days)" in trials
-    assert "NCT00000002" not in trials and "NCT00000003" not in trials
-    assert "No change" in (second.folder / "companies" / "102" / "trials.md").read_text()
+    assert "trial NCT00000002" not in trials and "NCT00000003" not in trials  # a change saved after the cut-off
+    # The company's own lines of the linking table (pilot, 2026-11-27: agents could not open the table itself).
+    assert "Linking table [" in trials and "- Aaa Tx: 2 trial(s), 2 as lead sponsor" in trials
+    assert "  - NCT00000002: https://clinicaltrials.gov/study/NCT00000002" in trials
+    other = (second.folder / "companies" / "102" / "trials.md").read_text()
+    assert "No change" in other and "no trials are linked to this company" in other
+    linking_line = next(
+        json.loads(line) for line in (second.folder / "inputs.jsonl").read_text().splitlines() if "linking" in line
+    )
+    assert f"Linking table [{linking_line['n']}]" in trials and "trials.md" in linking_line["in_folder"]
+    assert "file" not in linking_line and linking_line["name"] == "2027-02-02_linking.csv"
     assert any("2027-02-04_linking.csv is not used" in note for note in second.notes)
     kinds = [json.loads(line)["kind"] for line in (second.folder / "inputs.jsonl").read_text().splitlines()]
     assert kinds.count("trial record") == 1 and "linking table" in kinds
@@ -394,7 +419,8 @@ def test_our_own_newest_report_of_an_earlier_day_is_copied_in(data: Path, tmp_pa
     (data / "pilot" / "reports" / "102").mkdir()
     (data / "pilot" / "reports" / "102" / "2027-02-01.md").symlink_to(outside)
     done = run(data)
-    assert (done.folder / "companies" / "101" / "report.md").read_text() == "newest earlier report\n"
+    copied = (done.folder / "companies" / "101" / "report.md").read_text()
+    assert copied.endswith("\n\nnewest earlier report\n") and "session of 2027-02-01" in copied
     assert not (done.folder / "companies" / "102" / "report.md").exists()  # a link is not followed
     assert not (done.folder / "companies" / "103" / "report.md").exists()
 
@@ -594,7 +620,8 @@ def test_the_order_of_deep_analysis() -> None:
     assert set(ciks[:2]) == {3, 7} and ciks[2:4] == [12, 30] and ciks[4:6] == [21, 20]  # 99 is not in the universe
     assert set(ciks[6:8]) == {33, 34} and len(ciks) == len(set(ciks)) == 40
     assert chosen[0][1] == "a fund holds it and there is news" and chosen[2][1] == "the screening flagged it"
-    assert chosen[4][1] == "a catalyst within 60 days" and chosen[6][1] == "rotation: no report yet"
+    assert chosen[4][1] == "a catalyst within 60 days (our nearest open forecast for it is dated 2027-02-10)"
+    assert chosen[6][1] == "rotation: no report yet"
     four = select.deep_order(universe=universe, held_with_news=set(), flagged=[], catalysts={}, last_report={})
     assert len(four) == select.MOST == 4 and [c for c, _ in four] == order[:4]
     # When every company has a report, the one with the oldest report comes first.
@@ -648,3 +675,68 @@ def test_a_task_file_is_written_once_and_a_change_to_it_is_noticed(tmp_path: Pat
         with pytest.raises(tasks.TaskError):
             tasks.write(tmp_path, bad, "bobby-x", "text")
     assert iso(CUTOFF) == "2027-02-03T08:00:00Z"
+
+
+def test_an_earlier_report_gets_todays_numbers_for_the_filings_of_its_day(data: Path) -> None:
+    # Pilot, 2026-11-23 to 27: a report cited [2] of its own day, while today's [2] was another company's filing,
+    # and the filings behind the report were in no list of today. Now they are, as earlier filings, with a note.
+    monday = datetime(2027, 2, 1, 6, tzinfo=UTC)
+    store_filing(data, 101, "0000000101-27-000007", "8-K", "2027-01-29", monday, main="<p>Topline news.</p>")
+    store_filing(data, 101, "0000000101-27-000008", "4", "2027-01-29", monday, main="<p>A small sale.</p>")
+    store_filing(data, 101, "0000000101-26-000001", "10-Q", "2026-08-01", monday, main="<p>Long ago.</p>")
+    shown_earlier(
+        data,
+        "2027-02-01",
+        [
+            {"n": 1, "kind": "universe"},
+            {"n": 2, "kind": "sec filing", "cik": 101, "accession": "0000000101-27-000007"},
+            {"n": 3, "kind": "sec filing", "cik": 101, "accession": "0000000101-27-000008"},
+            {"n": 4, "kind": "sec filing", "cik": 101, "accession": "0000000101-26-000001"},
+            {"n": 5, "kind": "sec filing", "cik": 101, "accession": "0000000101-27-000099"},  # not in the archive
+            {"n": 6, "kind": "sec filing", "cik": 102, "accession": "0000000102-27-000001"},
+        ],
+    )
+    reports = data / "pilot" / "reports" / "101"
+    reports.mkdir(parents=True)
+    (reports / "2027-02-01.md").write_text("The drug worked [2].\n")
+    done = run(data, held={101})
+    folder = done.folder / "companies" / "101"
+    lines = [json.loads(line) for line in (done.folder / "inputs.jsonl").read_text().splitlines()]
+    today = {line["accession"]: line["n"] for line in lines if line["kind"] == "sec filing"}
+    assert all(line.get("earlier") for line in lines if line["kind"] == "sec filing")
+    # Cited by the report: in, though filed more than 90 days ago. The 8-K goes before the insider trade.
+    assert set(today) == {"0000000101-27-000007", "0000000101-27-000008", "0000000101-26-000001"}
+    assert today["0000000101-27-000007"] < today["0000000101-27-000008"]
+    report = (folder / "report.md").read_text()
+    n7, n8, nq = (today[a] for a in ("0000000101-27-000007", "0000000101-27-000008", "0000000101-26-000001"))
+    assert f"[2] is today [{n7}], [3] is today [{n8}], [4] is today [{nq}]" in report
+    assert "Not in today's list: [5]." in report and report.endswith("The drug worked [2].\n")
+    company = (folder / "company.md").read_text()
+    new_part, earlier_part = company.split("## Earlier filings")
+    assert f"- [{n7}] 8-K filed 2027-01-29" in earlier_part and "8-K" not in new_part
+    assert "Topline news." in (folder / "filings" / f"{n7:04d}-8-K.txt").read_text()
+    assert done.counts["filings"] == 0 and done.counts["earlier_filings"] == 3
+    batch = (done.folder / "screening" / "batch-01.md").read_text()  # 101 is news for its price move only
+    assert "the share moved" in batch and "8-K" not in batch and "10-Q" not in batch  # earlier filings are no news
+
+
+def test_the_universe_line_of_a_company_without_prices_or_the_xbi_fund(tmp_path: Path) -> None:
+    row = {
+        "exchanges": "Nasdaq",
+        "sic": "2834",
+        "door": "own code + xbi",
+        "in_xbi": "yes",
+        "filer_type": "domestic",
+        "shares": "78545051",
+        "shares_as_of": "2026-10-28",
+        "shares_source": "cover page",
+        "last_close": "27.96",
+        "market_value": "2196119626",
+        "former_names": "OLD NAME INC",
+    }
+    line = prep.universe_line(row, 1)
+    assert line.startswith("- Universe list [1]: exchange: Nasdaq; industry code (SIC): 2834")
+    assert "shares outstanding: 78,545,051 as of 2026-10-28 (from the SEC, cover page)" in line
+    assert "former names: OLD NAME INC" in line
+    for absent in ("xbi", "27.96", "2196119626", "own code"):
+        assert absent not in line.lower()

@@ -158,12 +158,27 @@ def test_a_forecast_defined_by_a_price_is_refused() -> None:
         "The stock doubles before year end",
         "Market value above 2 billion by June",
         "Shares trade higher after the readout",
+        "The share closes above $10 on 1 June",
+        "The stock is under $5 at the end of June",
+        "The share price is at least 12 dollars on 1 June",
+        "Market value exceeds $1 billion by June",
+        "The stock rises after the readout",
     ):
         assert T.price_defined(event), event
     for event in (
         "The main goal of trial X is met, announced before 1 June",
         "The FDA approves the drug by its decision date",
         "The company announces a share sale before 1 June",
+        # Refused in the pilot (2026-11-24 to 27), though none is about a price:
+        "By 2027-05-31, a company filing with the SEC reports that it has sold shares of common stock under the "
+        "November 2026 TD Cowen sales agreement.",
+        "Monte Rosa discloses in an SEC filing that it has sold at least one share under its November 2026 TD Cowen "
+        "sales agreement",
+        "An ImmunityBio SEC filing discloses that at least one Equity Payment in common stock was made to the "
+        "Oberland purchasers under the Equitization Option.",
+        "ImmunityBio discloses in an SEC filing that at least one Equity Payment in shares was made to the RIPA "
+        "purchasers under the Equitization Option, on or before 2027-05-15.",
+        "The company sells shares for up to $100 million under its sales agreement",
     ):
         assert not T.price_defined(event), event
     with pytest.raises(ValueError, match="defined by a price"):

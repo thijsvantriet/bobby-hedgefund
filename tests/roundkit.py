@@ -68,6 +68,14 @@ def began(data: Path, session_id: str, source: str = "startup") -> None:
         fh.write(json.dumps({"source": source, "time": 0}) + "\n")
 
 
+def fence_refusal(tool: str, why: str = "that is outside the session folder (give the full path)") -> str:
+    """The result Claude Code records for a call the reading check refused (as seen in the pilot, 2026-11-26)."""
+    return (
+        f'PreToolUse:{tool} hook error: [python3 "${{CLAUDE_PROJECT_DIR}}/.claude/hooks/bobby_hooks.py" fence]: '
+        f"Refused: {why}. You may only read files inside the session folder named in your task file.\n"
+    )
+
+
 def block(answer: dict[str, Any] | str) -> str:
     body = answer if isinstance(answer, str) else json.dumps(answer, indent=1)
     return f"My answer.\n\n```json\n{body}\n```\n"
@@ -86,6 +94,7 @@ def agent_run(
     effort: str | None = None,
     agent_type: str | None = None,
     reads: list[tuple[str, str]] | None = None,
+    results: dict[int, tuple[str, bool]] | None = None,
     extra_message: str | None = None,
     extra_kind: str = "coordinator",
     prompt: str | None = None,
@@ -155,7 +164,10 @@ def agent_run(
         )
         call = {"type": "tool_use", "id": f"t{i}", "name": tool, "input": given}
         lines.append(assistant(f"m{i}", [call], "tool_use", 1 + i))
-        result = [{"type": "tool_result", "tool_use_id": f"t{i}", "content": "text"}]
+        content, is_error = (results or {}).get(i, ("text", False))
+        result = [{"type": "tool_result", "tool_use_id": f"t{i}", "content": content}]
+        if is_error:
+            result[0]["is_error"] = True
         lines.append(
             {**common, "type": "user", "message": {"role": "user", "content": result}, "timestamp": stamp(1 + i)}
         )

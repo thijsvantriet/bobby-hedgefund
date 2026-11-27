@@ -112,6 +112,13 @@ def saw(sources: list[dict[str, Any]], inputs: dict[int, dict[str, Any]]) -> lis
     return out
 
 
+def repeat_key(cik: int, role: str, forecast: dict[str, Any]) -> tuple[Any, ...]:
+    """What makes two forecasts the same: company, role, event (case, spaces and end marks aside), date and
+    probability."""
+    event = " ".join(str(forecast["event"]).split()).rstrip(" .;").casefold()
+    return (cik, role, event, forecast["by_date"], forecast["probability"])
+
+
 def analyst_answers(rnd: Round) -> dict[int, list[Collected]]:
     out: dict[int, list[Collected]] = {}
     for task in rounds.step_tasks(rnd, "analysis-"):
@@ -133,6 +140,13 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
         for e in entries
         if e.kind == "forecast" and e.day == rnd.day
     }
+    # An open forecast given again by the same role with the same event, date and probability adds nothing and
+    # would count one view several times (pilot: 22 of 100 forecasts). A changed probability is written.
+    standing = {
+        repeat_key(e.record["company"]["cik"], e.record["role"], e.record): e.seq
+        for e in entries
+        if e.kind == "forecast" and e.seq not in resolved
+    }
     written = 0
     for cik, sections in sorted(analyst_answers(rnd).items()):
         company = universe.companies[cik]
@@ -141,6 +155,10 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
             assert got.answer is not None
             for forecast in got.answer.get("forecasts") or []:
                 if (cik, got.agent.removeprefix("bobby-"), forecast["event"]) in written_today:
+                    continue
+                same = standing.get(repeat_key(cik, got.agent.removeprefix("bobby-"), forecast))
+                if same is not None:
+                    notes.append(f"a forecast for company {cik} repeats open record {same} unchanged; not written")
                     continue
                 body = {
                     "company": about,
@@ -151,7 +169,7 @@ def write_forecasts(rnd: Round, writer: Writer, entries: list[Entry], mark: dict
                     "probability": forecast["probability"],
                     "make_or_break": forecast["make_or_break"],
                     "reasoning": forecast["reasoning"],
-                    "sources": saw(forecast["sources"], inputs),
+                    "sources": saw(forecast.get("sources", []), inputs),
                     "agent": rounds.agent_entry(got),
                     "cutoff": iso(rnd.cutoff),
                     **mark,
